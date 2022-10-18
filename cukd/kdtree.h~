@@ -1,0 +1,39 @@
+
+#include <cub/cub.cuh>  // or equivalently <cub/device/device_merge_sort.cuh>
+
+template<typename point_t, typename scalar_t, int K>
+struct CustomLess
+{
+  template <typename DataType>
+  __device__ bool operator()(const DataType &lhs, const DataType &rhs)
+  {
+    return lhs < rhs;
+  }
+};
+// Declare, allocate, and initialize device-accessible pointers
+// for sorting data
+thrust::device_vector<KeyType> d_keys(num_items);
+thrust::device_vector<DataType> d_values(num_items);
+// ...
+// Initialize iterator
+using KeyIterator = typename thrust::device_vector<KeyType>::iterator;
+thrust::reverse_iterator<KeyIterator> reverse_iter(d_keys.end());
+// Determine temporary device storage requirements
+std::size_t temp_storage_bytes = 0;
+cub::DeviceMergeSort::SortPairs(
+  nullptr,
+  temp_storage_bytes,
+  reverse_iter,
+  thrust::raw_pointer_cast(d_values.data()),
+  num_items,
+  CustomLess());
+// Allocate temporary storage
+cudaMalloc(&d_temp_storage, temp_storage_bytes);
+// Run sorting operation
+cub::DeviceMergeSort::SortPairs(
+  d_temp_storage,
+  temp_storage_bytes,
+  reverse_iter,
+  thrust::raw_pointer_cast(d_values.data()),
+  num_items,
+  CustomLess());
