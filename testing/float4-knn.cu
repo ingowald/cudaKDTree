@@ -217,7 +217,7 @@ int main(int ac, const char **av)
     std::cout << "done building tree, took " << prettyDouble(t1-t0) << "s" << std::endl;
   }
 
-  int nQueries = 10*1000*1000;
+  size_t nQueries = 10*1000*1000;
   float4 *d_queries = generatePoints(nQueries);
   float  *d_results;
   CUKD_CUDA_CALL(MallocManaged((void**)&d_results,nQueries*sizeof(float)));
