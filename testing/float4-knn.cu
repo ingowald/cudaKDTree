@@ -199,7 +199,7 @@ int main(int ac, const char **av)
     else if (arg == "-v")
       verify = true;
     else if (arg == "-nr")
-      nRepeats = true;
+      nRepeats = atoi(av[++i]);
     else if (arg == "-r")
       maxQueryRadius = std::stof(av[++i]);
     else
