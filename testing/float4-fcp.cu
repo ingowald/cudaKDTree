@@ -25,9 +25,7 @@ __global__ void d_fcp(int *d_results,
   int tid = threadIdx.x+blockIdx.x*blockDim.x;
   if (tid >= numQueries) return;
 
-  bool dbg = false;//(tid == 7);
-  
-  d_results[tid] = cukd::fcp(d_queries[tid],d_nodes,numNodes,dbg);
+  d_results[tid] = cukd::fcp(d_queries[tid],d_nodes,numNodes);
 }
 
 void fcp(int *d_results,

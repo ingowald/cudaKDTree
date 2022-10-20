@@ -28,35 +28,31 @@ namespace cukd {
   inline __device__ __host__
   float4 sub(float4 a, float4 b) { return make_float4(a.x-b.x,a.y-b.y,a.z-b.z,a.w-b.w); }
   
-  inline __device__ __host__
+  inline __host__ __device__ 
+  float sqr_distance(float4 a, float4 b)
+  {
+    return dot(sub(a,b),sub(a,b)); 
+  }
+
+  inline __host__ __device__ 
   float distance(float4 a, float4 b)
-  { return sqrtf(dot(sub(a,b),sub(a,b))); }
+  {
+    return sqrtf(sqr_distance(a,b));
+  }
   
   inline __device__
   int fcp(float4 queryPoint,
           const float4 *d_nodes,
-          int N
-          // ,bool dbg = false
-          )
+          int N)
   {
-    // we'll do our node numbering starting with 1; that'll make the math easier...
     int   closest_found_so_far = -1;
     float closest_dist_found_so_far = CUDART_INF;
     
     int prev = -1;
     int curr = 0;
 
-    // if (dbg)
-    //   printf("starting query %f %f %f %f\n",
-    //          queryPoint.x,
-    //          queryPoint.y,
-    //          queryPoint.z,
-    //          queryPoint.w);
-    
     while (true) {
       const int parent = (curr+1)/2-1;
-      // if (dbg)
-      //   printf("- at node %i, prev %i, parent %i\n",curr,prev,parent);
       if (curr >= N) {
         // in some (rare) cases it's possible that below traversal
         // logic will go to a "close child", but may actually only
@@ -66,8 +62,6 @@ namespace cukd {
         // done.
         prev = curr;
         curr = parent;
-        // if (dbg)
-        //   printf("==> NONEXISTENT NODE!\n");
         
         continue;
       }
@@ -75,13 +69,9 @@ namespace cukd {
       const bool from_child = (prev >= child);
       if (!from_child) {
         float dist = distance(queryPoint,d_nodes[curr]);
-        // if (dbg)
-        //   printf(" ==> PROCESSING %i, dist = %f\n",curr,dist);
         if (dist < closest_dist_found_so_far) {
           closest_dist_found_so_far = dist;
           closest_found_so_far      = curr;
-          // if (dbg)
-          //   printf("### DID find closer point at dist %f\n",dist);
         }
       }
 
@@ -91,11 +81,6 @@ namespace cukd {
       const int   curr_side = curr_dim_dist > 0.f;
       const int   curr_close_child = 2*curr + 1 + curr_side;
       const int   curr_far_child   = 2*curr + 2 - curr_side;
-      // if (dbg)
-      //   printf("  qp %f plane %f -> children close %i far %i\n",
-      //          (&queryPoint.x)[curr_dim],
-      //          (&curr_node.x)[curr_dim],
-      //          curr_close_child,curr_far_child);
       
       int next = -1;
       if (prev == curr_close_child)
