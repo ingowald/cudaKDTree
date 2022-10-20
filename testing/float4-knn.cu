@@ -135,7 +135,8 @@ int main(int ac, const char **av)
 
   {
     double t0 = getCurrentTime();
-    knn4(d_results,d_queries,nQueries,d_points,nPoints);
+    for (int i=0;i<nRepeats;i++)
+      knn4(d_results,d_queries,nQueries,d_points,nPoints);
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
     std::cout << "done " << nRepeats << "iterations of knn4 query, took " << prettyDouble(t1-t0) << "s" << std::endl;
