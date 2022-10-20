@@ -80,7 +80,7 @@ namespace cukd {
 
       int pos = 0;
       while (true) {
-        uint64_t largestChildValue = 0;//encode(CUDART_INF,-1);
+        uint64_t largestChildValue = uint64_t(-1);
         int firstChild = 2*pos+1;
         int largestChild = k;
         if (firstChild < k) {
@@ -89,14 +89,14 @@ namespace cukd {
         }
         
         int secondChild = firstChild+1;
-        if (secondChild < k && entry[secondChild] < largestChildValue) {
+        if (secondChild < k && entry[secondChild] > largestChildValue) {
           largestChild = secondChild;
           largestChildValue = entry[secondChild];
         }
 
-        if (e > largestChildValue) {
+        if (largestChild == k || largestChildValue < e) {
           entry[pos] = e;
-          return;
+          break;
         } else {
           entry[pos] = largestChildValue;
           pos = largestChild;
@@ -104,17 +104,28 @@ namespace cukd {
       }
     }
     
-    inline __device__ void maxQueryRange()
+    inline __device__ float maxRadius2()
     { return decode_dist2(entry[0]); }
     
-    inline __device__ int decode_dist2(uint64_t v)
+    inline __device__ float decode_dist2(uint64_t v)
     { return __uint_as_float(v >> 32); }
     inline __device__ int decode_pointID(uint64_t v)
     { return int(v); }
 
     uint64_t entry[k];
   };
-  
+
+  /*! runs a k-nearest neighbor operation that tries to fill the
+      'currentlyClosest' candidate list (using the number of elemnt k
+      and max radius as provided by this class), using the provided
+      tree d_nodes with N points. The d_nodes array must be in
+      left-balanced kd-tree order. After this class the candidate list
+      will contain the k nearest elemnets; if less than k elements
+      were found some of the entries in the results list may point to
+      a point ID of -1. Return value of the function is the _square_
+      of the maximum distance among the k closest elements, if at k
+      were found; or the _square_ of the max search radius provided
+      for the query */
   template<typename CandidateList>
   inline __device__
   float knn(CandidateList &currentlyClosest,
@@ -127,17 +138,8 @@ namespace cukd {
     int prev = -1;
     int curr = 0;
 
-    // if (dbg)
-    //   printf("starting query %f %f %f %f\n",
-    //          queryPoint.x,
-    //          queryPoint.y,
-    //          queryPoint.z,
-    //          queryPoint.w);
-    
     while (true) {
       const int parent = (curr+1)/2-1;
-      // if (dbg)
-      //   printf("- at node %i, prev %i, parent %i\n",curr,prev,parent);
       if (curr >= N) {
         // in some (rare) cases it's possible that below traversal
         // logic will go to a "close child", but may actually only
@@ -147,8 +149,6 @@ namespace cukd {
         // done.
         prev = curr;
         curr = parent;
-        // if (dbg)
-        //   printf("==> NONEXISTENT NODE!\n");
         
         continue;
       }
@@ -156,13 +156,9 @@ namespace cukd {
       const bool from_child = (prev >= child);
       if (!from_child) {
         float dist2 = sqr_distance(queryPoint,d_nodes[curr]);
-        // if (dbg)
-        //   printf(" ==> PROCESSING %i, dist = %f\n",curr,dist);
         if (dist2 <= maxRadius2) {
           currentlyClosest.push(dist2,curr);
           maxRadius2 = currentlyClosest.maxRadius2();
-          // if (dbg)
-          //   printf("### DID find closer point at dist %f\n",dist);
         }
       }
 
@@ -172,11 +168,6 @@ namespace cukd {
       const int   curr_side = curr_dim_dist > 0.f;
       const int   curr_close_child = 2*curr + 1 + curr_side;
       const int   curr_far_child   = 2*curr + 2 - curr_side;
-      // if (dbg)
-      //   printf("  qp %f plane %f -> children close %i far %i\n",
-      //          (&queryPoint.x)[curr_dim],
-      //          (&curr_node.x)[curr_dim],
-      //          curr_close_child,curr_far_child);
       
       int next = -1;
       if (prev == curr_close_child)

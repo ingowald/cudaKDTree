@@ -74,6 +74,7 @@ target_sources(cudaKDTree INTERFACE
   cukd/common.h
   cukd/builder.h
   cukd/fcp.h
+  cukd/knn.h
   )
 target_include_directories(cudaKDTree INTERFACE
 #target_link_libraries(cudaKDTree INTERFACE
