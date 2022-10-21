@@ -87,6 +87,9 @@ target_link_libraries(cukd_test_float4-fcp cudaKDTree)
 add_executable(cukd_test_float4-knn testing/float4-knn.cu)
 target_link_libraries(cukd_test_float4-knn cudaKDTree)
 
+add_executable(cukd_test_float3-knn testing/float3-knn.cu)
+target_link_libraries(cukd_test_float3-knn cudaKDTree)
+
   
 
 

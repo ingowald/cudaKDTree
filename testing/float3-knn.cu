@@ -21,25 +21,24 @@
 #include <limits>
 #include <iomanip>
 
-float4 *generatePoints(int N)
+float3 *generatePoints(int N)
 {
   std::cout << "generating " << N <<  " points" << std::endl;
-  float4 *d_points = 0;
-  CUKD_CUDA_CALL(MallocManaged((void**)&d_points,N*sizeof(float4)));
+  float3 *d_points = 0;
+  CUKD_CUDA_CALL(MallocManaged((void**)&d_points,N*sizeof(float3)));
   for (int i=0;i<N;i++) {
     d_points[i].x = (float)drand48();
     d_points[i].y = (float)drand48();
     d_points[i].z = (float)drand48();
-    d_points[i].w = (float)drand48();
   }
   return d_points;
 }
 
 // ==================================================================
 __global__ void d_knn4(float *d_results,
-                       float4 *d_queries,
+                       float3 *d_queries,
                        int numQueries,
-                       float4 *d_nodes,
+                       float3 *d_nodes,
                        int numNodes,
                        float maxRadius)
 {
@@ -51,9 +50,9 @@ __global__ void d_knn4(float *d_results,
 }
 
 void knn4(float *d_results,
-          float4 *d_queries,
+          float3 *d_queries,
           int numQueries,
-          float4 *d_nodes,
+          float3 *d_nodes,
           int numNodes,
           float maxRadius)
 {
@@ -65,9 +64,9 @@ void knn4(float *d_results,
 
 // ==================================================================
 __global__ void d_knn8(float *d_results,
-                       float4 *d_queries,
+                       float3 *d_queries,
                        int numQueries,
-                       float4 *d_nodes,
+                       float3 *d_nodes,
                        int numNodes,
                        float maxRadius)
 {
@@ -79,9 +78,9 @@ __global__ void d_knn8(float *d_results,
 }
 
 void knn8(float *d_results,
-          float4 *d_queries,
+          float3 *d_queries,
           int numQueries,
-          float4 *d_nodes,
+          float3 *d_nodes,
           int numNodes,
           float maxRadius)
 {
@@ -93,9 +92,9 @@ void knn8(float *d_results,
 
 // ==================================================================
 __global__ void d_knn20(float *d_results,
-                        float4 *d_queries,
+                        float3 *d_queries,
                         int numQueries,
-                        float4 *d_nodes,
+                        float3 *d_nodes,
                         int numNodes,
                         float maxRadius)
 {
@@ -107,9 +106,9 @@ __global__ void d_knn20(float *d_results,
 }
 
 void knn20(float *d_results,
-           float4 *d_queries,
+           float3 *d_queries,
            int numQueries,
-           float4 *d_nodes,
+           float3 *d_nodes,
            int numNodes,
            float maxRadius)
 {
@@ -121,9 +120,9 @@ void knn20(float *d_results,
 
 // ==================================================================
 __global__ void d_knn50(float *d_results,
-                        float4 *d_queries,
+                        float3 *d_queries,
                         int numQueries,
-                        float4 *d_nodes,
+                        float3 *d_nodes,
                         int numNodes,
                         float maxRadius)
 {
@@ -135,9 +134,9 @@ __global__ void d_knn50(float *d_results,
 }
 
 void knn50(float *d_results,
-           float4 *d_queries,
+           float3 *d_queries,
            int numQueries,
-           float4 *d_nodes,
+           float3 *d_nodes,
            int numNodes,
            float maxRadius)
 {
@@ -148,8 +147,8 @@ void knn50(float *d_results,
 
 // ==================================================================
 inline void verifyKNN(int pointID, int k, float maxRadius,
-                      float4 *points, int numPoints,
-                      float4 queryPoint,
+                      float3 *points, int numPoints,
+                      float3 queryPoint,
                       float presumedResult)
 {
   std::priority_queue<float> closest_k;
@@ -206,19 +205,19 @@ int main(int ac, const char **av)
       throw std::runtime_error("known cmdline arg "+arg);
   }
   
-  float4 *d_points = generatePoints(nPoints);
+  float3 *d_points = generatePoints(nPoints);
 
   {
     double t0 = getCurrentTime();
     std::cout << "calling builder..." << std::endl;
-    cukd::buildTree<float4,float>(d_points,nPoints);
+    cukd::buildTree<float3,float>(d_points,nPoints);
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
     std::cout << "done building tree, took " << prettyDouble(t1-t0) << "s" << std::endl;
   }
 
   size_t nQueries = 10*1000*1000;
-  float4 *d_queries = generatePoints(nQueries);
+  float3 *d_queries = generatePoints(nQueries);
   float  *d_results;
   CUKD_CUDA_CALL(MallocManaged((void**)&d_results,nQueries*sizeof(float)));
 

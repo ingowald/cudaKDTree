@@ -22,6 +22,11 @@
 
 namespace cukd {
 
+  template<typename T> struct point_traits;
+
+  template<> struct point_traits<float3> { enum { numDims = 3 }; };
+  template<> struct point_traits<float4> { enum { numDims = 4 }; };
+  
   inline __device__ __host__
   float dot(float4 a, float4 b) { return a.x*b.x+a.y*b.y+a.z*b.z+a.w*b.w; }
   
@@ -40,9 +45,28 @@ namespace cukd {
     return sqrtf(sqr_distance(a,b));
   }
   
+  inline __device__ __host__
+  float dot(float3 a, float3 b) { return a.x*b.x+a.y*b.y+a.z*b.z; }
+  
+  inline __device__ __host__
+  float3 sub(float3 a, float3 b) { return make_float3(a.x-b.x,a.y-b.y,a.z-b.z); }
+  
+  inline __host__ __device__ 
+  float sqr_distance(float3 a, float3 b)
+  {
+    return dot(sub(a,b),sub(a,b)); 
+  }
+
+  inline __host__ __device__ 
+  float distance(float3 a, float3 b)
+  {
+    return sqrtf(sqr_distance(a,b));
+  }
+
+  template<typename point_t = float4>
   inline __device__
   int fcp(float4 queryPoint,
-          const float4 *d_nodes,
+          const point_t *d_nodes,
           int N)
   {
     int   closest_found_so_far = -1;
@@ -76,7 +100,7 @@ namespace cukd {
       }
 
       const auto &curr_node = d_nodes[curr];
-      const int   curr_dim = BinaryTree::levelOf(curr)%4;
+      const int   curr_dim = BinaryTree::levelOf(curr) % point_traits<point_t>::numDims;
       const float curr_dim_dist = (&queryPoint.x)[curr_dim] - (&curr_node.x)[curr_dim];
       const int   curr_side = curr_dim_dist > 0.f;
       const int   curr_close_child = 2*curr + 1 + curr_side;

@@ -126,11 +126,11 @@ namespace cukd {
       of the maximum distance among the k closest elements, if at k
       were found; or the _square_ of the max search radius provided
       for the query */
-  template<typename CandidateList>
+  template<typename point_t, typename CandidateList>
   inline __device__
   float knn(CandidateList &currentlyClosest,
-            float4 queryPoint,
-            const float4 *d_nodes,
+            point_t queryPoint,
+            const point_t *d_nodes,
             int N)
   {
     float maxRadius2 = currentlyClosest.maxRadius2();
@@ -163,7 +163,7 @@ namespace cukd {
       }
 
       const auto &curr_node = d_nodes[curr];
-      const int   curr_dim = BinaryTree::levelOf(curr)%4;
+      const int   curr_dim = BinaryTree::levelOf(curr) % point_traits<point_t>::numDims;
       const float curr_dim_dist = (&queryPoint.x)[curr_dim] - (&curr_node.x)[curr_dim];
       const int   curr_side = curr_dim_dist > 0.f;
       const int   curr_close_child = 2*curr + 1 + curr_side;
