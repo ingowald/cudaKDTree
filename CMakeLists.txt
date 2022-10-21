@@ -58,20 +58,34 @@ if (NOT CUKD_IS_SUBPROJECT)
   SET(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 endif()
 
+set(CMAKE_CUDA_ARCHITECTURES 70 75 86)
+if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.17)
+  # nothing to do, setting CMAKE_CUDA_ARCHITECTURES is hte way to go
+else()
+  foreach (arch IN ITEMS ${CMAKE_CUDA_ARCHITECTURES})
+#    message("status adding arch=${arch}")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${arch},code=sm_${arch}")
+  endforeach()
+endif()
+
 
 add_library(cudaKDTree INTERFACE)
 target_sources(cudaKDTree INTERFACE
   cukd/common.h
   cukd/builder.h
   cukd/fcp.h
+  cukd/knn.h
   )
 target_include_directories(cudaKDTree INTERFACE
 #target_link_libraries(cudaKDTree INTERFACE
   ${PROJECT_SOURCE_DIR}/
   )
 
-add_executable(cukd_test_float4 testing/float4.cu)
-target_link_libraries(cukd_test_float4 cudaKDTree)
+add_executable(cukd_test_float4-fcp testing/float4-fcp.cu)
+target_link_libraries(cukd_test_float4-fcp cudaKDTree)
+
+add_executable(cukd_test_float4-knn testing/float4-knn.cu)
+target_link_libraries(cukd_test_float4-knn cudaKDTree)
 
   
 
