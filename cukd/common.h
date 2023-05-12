@@ -334,7 +334,7 @@ namespace cukd {
       typename QueryPointInterface = TrivialPointInterface<query_point_t,scalar_t>,
       typename NodePointInterface = TrivialPointInterface<node_point_t,scalar_t>>
     inline __host__ __device__
-    query_point_t extractQueryDim(node_point_t node_pt) {
+    query_point_t extractPosition(node_point_t node_pt) {
       static_assert(
         point_traits<query_point_t>::numDims <=
           point_traits<node_point_t>::numDims,

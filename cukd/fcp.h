@@ -93,7 +93,10 @@ namespace cukd {
       const int  child = 2*curr+1;
       const bool from_child = (prev >= child);
       if (!from_child) {
-        float dist = distance(queryPoint,common::extractQueryDim<query_point_t,node_point_t,scalar_t,QueryPointInterface,NodePointInterface>(d_nodes[curr]));
+        query_point_t nodePosition
+          = common::extractPosition<query_point_t,node_point_t,scalar_t,
+                                    QueryPointInterface,NodePointInterface>(d_nodes[curr]);
+        float dist = distance(queryPoint,nodePosition);
         if (dist < closest_dist_found_so_far) {
           closest_dist_found_so_far = dist;
           closest_found_so_far      = curr;
