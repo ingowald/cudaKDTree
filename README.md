@@ -21,11 +21,11 @@ the given subtree, but that one isn't included yet - let me know if
 you need it.
 
 The builder is templated over the type of data points; to use it, for
-example, on float3 data, use thefollwing
+example, on float3 data, use the following
 
     cukd::buildTree<float3,float,3>(points[],numPoints);
 	
-To do the me on float4 data, use 
+To do the same on float4 data, use 
 
     cukd::buildTree<float4,float,4>(points[],numPoints);
 	
@@ -37,7 +37,7 @@ build as follows:
 	
     cukd::buildTree<float4,float,3>(points[],numPoints);
 	
-In this case, the biulder known that the structs provided by the user
+In this case, the builder known that the structs provided by the user
 are `float4`, but that the actual *points* are only *three* floats.
 
 The builder included in this repo makes use of thrust for sorting; it
@@ -55,8 +55,8 @@ radius can shrink during traversal). This traversal code is used in
 two examples: *fcp* (for find-closst-point) and *knn* (for k-nearest
 neighbors).
 
-For the *fct* example, you can, for example (assuming that points[]
-and numPoints describe a balanced kd-tree that was built as described
+For the *fct* example, you can, for example (assuming that `points[]`
+and `numPoints` describe a balanced kd-tree that was built as described
 abvoe), be done as such
 
     __global__ void myKernel(float3 *points, int numPoints, ... ) {
@@ -82,8 +82,8 @@ over a "container" used for storing the k-nearest points. One such
 container provided by this library is the `FixedCandidateList`, which
 implements a linear, sorted priority queue in which insertion cost is
 linear in the number of elements stored in the list, but where all
-list elements *should* end up in registers, whithout having to go to
-gmem; use this for small k's. Alternatively, the `HeapCandidateList`
+list elements *should* end up in registers, without having to go to
+gmem; use this for small `k`s. Alternatively, the `HeapCandidateList`
 organizes the closest k in a heap that has O(log k) insertion cost (vs
 O(k) for the fixed one), but which gets register-indirectly accessed
 and will thus generate some gmem traffic; use this for larger k where
