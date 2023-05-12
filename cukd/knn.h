@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "cukd/common.h"
 #include "cukd/fcp.h"
 
 namespace cukd {
@@ -116,16 +117,16 @@ namespace cukd {
   };
 
   /*! runs a k-nearest neighbor operation that tries to fill the
-      'currentlyClosest' candidate list (using the number of elemnt k
-      and max radius as provided by this class), using the provided
-      tree d_nodes with N points. The d_nodes array must be in
-      left-balanced kd-tree order. After this class the candidate list
-      will contain the k nearest elemnets; if less than k elements
-      were found some of the entries in the results list may point to
-      a point ID of -1. Return value of the function is the _square_
-      of the maximum distance among the k closest elements, if at k
-      were found; or the _square_ of the max search radius provided
-      for the query */
+    'currentlyClosest' candidate list (using the number of elemnt k
+    and max radius as provided by this class), using the provided
+    tree d_nodes with N points. The d_nodes array must be in
+    left-balanced kd-tree order. After this class the candidate list
+    will contain the k nearest elemnets; if less than k elements
+    were found some of the entries in the results list may point to
+    a point ID of -1. Return value of the function is the _square_
+    of the maximum distance among the k closest elements, if at k
+    were found; or the _square_ of the max search radius provided
+    for the query */
   template<typename point_t, typename CandidateList>
   inline __device__
   float knn(CandidateList &currentlyClosest,
@@ -163,7 +164,7 @@ namespace cukd {
       }
 
       const auto &curr_node = d_nodes[curr];
-      const int   curr_dim = BinaryTree::levelOf(curr) % point_traits<point_t>::numDims;
+      const int   curr_dim = BinaryTree::levelOf(curr) % common::point_traits<point_t>::numDims;
       const float curr_dim_dist = (&queryPoint.x)[curr_dim] - (&curr_node.x)[curr_dim];
       const int   curr_side = curr_dim_dist > 0.f;
       const int   curr_close_child = 2*curr + 1 + curr_side;
