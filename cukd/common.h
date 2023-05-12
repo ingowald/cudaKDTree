@@ -83,7 +83,7 @@
 // #endif
 
 //#ifdef __WIN32__
-//#define  __PRETTY_FUNCTION__ __FUNCTION__ 
+//#define  __PRETTY_FUNCTION__ __FUNCTION__
 //#endif
 #if defined(_MSC_VER)
 //&& !defined(__PRETTY_FUNCTION__)
@@ -152,7 +152,7 @@
 #endif
 
 #ifdef _MSC_VER
-# define CUKD_ALIGN(alignment) __declspec(align(alignment)) 
+# define CUKD_ALIGN(alignment) __declspec(align(alignment))
 #else
 # define CUKD_ALIGN(alignment) __attribute__((aligned(alignment)))
 #endif
@@ -175,12 +175,12 @@ namespace cukd {
 
     inline __both__ float rcp(float f)      { return 1.f/f; }
     inline __both__ double rcp(double d)    { return 1./d; }
-  
+
     inline __both__ int32_t divRoundUp(int32_t a, int32_t b) { return (a+b-1)/b; }
     inline __both__ uint32_t divRoundUp(uint32_t a, uint32_t b) { return (a+b-1)/b; }
     inline __both__ int64_t divRoundUp(int64_t a, int64_t b) { return (a+b-1)/b; }
     inline __both__ uint64_t divRoundUp(uint64_t a, uint64_t b) { return (a+b-1)/b; }
-  
+
     using ::sin; // this is the double version
     using ::cos; // this is the double version
 
@@ -198,18 +198,18 @@ namespace cukd {
       inline __both__ float sqrt(const float f)     { return ::sqrtf(f); }
       inline __both__ double sqrt(const double d)   { return ::sqrt(d); }
 #endif
-      
+
       inline __both__ float rsqrt(const float f)    { return 1.f/cukd::common::polymorphic::sqrt(f); }
       inline __both__ double rsqrt(const double d)  { return 1./cukd::common::polymorphic::sqrt(d); }
     }
-    
+
 
 #ifdef __WIN32__
 #  define osp_snprintf sprintf_s
 #else
 #  define osp_snprintf snprintf
 #endif
-  
+
     /*! added pretty-print function for large numbers, printing 10000000 as "10M" instead */
     inline std::string prettyDouble(const double val) {
       const double absVal = abs(val);
@@ -230,7 +230,7 @@ namespace cukd {
 
       return result;
     }
-  
+
 
     /*! return a nicely formatted number as in "3.4M" instead of
       "3400000", etc, using mulitples of thousands (K), millions
@@ -272,7 +272,7 @@ namespace cukd {
       }
       return buf;
     }
-  
+
     inline double getCurrentTime()
     {
 #ifdef _WIN32
@@ -297,7 +297,55 @@ namespace cukd {
     {
       return s.substr(s.size()-suffix.size()) == suffix;
     }
-    
+
+    template<typename T> struct point_traits;
+
+    template<> struct point_traits<float3> { enum { numDims = 3 }; };
+    template<> struct point_traits<float4> { enum { numDims = 4 }; };
+
+    /*! Trivial implementation of the point interface for those kinds of
+      point types where the first K elements are the K-dimensional
+      coordinates that we buid the K-d tree over; the point_t struct
+      may contain additional data at the end, too (ie, you can build,
+      for exapmle, a 2-d tree over a float4 point type - in this case
+      the x and y coordinates are the point coordinates, and z and w
+      are any other payload that does not get considered during the
+      (2-d) construction) */
+    template<typename _point_t, typename scalar_t>
+    struct TrivialPointInterface
+    {
+      typedef _point_t point_t;
+      inline static __host__ __device__
+      scalar_t get(const point_t &p, int dim) { return ((scalar_t*)&p)[dim]; }
+      inline static __host__ __device__
+      scalar_t& get(point_t &p, int dim) { return ((scalar_t*)&p)[dim]; }
+    };
+
+    /*! Extract a query_point_t from the node_point_t.
+     * The dimension of the query_point_t must be no larger than the dimension
+     * of the node_point_t.
+     * For example if the node_point_t is a float4 and the query_point_t is a
+     * float3, then it returns a float3 with the first 3 dimensions of the float4.
+     */
+    template<
+      typename query_point_t = float4,
+      typename node_point_t = float4,
+      typename scalar_t = float,
+      typename QueryPointInterface = TrivialPointInterface<query_point_t,scalar_t>,
+      typename NodePointInterface = TrivialPointInterface<node_point_t,scalar_t>>
+    inline __host__ __device__
+    query_point_t extractQueryDim(node_point_t node_pt) {
+      static_assert(
+        point_traits<query_point_t>::numDims <=
+          point_traits<node_point_t>::numDims,
+        "dimension of query point must be smaller than dimension of node point");
+      query_point_t res;
+      for(int i=0; i<point_traits<query_point_t>::numDims; ++i) {
+        QueryPointInterface::get(res, i) = NodePointInterface::get(node_pt, i);
+      }
+      return res;
+    }
+
   } // ::cukd::common
 } // ::cukd
 

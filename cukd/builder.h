@@ -31,27 +31,11 @@
 namespace cukd {
 
   typedef uint32_t tag_t;
-  
+
   // ==================================================================
   // INTERFACE SECTION
   // ==================================================================
 
-  /*! Trivial implementation of the point interface for those kinds of
-    point types where the first K elements are the K-dimensional
-    coordinates that we buid the K-d tree over; the point_t struct
-    may contain additional data at the end, too (ie, you can build,
-    for exapmle, a 2-d tree over a float4 point type - in this case
-    the x and y coordinates are the point coordinates, and z and w
-    are any other payload that does not get considered during the
-    (2-d) construction) */
-  template<typename _point_t, typename scalar_t>
-  struct TrivialPointInterface
-  {
-    typedef _point_t point_t;
-    inline static __device__
-    scalar_t get(const point_t &p, int dim) { return ((scalar_t*)&p)[dim]; }
-  };
-  
   /*! builds a regular, "round-robin" style k-d tree over the given
     (device-side) array of points. Round-robin in this context means
     that the first dimension is sorted along x, the second along y,
@@ -64,7 +48,7 @@ namespace cukd {
     scalar_t=GetElement::get(point_t,dim) method. The default
     TrivialPointInterface simply assumes that whatever type point_t
     is used, its nuMDims coordinates are stored at the beginning of
-    this class, in array order. 
+    this class, in array order.
 
     Example 1: To build a 2D k-dtree over a CUDA int2 type (no other
     payload than the two coordinates):
@@ -81,7 +65,7 @@ namespace cukd {
   template<typename point_t,
            typename scalar_t,
            int      numDims=sizeof(point_t)/sizeof(scalar_t),
-           typename GetElement = TrivialPointInterface<point_t,scalar_t>>
+           typename GetElement = common::TrivialPointInterface<point_t,scalar_t>>
   void buildTree(point_t *d_points, int numPoints);
 
   // ==================================================================
@@ -99,7 +83,7 @@ namespace cukd {
     inline __device__ bool operator()
     (const thrust::tuple<tag_t, typename PointInterface::point_t> &a,
      const thrust::tuple<tag_t, typename PointInterface::point_t> &b);
-    
+
     const int dim;
   };
 
@@ -118,7 +102,7 @@ namespace cukd {
   {
     const int gid = threadIdx.x+blockIdx.x*blockDim.x;
     if (gid >= numPoints) return;
-    
+
     const int numSettled = FullBinaryTreeOf(L).numNodes();
     if (gid < numSettled) return;
 
@@ -129,7 +113,7 @@ namespace cukd {
     // computed the expected positoin of the pivot element for the
     // given subtree when using our speific array layout.
     const int pivotPos = ArrayLayoutInStep(L,numPoints).pivotPosOf(subtree);
-    
+
     if (gid < pivotPos)
       // point is to left of pivot -> must be smaller or equal to
       // pivot in given dim -> must go to left subtree
@@ -172,7 +156,7 @@ namespace cukd {
     printf("\n");
   }
 #endif
-  
+
   template<typename point_t,
            typename scalar_t,
            int      numDims,
@@ -189,7 +173,7 @@ namespace cukd {
 
     // check for invalid input, and return gracefully if so
     if (numPoints < 1) return;
-    
+
     /* the helper array  we use to store each node's subtree ID in */
     thrust::device_vector<tag_t> tags(numPoints);
     /* to kick off the build, every element is in the only
@@ -213,13 +197,13 @@ namespace cukd {
 #if KDTREE_BUILDER_LOGGING
     print("init\n",-1,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
-  
+
     /* now build each level, one after another, cycling through the
        dimensoins */
     for (int level=0;level<deepestLevel;level++) {
       thrust::sort(thrust::device,begin,end,
                    ZipCompare<GetElement>((level)%numDims));
-      
+
 #if KDTREE_BUILDER_LOGGING
     print("step %i sort\n",level,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
@@ -227,7 +211,7 @@ namespace cukd {
       const int numSettled = FullBinaryTreeOf(level).numNodes();
       updateTag<<<common::divRoundUp(numPoints,blockSize),blockSize>>>
         (thrust::raw_pointer_cast(tags.data()),numPoints,level);
-      
+
 #if KDTREE_BUILDER_LOGGING
     print("step %i tags updated\n",level,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
@@ -242,7 +226,7 @@ namespace cukd {
     print("final sort\n",-1,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
   }
-  
+
   /*! the actual comparison operator; will perform a
     'zip'-comparison in that the first element is the major sort
     order, and the second the minor one (for those of same major

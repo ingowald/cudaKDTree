@@ -19,59 +19,60 @@
 #pragma once
 
 #include "cukd/common.h"
+#include "cukd/helpers.h"
 
 namespace cukd {
 
-  template<typename T> struct point_traits;
-
-  template<> struct point_traits<float3> { enum { numDims = 3 }; };
-  template<> struct point_traits<float4> { enum { numDims = 4 }; };
-  
   inline __device__ __host__
   float dot(float4 a, float4 b) { return a.x*b.x+a.y*b.y+a.z*b.z+a.w*b.w; }
-  
+
   inline __device__ __host__
   float4 sub(float4 a, float4 b) { return make_float4(a.x-b.x,a.y-b.y,a.z-b.z,a.w-b.w); }
-  
-  inline __host__ __device__ 
+
+  inline __host__ __device__
   float sqr_distance(float4 a, float4 b)
   {
-    return dot(sub(a,b),sub(a,b)); 
+    return dot(sub(a,b),sub(a,b));
   }
 
-  inline __host__ __device__ 
+  inline __host__ __device__
   float distance(float4 a, float4 b)
   {
     return sqrtf(sqr_distance(a,b));
   }
-  
+
   inline __device__ __host__
   float dot(float3 a, float3 b) { return a.x*b.x+a.y*b.y+a.z*b.z; }
-  
+
   inline __device__ __host__
   float3 sub(float3 a, float3 b) { return make_float3(a.x-b.x,a.y-b.y,a.z-b.z); }
-  
-  inline __host__ __device__ 
+
+  inline __host__ __device__
   float sqr_distance(float3 a, float3 b)
   {
-    return dot(sub(a,b),sub(a,b)); 
+    return dot(sub(a,b),sub(a,b));
   }
 
-  inline __host__ __device__ 
+  inline __host__ __device__
   float distance(float3 a, float3 b)
   {
     return sqrtf(sqr_distance(a,b));
   }
 
-  template<typename point_t = float4>
+  template<
+    typename query_point_t = float4,
+    typename node_point_t = float4,
+    typename scalar_t = float,
+    typename QueryPointInterface = common::TrivialPointInterface<query_point_t,scalar_t>,
+    typename NodePointInterface = common::TrivialPointInterface<node_point_t,scalar_t>>
   inline __device__
-  int fcp(float4 queryPoint,
-          const point_t *d_nodes,
+  int fcp(query_point_t queryPoint,
+          const node_point_t *d_nodes,
           int N)
   {
     int   closest_found_so_far = -1;
     float closest_dist_found_so_far = CUDART_INF;
-    
+
     int prev = -1;
     int curr = 0;
 
@@ -86,13 +87,13 @@ namespace cukd {
         // done.
         prev = curr;
         curr = parent;
-        
+
         continue;
       }
       const int  child = 2*curr+1;
       const bool from_child = (prev >= child);
       if (!from_child) {
-        float dist = distance(queryPoint,d_nodes[curr]);
+        float dist = distance(queryPoint,common::extractQueryDim<query_point_t,node_point_t,scalar_t,QueryPointInterface,NodePointInterface>(d_nodes[curr]));
         if (dist < closest_dist_found_so_far) {
           closest_dist_found_so_far = dist;
           closest_found_so_far      = curr;
@@ -100,12 +101,12 @@ namespace cukd {
       }
 
       const auto &curr_node = d_nodes[curr];
-      const int   curr_dim = BinaryTree::levelOf(curr) % point_traits<point_t>::numDims;
+      const int   curr_dim = BinaryTree::levelOf(curr) % common::point_traits<query_point_t>::numDims;
       const float curr_dim_dist = (&queryPoint.x)[curr_dim] - (&curr_node.x)[curr_dim];
       const int   curr_side = curr_dim_dist > 0.f;
       const int   curr_close_child = 2*curr + 1 + curr_side;
       const int   curr_far_child   = 2*curr + 2 - curr_side;
-      
+
       int next = -1;
       if (prev == curr_close_child)
         // if we came from the close child, we may still have to check
@@ -140,11 +141,11 @@ namespace cukd {
         // child, arrive at the root, and decide to go to the parent of
         // the root ... while means we're done.
         return closest_found_so_far;
-    
+
       prev = curr;
       curr = next;
     }
   }
-  
+
 } // ::cukd
 
