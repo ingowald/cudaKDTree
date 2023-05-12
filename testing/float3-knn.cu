@@ -190,6 +190,7 @@ int main(int ac, const char **av)
   int nPoints = 173;
   bool verify = false;
   float maxQueryRadius = std::numeric_limits<float>::infinity();
+  size_t nQueries = 10*1000*1000;
   int nRepeats = 1;
   for (int i=1;i<ac;i++) {
     std::string arg = av[i];
@@ -199,6 +200,8 @@ int main(int ac, const char **av)
       verify = true;
     else if (arg == "-nr")
       nRepeats = atoi(av[++i]);
+    else if (arg == "-nq")
+      nQueries = atoi(av[++i]);
     else if (arg == "-r")
       maxQueryRadius = std::stof(av[++i]);
     else
@@ -216,7 +219,6 @@ int main(int ac, const char **av)
     std::cout << "done building tree, took " << prettyDouble(t1-t0) << "s" << std::endl;
   }
 
-  size_t nQueries = 10*1000*1000;
   float3 *d_queries = generatePoints(nQueries);
   float  *d_results;
   CUKD_CUDA_CALL(MallocManaged((void**)&d_results,nQueries*sizeof(float)));

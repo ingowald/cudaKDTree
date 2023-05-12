@@ -83,12 +83,15 @@ int main(int ac, const char **av)
   bool verify = false;
   // float maxQueryRadius = std::numeric_limits<float>::infinity();
   int nRepeats = 1;
+  size_t nQueries = 10000000;
   for (int i=1;i<ac;i++) {
     std::string arg = av[i];
     if (arg[0] != '-')
       nPoints = std::stoi(arg);
     else if (arg == "-v")
       verify = true;
+    else if (arg == "-nq")
+      nQueries = atoi(av[++i]);
     else if (arg == "-nr")
       nRepeats = atoi(av[++i]);
     // else if (arg == "-r")
@@ -116,7 +119,6 @@ int main(int ac, const char **av)
       std::cout << "... passed" << std::endl;
   }
 
-  size_t nQueries = 10000000;
   float4 *d_queries = generatePoints(nQueries);
   int    *d_results;
   CUKD_CUDA_CALL(MallocManaged((void**)&d_results,nQueries*sizeof(int)));
