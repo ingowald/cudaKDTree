@@ -59,6 +59,26 @@ namespace cukd {
     return sqrtf(sqr_distance(a,b));
   }
 
+  // Structure of parameters to control the behavior of the FCP search.
+  // By default FCP will perform an exact nearest neighbor search, but the
+  // following parameters can be set to cut some corners and make the search
+  // approximate in favor of speed.
+  struct FcpSearchParams {
+    // Controls how many "far branches" of the tree will be searched. If set to
+    // 0 the algorithm will only go down the tree once following the nearest
+    // branch each time.
+    int far_node_inspect_budget = INT_MAX;
+
+    // Controls when to go down the far branch: only follow a far branch if
+    // (1+eps) * D is within the search radius, where D is the distance to the
+    // far node. Similar to FLANN eps parameter.
+    float eps = 0;
+
+    // Controls when to go down the far branch: only go down the far branch if
+    // the distance to the far node is larger than this search radius.
+    float max_far_node_search_radius = 1e9;
+  };
+
   template<
     typename query_point_t = float4,
     typename node_point_t = float4,
@@ -68,10 +88,15 @@ namespace cukd {
   inline __device__
   int fcp(query_point_t queryPoint,
           const node_point_t *d_nodes,
-          int N)
+          int N,
+          FcpSearchParams params = FcpSearchParams{})
   {
+    const auto max_far_node_search_radius_sqr =
+      params.max_far_node_search_radius * params.max_far_node_search_radius;
+    const auto epsErr = 1 + params.eps;
+
     int   closest_found_so_far = -1;
-    float closest_dist_found_so_far = CUDART_INF;
+    float closest_dist_sqr_found_so_far = CUDART_INF;
 
     int prev = -1;
     int curr = 0;
@@ -90,20 +115,20 @@ namespace cukd {
 
         continue;
       }
+      const auto &curr_node = d_nodes[curr];
       const int  child = 2*curr+1;
       const bool from_child = (prev >= child);
       if (!from_child) {
-        query_point_t nodePosition
+        const auto nodePosition
           = common::extractPosition<query_point_t,node_point_t,scalar_t,
-                                    QueryPointInterface,NodePointInterface>(d_nodes[curr]);
-        float dist = distance(queryPoint,nodePosition);
-        if (dist < closest_dist_found_so_far) {
-          closest_dist_found_so_far = dist;
-          closest_found_so_far      = curr;
+                                    QueryPointInterface,NodePointInterface>(curr_node);
+        const auto dist_sqr = sqr_distance(queryPoint,nodePosition);
+        if (dist_sqr < closest_dist_sqr_found_so_far) {
+          closest_dist_sqr_found_so_far = dist_sqr;
+          closest_found_so_far          = curr;
         }
       }
 
-      const auto &curr_node = d_nodes[curr];
       const int   curr_dim = BinaryTree::levelOf(curr) % common::point_traits<query_point_t>::numDims;
       const float curr_dim_dist = (&queryPoint.x)[curr_dim] - (&curr_node.x)[curr_dim];
       const int   curr_side = curr_dim_dist > 0.f;
@@ -116,7 +141,7 @@ namespace cukd {
         // the far side - but only if this exists, and if far half of
         // current space if even within search radius.
         next
-          = ((curr_far_child<N) && (fabsf(curr_dim_dist) < closest_dist_found_so_far))
+          = ((curr_far_child<N) && ((curr_dim_dist * curr_dim_dist) * epsErr < min(max_far_node_search_radius_sqr, closest_dist_sqr_found_so_far)) && (--params.far_node_inspect_budget>=0))
           ? curr_far_child
           : parent;
       else if (prev == curr_far_child)
