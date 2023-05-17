@@ -66,7 +66,7 @@ namespace cukd {
            typename scalar_t,
            int      numDims=sizeof(point_t)/sizeof(scalar_t),
            typename GetElement = common::TrivialPointInterface<point_t,scalar_t>>
-  void buildTree(point_t *d_points, int numPoints);
+  void buildTree(point_t *d_points, int numPoints, cudaStream_t stream = 0);
 
   // ==================================================================
   // IMPLEMENTATION SECTION
@@ -162,7 +162,8 @@ namespace cukd {
            int      numDims,
            typename GetElement>
   void buildTree(point_t *d_points,
-                 int numPoints)
+                 int numPoints,
+                 cudaStream_t stream)
   {
     /* thrust helper typedefs for the zip iterator, to make the code
        below more readable */
@@ -175,10 +176,11 @@ namespace cukd {
     if (numPoints < 1) return;
 
     /* the helper array  we use to store each node's subtree ID in */
+    // TODO allocate in stream?
     thrust::device_vector<tag_t> tags(numPoints);
     /* to kick off the build, every element is in the only
        level-0 subtree there is, namely subtree number 0... duh */
-    thrust::fill(tags.begin(),tags.end(),0);
+    thrust::fill(thrust::device.on(stream),tags.begin(),tags.end(),0);
 
     /* create the zip iterators we use for zip-sorting the tag and
        points array */
@@ -195,24 +197,27 @@ namespace cukd {
     const int deepestLevel = numLevels-1;
 
 #if KDTREE_BUILDER_LOGGING
+    cudaStreamSynchronize(stream);
     print("init\n",-1,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
 
     /* now build each level, one after another, cycling through the
        dimensoins */
     for (int level=0;level<deepestLevel;level++) {
-      thrust::sort(thrust::device,begin,end,
+      thrust::sort(thrust::device.on(stream),begin,end,
                    ZipCompare<GetElement>((level)%numDims));
 
 #if KDTREE_BUILDER_LOGGING
+    cudaStreamSynchronize(stream);
     print("step %i sort\n",level,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
       const int blockSize = 32;
       const int numSettled = FullBinaryTreeOf(level).numNodes();
-      updateTag<<<common::divRoundUp(numPoints,blockSize),blockSize>>>
+      updateTag<<<common::divRoundUp(numPoints,blockSize),blockSize,1,stream>>>
         (thrust::raw_pointer_cast(tags.data()),numPoints,level);
 
 #if KDTREE_BUILDER_LOGGING
+    cudaStreamSynchronize(stream);
     print("step %i tags updated\n",level,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
     }
@@ -220,9 +225,10 @@ namespace cukd {
        element has its final (and unique) nodeID stored in the tag[]
        array, so the dimension we're sorting in really won't matter
        any more */
-    thrust::sort(thrust::device,begin,end,
+    thrust::sort(thrust::device.on(stream),begin,end,
                  ZipCompare<GetElement>((deepestLevel)%numDims));
 #if KDTREE_BUILDER_LOGGING
+    cudaStreamSynchronize(stream);
     print("final sort\n",-1,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
   }
