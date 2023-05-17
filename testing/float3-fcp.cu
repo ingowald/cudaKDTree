@@ -18,44 +18,64 @@
 // fcp = "find closest point" query
 #include "cukd/fcp.h"
 
-float4 *generatePoints(int N)
+/*! if enabled, we use the traversal variant that tracks closest
+    corner to far-side subtrees on the stack; requires a stack, and
+    will be slower for simple caes... but much more stable for certain
+    queries */
+#define FCP2 1
+
+float3 *generatePoints(int N)
 {
   std::cout << "generating " << N <<  " points" << std::endl;
-  float4 *d_points = 0;
-  CUKD_CUDA_CALL(MallocManaged((void**)&d_points,N*sizeof(float4)));
+  float3 *d_points = 0;
+  CUKD_CUDA_CALL(MallocManaged((void**)&d_points,N*sizeof(float3)));
   for (int i=0;i<N;i++) {
     d_points[i].x = (float)drand48();
     d_points[i].y = (float)drand48();
     d_points[i].z = (float)drand48();
-    d_points[i].w = (float)drand48();
   }
   return d_points;
 }
 
 __global__ void d_fcp(int *d_results,
-                    float4 *d_queries,
-                    int numQueries,
-                    float4 *d_nodes,
-                    int numNodes)
+                      float3 *d_queries,
+                      int numQueries,
+#if FCP2
+                      const cukd::common::box_t<float3> *d_bounds,
+#endif
+                      float3 *d_nodes,
+                      int numNodes)
 {
   int tid = threadIdx.x+blockIdx.x*blockDim.x;
   if (tid >= numQueries) return;
 
-  d_results[tid] = cukd::fcp(d_queries[tid],d_nodes,numNodes);
+  d_results[tid] = cukd::fcp(d_queries[tid],
+#if FCP2
+                             d_bounds,
+#endif
+                             d_nodes,numNodes);
 }
 
 void fcp(int *d_results,
-         float4 *d_queries,
+         float3 *d_queries,
          int numQueries,
-         float4 *d_nodes,
+#if FCP2
+         const cukd::common::box_t<float3> *d_bounds,
+#endif
+         float3 *d_nodes,
          int numNodes)
 {
   int bs = 128;
   int nb = cukd::common::divRoundUp(numQueries,bs);
-  d_fcp<<<nb,bs>>>(d_results,d_queries,numQueries,d_nodes,numNodes);
+  d_fcp<<<nb,bs>>>(d_results,
+                   d_queries,numQueries,
+#if FCP2
+                   d_bounds,
+#endif
+                   d_nodes,numNodes);
 }
 
-bool noneBelow(float4 *d_points, int N, int curr, int dim, float value)
+bool noneBelow(float3 *d_points, int N, int curr, int dim, float value)
 {
   if (curr >= N) return true;
   return
@@ -64,7 +84,7 @@ bool noneBelow(float4 *d_points, int N, int curr, int dim, float value)
     && noneBelow(d_points,N,2*curr+2,dim,value);
 }
 
-bool noneAbove(float4 *d_points, int N, int curr, int dim, float value)
+bool noneAbove(float3 *d_points, int N, int curr, int dim, float value)
 {
   if (curr >= N) return true;
   return
@@ -73,11 +93,11 @@ bool noneAbove(float4 *d_points, int N, int curr, int dim, float value)
     && noneAbove(d_points,N,2*curr+2,dim,value);
 }
 
-bool checkTree(float4 *d_points, int N, int curr=0)
+bool checkTree(float3 *d_points, int N, int curr=0)
 {
   if (curr >= N) return true;
 
-  int dim = cukd::BinaryTree::levelOf(curr)%4;
+  int dim = cukd::BinaryTree::levelOf(curr)%3;
   float value = (&d_points[curr].x)[dim];
   
   if (!noneAbove(d_points,N,2*curr+1,dim,value))
@@ -119,12 +139,16 @@ int main(int ac, const char **av)
       throw std::runtime_error("known cmdline arg "+arg);
   }
   
-  float4 *d_points = generatePoints(nPoints);
-  
+  float3 *d_points = generatePoints(nPoints);
+#if FCP2
+  cukd::common::box_t<float3> *d_bounds;
+  cudaMalloc((void**)&d_bounds,sizeof(cukd::common::box_t<float3>));
+  cukd::computeBounds<float3,float3>(d_bounds,d_points,nPoints);
+#endif
   {
     double t0 = getCurrentTime();
     std::cout << "calling builder..." << std::endl;
-    cukd::buildTree<float4>(d_points,nPoints);
+    cukd::buildTree<float3>(d_points,nPoints);
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
     std::cout << "done building tree, took " << prettyDouble(t1-t0) << "s" << std::endl;
@@ -138,9 +162,9 @@ int main(int ac, const char **av)
       std::cout << "... passed" << std::endl;
   }
 
-  float4 *d_queries = generatePoints(nQueries);
+  float3 *d_queries = generatePoints(nQueries);
   for (int i=0;i<nQueries;i++) {
-    float4 &p = d_queries[i];
+    float3 &p = d_queries[i];
     switch (testCaseID) {
     case 1:
       p.x = p.x * 0.8 + 0.1;
@@ -166,7 +190,11 @@ int main(int ac, const char **av)
   {
     double t0 = getCurrentTime();
     for (int i=0;i<nRepeats;i++) {
-      fcp(d_results,d_queries,nQueries,d_points,nPoints);
+      fcp(d_results,d_queries,nQueries,
+#if FCP2
+          d_bounds,
+#endif
+          d_points,nPoints);
     }
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
@@ -179,18 +207,17 @@ int main(int ac, const char **av)
     for (int i=0;i<nQueries;i++) {
       if (d_results[i] == -1) continue;
       
-      float4 qp = d_queries[i];
+      float3 qp = d_queries[i];
       float reportedDist = cukd::distance(qp,d_points[d_results[i]]);
       for (int j=0;j<nPoints;j++) {
         float dist_j = cukd::distance(qp,d_points[j]);
         if (dist_j < reportedDist) {
-          printf("for query %i: found offending point %i (%f %f %f %f) with dist %f (vs %f)\n",
+          printf("for query %i: found offending point %i (%f %f %f) with dist %f (vs %f)\n",
                  i,
                  j,
                  d_points[j].x,
                  d_points[j].y,
                  d_points[j].z,
-                 d_points[j].w,
                  dist_j,
                  reportedDist);
           

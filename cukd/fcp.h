@@ -24,6 +24,9 @@
 namespace cukd {
 
   inline __device__ __host__
+  float sqr(float f) { return f * f; }
+
+  inline __device__ __host__
   float dot(float4 a, float4 b) { return a.x*b.x+a.y*b.y+a.z*b.z+a.w*b.w; }
 
   inline __device__ __host__
@@ -31,6 +34,11 @@ namespace cukd {
 
   inline __host__ __device__
   float sqr_distance(float4 a, float4 b)
+  {
+    return dot(sub(a,b),sub(a,b));
+  }
+  inline __host__ __device__
+  float sqrDistance(float4 a, float4 b)
   {
     return dot(sub(a,b),sub(a,b));
   }
@@ -47,8 +55,15 @@ namespace cukd {
   inline __device__ __host__
   float3 sub(float3 a, float3 b) { return make_float3(a.x-b.x,a.y-b.y,a.z-b.z); }
 
+  /*! old naming */
   inline __host__ __device__
   float sqr_distance(float3 a, float3 b)
+  {
+    return dot(sub(a,b),sub(a,b));
+  }
+
+  inline __host__ __device__
+  float sqrDistance(float3 a, float3 b)
   {
     return dot(sub(a,b),sub(a,b));
   }
@@ -72,27 +87,28 @@ namespace cukd {
     // Controls when to go down the far branch: only follow a far branch if
     // (1+eps) * D is within the search radius, where D is the distance to the
     // far node. Similar to FLANN eps parameter.
-    float eps = 0;
+    float eps = 0.f;
 
     // Controls when to go down the far branch: only go down the far branch if
     // the distance to the far node is larger than this search radius.
-    float max_far_node_search_radius = 1e9;
+    float max_far_node_search_radius = 1e9f;
   };
 
   template<
-    typename query_point_t = float4,
+    typename math_point_t = float4,
     typename node_point_t = float4,
-    typename scalar_t = float,
-    typename QueryPointInterface = common::TrivialPointInterface<query_point_t,scalar_t>,
-    typename NodePointInterface = common::TrivialPointInterface<node_point_t,scalar_t>>
+    typename QueryPointInterface = common::TrivialPointInterface<math_point_t>,
+    typename NodePointInterface = common::TrivialPointInterface<node_point_t>>
   inline __device__
-  int fcp(query_point_t queryPoint,
+  int fcp(math_point_t queryPoint,
           const node_point_t *d_nodes,
           int N,
           FcpSearchParams params = FcpSearchParams{})
   {
-    const auto max_far_node_search_radius_sqr =
-      params.max_far_node_search_radius * params.max_far_node_search_radius;
+    using scalar_t = typename point_traits<math_point_t>::scalar_t;
+    const auto max_far_node_search_radius_sqr
+      = params.max_far_node_search_radius
+      * params.max_far_node_search_radius;
     const auto epsErr = 1 + params.eps;
 
     int   closest_found_so_far = -1;
@@ -120,7 +136,7 @@ namespace cukd {
       const bool from_child = (prev >= child);
       if (!from_child) {
         const auto nodePosition
-          = common::extractPosition<query_point_t,node_point_t,scalar_t,
+          = common::extractPosition<math_point_t,node_point_t,scalar_t,
                                     QueryPointInterface,NodePointInterface>(curr_node);
         const auto dist_sqr = sqr_distance(queryPoint,nodePosition);
         if (dist_sqr < closest_dist_sqr_found_so_far) {
@@ -129,7 +145,7 @@ namespace cukd {
         }
       }
 
-      const int   curr_dim = BinaryTree::levelOf(curr) % common::point_traits<query_point_t>::numDims;
+      const int   curr_dim = BinaryTree::levelOf(curr) % common::point_traits<math_point_t>::numDims;
       const float curr_dim_dist = (&queryPoint.x)[curr_dim] - (&curr_node.x)[curr_dim];
       const int   curr_side = curr_dim_dist > 0.f;
       const int   curr_close_child = 2*curr + 1 + curr_side;
@@ -164,7 +180,7 @@ namespace cukd {
           : parent;
 
       if (next == -1)
-      // if (curr == 0 && from_child)
+        // if (curr == 0 && from_child)
         // this can only (and will) happen if and only if we come from a
         // child, arrive at the root, and decide to go to the parent of
         // the root ... while means we're done.
@@ -175,5 +191,71 @@ namespace cukd {
     }
   }
 
+  /*1 project a point into a boundinx box */
+  template<typename math_point_t, typename node_point_t>
+  inline __device__ 
+  int fcp(math_point_t queryPoint, 
+          const common::box_t<math_point_t> *d_bounds,
+          const node_point_t *d_nodes,
+          int numPoints,
+          FcpSearchParams params = FcpSearchParams{})
+  {
+    using scalar_t = typename point_traits<math_point_t>::scalar_t;
+    scalar_t cullDist = sqr(params.max_far_node_search_radius);
+    int   closestID = -1;
+    
+    struct StackEntry {
+      math_point_t closestCorner;
+      int          nodeID;
+    };
+    /* can do at most 2**30 points... */
+    StackEntry  stackBase[30];
+    StackEntry *stackPtr = stackBase;
+
+    int nodeID = 0;
+    float3 closestPointOnSubtreeBounds = project(*d_bounds,queryPoint);
+    if (sqrDistance(queryPoint,closestPointOnSubtreeBounds) > cullDist)
+      return closestID;
+    
+
+    while (true) {
+      if (nodeID >= numPoints) {
+        while (true) {
+          if (stackPtr == stackBase)
+            return closestID;
+          --stackPtr;
+          closestPointOnSubtreeBounds = stackPtr->closestCorner;
+          if (sqrDistance(closestPointOnSubtreeBounds,queryPoint) > cullDist)
+            continue;
+          nodeID = stackPtr->nodeID;
+          break;
+        }
+      }
+      const int dim    = BinaryTree::levelOf(nodeID) % common::point_traits<math_point_t>::numDims;
+      const auto node  = d_nodes[nodeID];
+      const float sqrDist = sqrDistance(node,queryPoint);
+      if (sqrDist < cullDist) {
+        cullDist  = sqrDist;
+        closestID = nodeID;
+      }
+
+      const float node_dim   = getCoord(node,dim);
+      const float query_dim  = getCoord(queryPoint,dim);
+      const bool  leftIsClose = query_dim < node_dim;
+      const int   lChild = 2*nodeID+1;
+      const int   rChild = lChild+1;
+
+      float3 farSideCorner = closestPointOnSubtreeBounds;
+      const int farChild = leftIsClose?rChild:lChild;
+      setCoord(farSideCorner,dim,node_dim);
+      if (farChild < numPoints && sqrDistance(farSideCorner,queryPoint) <= cullDist) {
+        stackPtr->closestCorner = farSideCorner;
+        stackPtr->nodeID = farChild;
+        stackPtr++;
+      }
+      
+      nodeID = leftIsClose?lChild:rChild;
+    }
+  }
 } // ::cukd
 

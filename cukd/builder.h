@@ -23,6 +23,7 @@
 #include <thrust/execution_policy.h>
 #include <thrust/fill.h>
 #include <thrust/sort.h>
+#include <cuda.h>
 #include <thrust/binary_search.h>
 #include <device_launch_parameters.h>
 #include <thrust/random/linear_congruential_engine.h>
@@ -30,8 +31,10 @@
 
 namespace cukd {
 
-  typedef uint32_t tag_t;
+  typedef uint32_t tag_t;  
 
+  using common::point_traits;
+  
   // ==================================================================
   // INTERFACE SECTION
   // ==================================================================
@@ -62,12 +65,18 @@ namespace cukd {
 
     buildKDTree<float4,float,1>(...);
   */
-  template<typename point_t,
-           typename scalar_t,
-           int      numDims=sizeof(point_t)/sizeof(scalar_t),
-           typename GetElement = common::TrivialPointInterface<point_t,scalar_t>>
-  void buildTree(point_t *d_points, int numPoints, cudaStream_t stream = 0);
+  template<typename data_point_t,
+           typename GetElement = common::TrivialPointInterface<data_point_t>>
+  void buildTree(data_point_t *d_points, int numPoints, cudaStream_t stream = 0);
 
+  template<typename math_point_t,
+           typename data_point_t = math_point_t,
+           typename GetElement = common::TrivialPointInterface<data_point_t>>
+  void computeBounds(common::box_t<math_point_t> *d_bounds,
+                     data_point_t *d_points,
+                     int numPoints,
+                     cudaStream_t stream=0);
+  
   // ==================================================================
   // IMPLEMENTATION SECTION
   // ==================================================================
@@ -93,12 +102,12 @@ namespace cukd {
      update each of these tags to either left or right child (or root
      node) of given subtree*/
   __global__
-  /*inline*/ void updateTag(/*! array of tags we need to update */
-                        tag_t *tag,
-                        /*! num elements in the tag[] array */
-                        int numPoints,
-                        /*! which step we're in             */
-                        int L)
+  void updateTag(/*! array of tags we need to update */
+                 tag_t *tag,
+                 /*! num elements in the tag[] array */
+                 int numPoints,
+                 /*! which step we're in             */
+                 int L)
   {
     const int gid = threadIdx.x+blockIdx.x*blockDim.x;
     if (gid >= numPoints) return;
@@ -157,21 +166,19 @@ namespace cukd {
   }
 #endif
 
-  template<typename point_t,
-           typename scalar_t,
-           int      numDims,
+  template<typename data_point_t,
            typename GetElement>
-  void buildTree(point_t *d_points,
+  void buildTree(data_point_t *d_points,
                  int numPoints,
                  cudaStream_t stream)
   {
     /* thrust helper typedefs for the zip iterator, to make the code
        below more readable */
     typedef typename thrust::device_vector<tag_t>::iterator tag_iterator;
-    typedef typename thrust::device_vector<point_t>::iterator point_iterator;
+    typedef typename thrust::device_vector<data_point_t>::iterator point_iterator;
     typedef thrust::tuple<tag_iterator,point_iterator> iterator_tuple;
     typedef thrust::zip_iterator<iterator_tuple> tag_point_iterator;
-
+    enum { numDims = point_traits<data_point_t>::numDims };
     // check for invalid input, and return gracefully if so
     if (numPoints < 1) return;
 
@@ -184,8 +191,8 @@ namespace cukd {
 
     /* create the zip iterators we use for zip-sorting the tag and
        points array */
-    thrust::device_ptr<point_t> points_begin(d_points);
-    thrust::device_ptr<point_t> points_end(d_points+numPoints);
+    thrust::device_ptr<data_point_t> points_begin(d_points);
+    thrust::device_ptr<data_point_t> points_end(d_points+numPoints);
     tag_point_iterator begin = thrust::make_zip_iterator
       (thrust::make_tuple(tags.begin(),points_begin));
     tag_point_iterator end = thrust::make_zip_iterator
@@ -208,8 +215,8 @@ namespace cukd {
                    ZipCompare<GetElement>((level)%numDims));
 
 #if KDTREE_BUILDER_LOGGING
-    cudaStreamSynchronize(stream);
-    print("step %i sort\n",level,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
+      cudaStreamSynchronize(stream);
+      print("step %i sort\n",level,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
       const int blockSize = 32;
       const int numSettled = FullBinaryTreeOf(level).numNodes();
@@ -217,8 +224,8 @@ namespace cukd {
         (thrust::raw_pointer_cast(tags.data()),numPoints,level);
 
 #if KDTREE_BUILDER_LOGGING
-    cudaStreamSynchronize(stream);
-    print("step %i tags updated\n",level,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
+      cudaStreamSynchronize(stream);
+      print("step %i tags updated\n",level,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
     }
     /* do one final sort, to put all elements in order - by now every
@@ -232,6 +239,80 @@ namespace cukd {
     print("final sort\n",-1,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
   }
+
+  template<typename math_point_t,
+           typename data_point_t = math_point_t,
+           typename GetElement = common::TrivialPointInterface<data_point_t>>
+  __global__
+  void computeBounds_copyFirst(common::box_t<math_point_t> *d_bounds,
+                               const data_point_t *d_points)
+  {
+    using scalar_t = typename point_traits<math_point_t>::scalar_t;
+    int numDims = point_traits<math_point_t>::numDims;
+    const data_point_t point = d_points[0];
+    for (int d=0;d<numDims;d++) {
+      scalar_t point_d = GetElement::get(point,d);
+      setCoord(d_bounds->lower,d,point_d);
+      setCoord(d_bounds->upper,d,point_d);
+    }
+  }
+
+  inline __device__
+  float atomicMin(float *addr, float value)
+  {
+    float old = *addr, assumed;
+    if(old <= value) return old;
+    do {
+      assumed = old;
+      old = atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value));
+    } while(old!=assumed);
+    return old;
+  }
+
+  inline __device__
+  float atomicMax(float *addr, float value)
+  {
+    float old = *addr, assumed;
+    if(old >= value) return old;
+    do {
+      assumed = old;
+      old = atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value));
+    } while(old!=assumed);
+    return old;
+  }
+  
+  template<typename math_point_t,
+           typename data_point_t = math_point_t,
+           typename GetElement = common::TrivialPointInterface<data_point_t>>
+  __global__
+  void computeBounds_atomicGrow(common::box_t<math_point_t> *d_bounds,
+                                const data_point_t *d_points,
+                                int numPoints)
+  {
+    using scalar_t = typename point_traits<math_point_t>::scalar_t;
+    int tid = threadIdx.x+blockIdx.x*blockDim.x;
+    if (tid >= numPoints) return;
+    for (int d=0;d<point_traits<math_point_t>::numDims;d++) {
+      scalar_t point_d = GetElement::get(d_points[tid],d);
+      atomicMin(&d_bounds->lower.x+d,(float)point_d);
+      atomicMax(&d_bounds->upper.x+d,point_d);
+    }
+  }
+  
+  template<typename math_point_t,
+           typename data_point_t,
+           typename GetElement>
+  void computeBounds(common::box_t<math_point_t> *d_bounds,
+                     data_point_t *d_points,
+                     int numPoints,
+                     cudaStream_t s)
+  {
+    computeBounds_copyFirst<<<1,1,0,s>>>
+      (d_bounds,d_points);
+    computeBounds_atomicGrow<<<common::divRoundUp(numPoints,128),128,0,s>>>
+      (d_bounds,d_points,numPoints);
+  }
+  
 
   /*! the actual comparison operator; will perform a
     'zip'-comparison in that the first element is the major sort

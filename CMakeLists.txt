@@ -69,6 +69,17 @@ else()
 endif()
 
 
+
+set(CMAKE_CUDA_ARCHITECTURES 70 75 80 86)
+if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.17)
+  # nothing to do, setting CMAKE_CUDA_ARCHITECTURES is hte way to go
+else()
+  foreach (arch IN ITEMS ${CMAKE_CUDA_ARCHITECTURES})
+#    message("status adding arch=${arch}")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${arch},code=sm_${arch}")
+  endforeach()
+endif()
+
 add_library(cudaKDTree INTERFACE)
 target_sources(cudaKDTree INTERFACE
   cukd/common.h
@@ -89,6 +100,9 @@ target_link_libraries(cukd_test_float4-knn cudaKDTree)
 
 add_executable(cukd_test_float3-knn testing/float3-knn.cu)
 target_link_libraries(cukd_test_float3-knn cudaKDTree)
+
+add_executable(cukd_test_float3-fcp testing/float3-fcp.cu)
+target_link_libraries(cukd_test_float3-fcp cudaKDTree)
 
   
 
