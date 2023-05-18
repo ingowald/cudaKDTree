@@ -96,16 +96,14 @@ namespace cukd {
 
   template<
     typename math_point_t = float4,
-    typename node_point_t = float4,
-    typename QueryPointInterface = common::TrivialPointInterface<math_point_t>,
-    typename NodePointInterface = common::TrivialPointInterface<node_point_t>>
+    typename node_point_t = float4>
   inline __device__
   int fcp(math_point_t queryPoint,
           const node_point_t *d_nodes,
           int N,
           FcpSearchParams params = FcpSearchParams{})
   {
-    using scalar_t = typename point_traits<math_point_t>::scalar_t;
+    using scalar_t = typename common::point_traits<math_point_t>::scalar_t;
     const auto max_far_node_search_radius_sqr
       = params.max_far_node_search_radius
       * params.max_far_node_search_radius;
@@ -136,8 +134,7 @@ namespace cukd {
       const bool from_child = (prev >= child);
       if (!from_child) {
         const auto nodePosition
-          = common::extractPosition<math_point_t,node_point_t,scalar_t,
-                                    QueryPointInterface,NodePointInterface>(curr_node);
+          = common::extractPosition<math_point_t,node_point_t>(curr_node);
         const auto dist_sqr = sqr_distance(queryPoint,nodePosition);
         if (dist_sqr < closest_dist_sqr_found_so_far) {
           closest_dist_sqr_found_so_far = dist_sqr;
@@ -193,17 +190,17 @@ namespace cukd {
 
   /*1 project a point into a boundinx box */
   template<typename math_point_t, typename node_point_t>
-  inline __device__ 
-  int fcp(math_point_t queryPoint, 
+  inline __device__
+  int fcp(math_point_t queryPoint,
           const common::box_t<math_point_t> *d_bounds,
           const node_point_t *d_nodes,
           int numPoints,
           FcpSearchParams params = FcpSearchParams{})
   {
-    using scalar_t = typename point_traits<math_point_t>::scalar_t;
+    using scalar_t = typename common::point_traits<math_point_t>::scalar_t;
     scalar_t cullDist = sqr(params.max_far_node_search_radius);
     int   closestID = -1;
-    
+
     struct StackEntry {
       math_point_t closestCorner;
       int          nodeID;
@@ -213,10 +210,10 @@ namespace cukd {
     StackEntry *stackPtr = stackBase;
 
     int nodeID = 0;
-    float3 closestPointOnSubtreeBounds = project(*d_bounds,queryPoint);
+    auto closestPointOnSubtreeBounds = project(*d_bounds,queryPoint);
     if (sqrDistance(queryPoint,closestPointOnSubtreeBounds) > cullDist)
       return closestID;
-    
+
 
     while (true) {
       if (nodeID >= numPoints) {
@@ -233,27 +230,27 @@ namespace cukd {
       }
       const int dim    = BinaryTree::levelOf(nodeID) % common::point_traits<math_point_t>::numDims;
       const auto node  = d_nodes[nodeID];
-      const float sqrDist = sqrDistance(node,queryPoint);
+      const auto sqrDist = sqrDistance(common::extractPosition<math_point_t>(node),queryPoint);
       if (sqrDist < cullDist) {
         cullDist  = sqrDist;
         closestID = nodeID;
       }
 
-      const float node_dim   = getCoord(node,dim);
-      const float query_dim  = getCoord(queryPoint,dim);
+      const auto node_dim   = common::point_traits<node_point_t>::getCoord(node,dim);
+      const auto query_dim  = common::point_traits<math_point_t>::getCoord(queryPoint,dim);
       const bool  leftIsClose = query_dim < node_dim;
       const int   lChild = 2*nodeID+1;
       const int   rChild = lChild+1;
 
-      float3 farSideCorner = closestPointOnSubtreeBounds;
+      auto farSideCorner = closestPointOnSubtreeBounds;
       const int farChild = leftIsClose?rChild:lChild;
-      setCoord(farSideCorner,dim,node_dim);
+      common::point_traits<math_point_t>::setCoord(farSideCorner,dim,node_dim);
       if (farChild < numPoints && sqrDistance(farSideCorner,queryPoint) <= cullDist) {
         stackPtr->closestCorner = farSideCorner;
         stackPtr->nodeID = farChild;
         stackPtr++;
       }
-      
+
       nodeID = leftIsClose?lChild:rChild;
     }
   }

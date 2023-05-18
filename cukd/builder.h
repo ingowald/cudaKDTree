@@ -31,10 +31,10 @@
 
 namespace cukd {
 
-  typedef uint32_t tag_t;  
+  typedef uint32_t tag_t;
 
   using common::point_traits;
-  
+
   // ==================================================================
   // INTERFACE SECTION
   // ==================================================================
@@ -45,43 +45,37 @@ namespace cukd {
     etc, going through all dimensions x->y->z... in round-robin
     fashion. point_t can be any arbitrary struct, and is assumed to
     have at least 'numDims' coordinates of type 'scalar_t', plus
-    whatever other payload data is desired. To customize where or
-    how the point_t stores its numDims coordinates the 'GetElement'
-    class can be used by providing a class that implements a static
-    scalar_t=GetElement::get(point_t,dim) method. The default
-    TrivialPointInterface simply assumes that whatever type point_t
-    is used, its nuMDims coordinates are stored at the beginning of
-    this class, in array order.
+    whatever other payload data is desired.
 
     Example 1: To build a 2D k-dtree over a CUDA int2 type (no other
     payload than the two coordinates):
 
-    buildKDTree<int2,int>(....);
+    buildKDTree<int2>(....);
 
     Example 2: to build a 1D kd-tree over a data type of float4,
     where the first coordinate of each point is the dimension we
     want to build the kd-tree over, and the other three coordinate
     are arbitrary other payload data:
 
-    buildKDTree<float4,float,1>(...);
+    buildKDTree<float4>(...);
+
+    NOTE: point_traits needs to be specialized properly for the point type used.
   */
-  template<typename data_point_t,
-           typename GetElement = common::TrivialPointInterface<data_point_t>>
+  template<typename data_point_t>
   void buildTree(data_point_t *d_points, int numPoints, cudaStream_t stream = 0);
 
   template<typename math_point_t,
-           typename data_point_t = math_point_t,
-           typename GetElement = common::TrivialPointInterface<data_point_t>>
+           typename data_point_t = math_point_t>
   void computeBounds(common::box_t<math_point_t> *d_bounds,
-                     data_point_t *d_points,
+                     const data_point_t *d_points,
                      int numPoints,
                      cudaStream_t stream=0);
-  
+
   // ==================================================================
   // IMPLEMENTATION SECTION
   // ==================================================================
 
-  template<typename PointInterface>
+  template<typename point_t>
   struct ZipCompare {
     ZipCompare(const int dim) : dim(dim) {}
 
@@ -90,8 +84,8 @@ namespace cukd {
       order, and the second the minor one (for those of same major
       sort key) */
     inline __device__ bool operator()
-    (const thrust::tuple<tag_t, typename PointInterface::point_t> &a,
-     const thrust::tuple<tag_t, typename PointInterface::point_t> &b);
+    (const thrust::tuple<tag_t, point_t> &a,
+     const thrust::tuple<tag_t, point_t> &b);
 
     const int dim;
   };
@@ -166,8 +160,7 @@ namespace cukd {
   }
 #endif
 
-  template<typename data_point_t,
-           typename GetElement>
+  template<typename data_point_t>
   void buildTree(data_point_t *d_points,
                  int numPoints,
                  cudaStream_t stream)
@@ -212,7 +205,7 @@ namespace cukd {
        dimensoins */
     for (int level=0;level<deepestLevel;level++) {
       thrust::sort(thrust::device.on(stream),begin,end,
-                   ZipCompare<GetElement>((level)%numDims));
+                   ZipCompare<data_point_t>((level)%numDims));
 
 #if KDTREE_BUILDER_LOGGING
       cudaStreamSynchronize(stream);
@@ -233,7 +226,7 @@ namespace cukd {
        array, so the dimension we're sorting in really won't matter
        any more */
     thrust::sort(thrust::device.on(stream),begin,end,
-                 ZipCompare<GetElement>((deepestLevel)%numDims));
+                 ZipCompare<data_point_t>((deepestLevel)%numDims));
 #if KDTREE_BUILDER_LOGGING
     cudaStreamSynchronize(stream);
     print("final sort\n",-1,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
@@ -241,19 +234,18 @@ namespace cukd {
   }
 
   template<typename math_point_t,
-           typename data_point_t = math_point_t,
-           typename GetElement = common::TrivialPointInterface<data_point_t>>
+           typename data_point_t = math_point_t>
   __global__
   void computeBounds_copyFirst(common::box_t<math_point_t> *d_bounds,
                                const data_point_t *d_points)
   {
     using scalar_t = typename point_traits<math_point_t>::scalar_t;
-    int numDims = point_traits<math_point_t>::numDims;
+    static constexpr int numDims = point_traits<math_point_t>::numDims;
     const data_point_t point = d_points[0];
     for (int d=0;d<numDims;d++) {
-      scalar_t point_d = GetElement::get(point,d);
-      setCoord(d_bounds->lower,d,point_d);
-      setCoord(d_bounds->upper,d,point_d);
+      scalar_t point_d = point_traits<data_point_t>::getCoord(point,d);
+      point_traits<math_point_t>::setCoord(d_bounds->lower,d,point_d);
+      point_traits<math_point_t>::setCoord(d_bounds->upper,d,point_d);
     }
   }
 
@@ -280,10 +272,9 @@ namespace cukd {
     } while(old!=assumed);
     return old;
   }
-  
+
   template<typename math_point_t,
-           typename data_point_t = math_point_t,
-           typename GetElement = common::TrivialPointInterface<data_point_t>>
+           typename data_point_t = math_point_t>
   __global__
   void computeBounds_atomicGrow(common::box_t<math_point_t> *d_bounds,
                                 const data_point_t *d_points,
@@ -293,17 +284,16 @@ namespace cukd {
     int tid = threadIdx.x+blockIdx.x*blockDim.x;
     if (tid >= numPoints) return;
     for (int d=0;d<point_traits<math_point_t>::numDims;d++) {
-      scalar_t point_d = GetElement::get(d_points[tid],d);
+      scalar_t point_d = point_traits<data_point_t>::getCoord(d_points[tid],d);
       atomicMin(&d_bounds->lower.x+d,(float)point_d);
       atomicMax(&d_bounds->upper.x+d,point_d);
     }
   }
-  
+
   template<typename math_point_t,
-           typename data_point_t,
-           typename GetElement>
+           typename data_point_t>
   void computeBounds(common::box_t<math_point_t> *d_bounds,
-                     data_point_t *d_points,
+                     const data_point_t *d_points,
                      int numPoints,
                      cudaStream_t s)
   {
@@ -312,24 +302,24 @@ namespace cukd {
     computeBounds_atomicGrow<<<common::divRoundUp(numPoints,128),128,0,s>>>
       (d_bounds,d_points,numPoints);
   }
-  
+
 
   /*! the actual comparison operator; will perform a
     'zip'-comparison in that the first element is the major sort
     order, and the second the minor one (for those of same major
     sort key) */
-  template<typename PointInterface>
+  template<typename point_t>
   inline __device__
-  bool ZipCompare<PointInterface>::operator()
-    (const thrust::tuple<tag_t, typename PointInterface::point_t> &a,
-     const thrust::tuple<tag_t, typename PointInterface::point_t> &b)
+  bool ZipCompare<point_t>::operator()
+    (const thrust::tuple<tag_t, point_t> &a,
+     const thrust::tuple<tag_t, point_t> &b)
   {
     auto tag_a = thrust::get<0>(a);
     auto tag_b = thrust::get<0>(b);
     auto pnt_a = thrust::get<1>(a);
     auto pnt_b = thrust::get<1>(b);
-    auto dim_a = PointInterface::get(pnt_a,dim);
-    auto dim_b = PointInterface::get(pnt_b,dim);
+    auto dim_a = point_traits<point_t>::getCoord(pnt_a,dim);
+    auto dim_b = point_traits<point_t>::getCoord(pnt_b,dim);
     bool less =
       (tag_a < tag_b)
       ||
