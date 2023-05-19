@@ -279,17 +279,6 @@ namespace cukd {
       return s.substr(s.size()-suffix.size()) == suffix;
     }
 
-    /*! Point trait. Must provide the following members:
-       - numDims (int): the number of dimensions used in the kdtree (i.e.
-         without the payload).
-       - scalar_t (type): the scalar type used by the point (float usually).
-       - scalar_t getCoord(const point_t &p, int dim): static function that
-         returns the dim-th coord of the point.
-       - void setCoord(point_t &p, int dim, scalar_t value): static function
-         that sets the dim-th coord of the point.
-    */
-    template<typename T> struct point_traits;
-
     /*! Trivial implementation of the point interface for those kinds of
       point types where the first K elements are the K-dimensional
       coordinates that we buid the K-d tree over; the point_t struct
@@ -297,7 +286,7 @@ namespace cukd {
       for exapmle, a 2-d tree over a float4 point type - in this case
       the x and y coordinates are the point coordinates, and z and w
       are any other payload that does not get considered during the
-      (2-d) construction) */
+      (2-d) construction). See also point traits below. */
     template<typename _point_t, typename _scalar_t>
     struct TrivialPointInterface
     {
@@ -307,45 +296,29 @@ namespace cukd {
       void setCoord(_point_t &p, int dim, _scalar_t value) { ((_scalar_t*)&p)[dim] = value; }
     };
 
-    /*! Trivial point traits that will work for most float type points, e.g.
+    /*! Point trait.
+       The cukd library uses point traits template parameters to describe the
+       points. A  point trait is a struct that must provide the following members:
+       - numDims (int): the number of dimensions used in the kdtree (i.e.
+         without the payload).
+       - scalar_t (type): the scalar type used by the point (float usually).
+       - scalar_t getCoord(const point_t &p, int dim): static function that
+         returns the dim-th coord of the point.
+       - void setCoord(point_t &p, int dim, scalar_t value): static function
+         that sets the dim-th coord of the point.
+
+      The trivial point traits here will work for most float type points, e.g.
       float3 and float4. Provided for convenience to make it easy to define
       the point_traits for such points. */
-    template<typename point_t, int _numDims = sizeof(point_t) / sizeof(float)>
-    struct TrivialFloatPointTraits : TrivialPointInterface<point_t, float>
+    template<typename _point_t, int _numDims = sizeof(_point_t) / sizeof(float)>
+    struct TrivialFloatPointTraits : TrivialPointInterface<_point_t, float>
     {
       enum { numDims = _numDims };
       using scalar_t = float;
+      using point_t = _point_t;
     };
 
-    template<> struct point_traits<float3> : TrivialFloatPointTraits<float3>{};
-    template<> struct point_traits<float4> : TrivialFloatPointTraits<float4>{};
-
     template<typename point_t> struct box_t { point_t lower, upper; };
-
-    /*! Extract a query_point_t from the node_point_t.
-     * The dimension of the query_point_t must be no larger than the dimension
-     * of the node_point_t.
-     * For example if the node_point_t is a float4 and the query_point_t is a
-     * float3, then it returns a float3 with the first 3 dimensions of the float4.
-     */
-    template<
-      typename query_point_t = float4,
-      typename node_point_t = float4>
-    inline __host__ __device__
-    query_point_t extractPosition(const node_point_t& node_pt) {
-      static_assert(
-                    point_traits<query_point_t>::numDims <=
-                    point_traits<node_point_t>::numDims,
-                    "dimension of query point must be smaller than or equal to dimension of node point");
-      query_point_t res;
-      for(int i=0; i<point_traits<query_point_t>::numDims; ++i) {
-        point_traits<query_point_t>::setCoord(
-            res,
-            i,
-            point_traits<node_point_t>::getCoord(node_pt, i));
-      }
-      return res;
-    }
 
   } // ::cukd::common
 
@@ -357,18 +330,17 @@ namespace cukd {
     box; if point itself is inside that box it'll be the point
     itself, otherwise it'll be a point on the outside surface of the
     box */
-  template<typename point_t>
-  inline __device__ point_t project(
-      const common::box_t<point_t>& box,
-      const point_t& point)
+  template<typename point_traits_t>
+  inline __device__ auto project(
+      const common::box_t<typename point_traits_t::point_t>& box,
+      const typename point_traits_t::point_t& point)
   {
-    point_t projected;
-    enum { numDims = common::point_traits<point_t>::numDims };
+    typename point_traits_t::point_t projected;
 #pragma unroll
-    for (int d=0;d<numDims;d++) {
-      auto lo = common::point_traits<point_t>::getCoord(box.lower,d);
-      auto hi = common::point_traits<point_t>::getCoord(box.upper,d);
-      common::point_traits<point_t>::setCoord(projected,d,clamp(common::point_traits<point_t>::getCoord(point,d),lo,hi));
+    for (int d=0;d<point_traits_t::numDims;d++) {
+      auto lo = point_traits_t::getCoord(box.lower,d);
+      auto hi = point_traits_t::getCoord(box.upper,d);
+      point_traits_t::setCoord(projected,d,clamp(point_traits_t::getCoord(point,d),lo,hi));
     }
     return projected;
   }
