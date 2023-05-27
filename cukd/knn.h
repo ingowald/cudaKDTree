@@ -17,6 +17,7 @@
 #pragma once
 
 #include "cukd/common.h"
+#include "cukd/helpers.h"
 #include "cukd/fcp.h"
 
 namespace cukd {
@@ -127,11 +128,15 @@ namespace cukd {
     of the maximum distance among the k closest elements, if at k
     were found; or the _square_ of the max search radius provided
     for the query */
-  template<typename point_t, typename CandidateList>
+  template<
+    typename math_point_traits_t,
+    typename node_point_traits_t=math_point_traits_t,
+    typename CandidateList
+    >
   inline __device__
   float knn(CandidateList &currentlyClosest,
-            point_t queryPoint,
-            const point_t *d_nodes,
+            typename math_point_traits_t::point_t queryPoint,
+            const typename node_point_traits_t::point_t *d_nodes,
             int N)
   {
     float maxRadius2 = currentlyClosest.maxRadius2();

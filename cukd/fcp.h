@@ -27,6 +27,13 @@ namespace cukd {
   inline __device__ __host__
   auto sqr(scalar_t f) { return f * f; }
 
+  template <typename scalar_t>
+  inline __device__ __host__
+  scalar_t sqrt(scalar_t f);
+
+  template<> inline __device__ __host__
+  float sqrt(float f) { return ::sqrtf(f); }
+
   template <typename point_traits_a, typename point_traits_b=point_traits_a>
   inline __device__ __host__
   auto sqrDistance(const typename point_traits_a::point_t& a,
@@ -41,6 +48,21 @@ namespace cukd {
     return res;
   }
 
+  template <typename point_traits_a, typename point_traits_b=point_traits_a>
+  inline __device__ __host__
+  auto distance(const typename point_traits_a::point_t& a,
+                const typename point_traits_b::point_t& b)
+  {
+    typename point_traits_a::scalar_t res = 0;
+#pragma unroll
+    for(int i=0; i<min(point_traits_a::numDims, point_traits_b::numDims); ++i) {
+      const auto diff = point_traits_a::getCoord(a, i) - point_traits_b::getCoord(b, i);
+      res += sqr(diff);
+    }
+    return sqrt(res);
+  }
+
+  
   // Structure of parameters to control the behavior of the FCP search.
   // By default FCP will perform an exact nearest neighbor search, but the
   // following parameters can be set to cut some corners and make the search
@@ -155,7 +177,8 @@ namespace cukd {
   }
 
   /*1 project a point into a boundinx box */
-  template <typename math_point_traits_t, typename node_point_traits_t>
+  template <typename math_point_traits_t,
+            typename node_point_traits_t=math_point_traits_t>
   inline __device__
   int fcp(typename math_point_traits_t::point_t queryPoint,
           const common::box_t<typename math_point_traits_t::point_t> *d_bounds,

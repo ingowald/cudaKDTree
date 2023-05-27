@@ -24,6 +24,8 @@
     queries */
 #define FCP2 1
 
+using namespace cukd::common;
+
 float3 *generatePoints(int N)
 {
   std::cout << "generating " << N <<  " points" << std::endl;
@@ -49,7 +51,10 @@ __global__ void d_fcp(int *d_results,
   int tid = threadIdx.x+blockIdx.x*blockDim.x;
   if (tid >= numQueries) return;
 
-  d_results[tid] = cukd::fcp(d_queries[tid],
+  d_results[tid]
+    = cukd::fcp
+    <TrivialFloatPointTraits<float3>>
+    (d_queries[tid],
 #if FCP2
                              d_bounds,
 #endif
@@ -143,12 +148,16 @@ int main(int ac, const char **av)
 #if FCP2
   cukd::common::box_t<float3> *d_bounds;
   cudaMalloc((void**)&d_bounds,sizeof(cukd::common::box_t<float3>));
-  cukd::computeBounds<float3,float3>(d_bounds,d_points,nPoints);
+  cukd::computeBounds
+    <cukd::TrivialFloatPointTraits<float3>>
+    (d_bounds,d_points,nPoints);
 #endif
   {
     double t0 = getCurrentTime();
     std::cout << "calling builder..." << std::endl;
-    cukd::buildTree<float3>(d_points,nPoints);
+    cukd::buildTree
+      <cukd::TrivialFloatPointTraits<float3>>
+      (d_points,nPoints);
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
     std::cout << "done building tree, took " << prettyDouble(t1-t0) << "s" << std::endl;
@@ -208,9 +217,14 @@ int main(int ac, const char **av)
       if (d_results[i] == -1) continue;
       
       float3 qp = d_queries[i];
-      float reportedDist = cukd::distance(qp,d_points[d_results[i]]);
+      float reportedDist
+        = cukd::distance
+        <cukd::TrivialFloatPointTraits<float3>>
+        (qp,d_points[d_results[i]]);
       for (int j=0;j<nPoints;j++) {
-        float dist_j = cukd::distance(qp,d_points[j]);
+        float dist_j = cukd::distance
+          <cukd::TrivialFloatPointTraits<float3>>
+          (qp,d_points[j]);
         if (dist_j < reportedDist) {
           printf("for query %i: found offending point %i (%f %f %f) with dist %f (vs %f)\n",
                  i,

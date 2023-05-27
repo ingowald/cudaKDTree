@@ -321,6 +321,7 @@ namespace cukd {
     template<typename point_t> struct box_t { point_t lower, upper; };
 
   } // ::cukd::common
+  using cukd::common::TrivialFloatPointTraits;
 
   template<typename scalar_t>
   inline __device__ scalar_t clamp(scalar_t v, scalar_t lo, scalar_t hi)

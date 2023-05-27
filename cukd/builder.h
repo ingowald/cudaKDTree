@@ -290,15 +290,17 @@ namespace cukd {
   }
 
   template<typename math_point_traits_t,
-           typename data_point_traits_t=math_point_traits_t>
+           typename data_point_traits_t>
   void computeBounds(common::box_t<typename math_point_traits_t::point_t> *d_bounds,
                      const typename data_point_traits_t::point_t *d_points,
                      int numPoints,
                      cudaStream_t s)
   {
-    computeBounds_copyFirst<math_point_traits_t, data_point_traits_t><<<1,1,0,s>>>
+    computeBounds_copyFirst<math_point_traits_t, data_point_traits_t>
+      <<<1,1,0,s>>>
       (d_bounds,d_points);
-    computeBounds_atomicGrow<math_point_traits_t, data_point_traits_t><<<common::divRoundUp(numPoints,128),128,0,s>>>
+    computeBounds_atomicGrow<math_point_traits_t, data_point_traits_t>
+      <<<common::divRoundUp(numPoints,128),128,0,s>>>
       (d_bounds,d_points,numPoints);
   }
 
