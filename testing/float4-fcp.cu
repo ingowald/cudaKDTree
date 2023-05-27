@@ -41,7 +41,10 @@ __global__ void d_fcp(int *d_results,
   int tid = threadIdx.x+blockIdx.x*blockDim.x;
   if (tid >= numQueries) return;
 
-  d_results[tid] = cukd::fcp(d_queries[tid],d_nodes,numNodes);
+  d_results[tid]
+    = cukd::fcp
+    <TrivialFloatPointTraits<float4>>
+    (d_queries[tid],d_nodes,numNodes);
 }
 
 void fcp(int *d_results,

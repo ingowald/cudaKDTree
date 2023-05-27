@@ -31,10 +31,8 @@
 
 namespace cukd {
 
-  typedef uint32_t tag_t;  
+  typedef uint32_t tag_t;
 
-  using common::point_traits;
-  
   // ==================================================================
   // INTERFACE SECTION
   // ==================================================================
@@ -45,43 +43,37 @@ namespace cukd {
     etc, going through all dimensions x->y->z... in round-robin
     fashion. point_t can be any arbitrary struct, and is assumed to
     have at least 'numDims' coordinates of type 'scalar_t', plus
-    whatever other payload data is desired. To customize where or
-    how the point_t stores its numDims coordinates the 'GetElement'
-    class can be used by providing a class that implements a static
-    scalar_t=GetElement::get(point_t,dim) method. The default
-    TrivialPointInterface simply assumes that whatever type point_t
-    is used, its nuMDims coordinates are stored at the beginning of
-    this class, in array order.
+    whatever other payload data is desired.
 
     Example 1: To build a 2D k-dtree over a CUDA int2 type (no other
     payload than the two coordinates):
 
-    buildKDTree<int2,int>(....);
+    buildKDTree<int2>(....);
 
     Example 2: to build a 1D kd-tree over a data type of float4,
     where the first coordinate of each point is the dimension we
     want to build the kd-tree over, and the other three coordinate
     are arbitrary other payload data:
 
-    buildKDTree<float4,float,1>(...);
+    buildKDTree<float4>(...);
   */
-  template<typename data_point_t,
-           typename GetElement = common::TrivialPointInterface<data_point_t>>
-  void buildTree(data_point_t *d_points, int numPoints, cudaStream_t stream = 0);
+  template<typename data_point_traits_t>
+  void buildTree(typename data_point_traits_t::point_t *d_points,
+                 int numPoints,
+                 cudaStream_t stream = 0);
 
-  template<typename math_point_t,
-           typename data_point_t = math_point_t,
-           typename GetElement = common::TrivialPointInterface<data_point_t>>
-  void computeBounds(common::box_t<math_point_t> *d_bounds,
-                     data_point_t *d_points,
+  template<typename math_point_traits_t,
+           typename data_point_traits_t = math_point_traits_t>
+  void computeBounds(common::box_t<typename math_point_traits_t::point_t> *d_bounds,
+                     const typename data_point_traits_t::point_t *d_points,
                      int numPoints,
                      cudaStream_t stream=0);
-  
+
   // ==================================================================
   // IMPLEMENTATION SECTION
   // ==================================================================
 
-  template<typename PointInterface>
+  template<typename point_traits_t>
   struct ZipCompare {
     ZipCompare(const int dim) : dim(dim) {}
 
@@ -90,8 +82,8 @@ namespace cukd {
       order, and the second the minor one (for those of same major
       sort key) */
     inline __device__ bool operator()
-    (const thrust::tuple<tag_t, typename PointInterface::point_t> &a,
-     const thrust::tuple<tag_t, typename PointInterface::point_t> &b);
+    (const thrust::tuple<tag_t, typename point_traits_t::point_t> &a,
+     const thrust::tuple<tag_t, typename point_traits_t::point_t> &b);
 
     const int dim;
   };
@@ -166,19 +158,19 @@ namespace cukd {
   }
 #endif
 
-  template<typename data_point_t,
-           typename GetElement>
-  void buildTree(data_point_t *d_points,
+  template<typename data_point_traits_t>
+  void buildTree(typename data_point_traits_t::point_t *d_points,
                  int numPoints,
                  cudaStream_t stream)
   {
     /* thrust helper typedefs for the zip iterator, to make the code
        below more readable */
+    using data_point_t = typename data_point_traits_t::point_t;
     typedef typename thrust::device_vector<tag_t>::iterator tag_iterator;
     typedef typename thrust::device_vector<data_point_t>::iterator point_iterator;
     typedef thrust::tuple<tag_iterator,point_iterator> iterator_tuple;
     typedef thrust::zip_iterator<iterator_tuple> tag_point_iterator;
-    enum { numDims = point_traits<data_point_t>::numDims };
+    enum { numDims = data_point_traits_t::numDims };
     // check for invalid input, and return gracefully if so
     if (numPoints < 1) return;
 
@@ -212,7 +204,7 @@ namespace cukd {
        dimensoins */
     for (int level=0;level<deepestLevel;level++) {
       thrust::sort(thrust::device.on(stream),begin,end,
-                   ZipCompare<GetElement>((level)%numDims));
+                   ZipCompare<data_point_traits_t>((level)%numDims));
 
 #if KDTREE_BUILDER_LOGGING
       cudaStreamSynchronize(stream);
@@ -233,27 +225,25 @@ namespace cukd {
        array, so the dimension we're sorting in really won't matter
        any more */
     thrust::sort(thrust::device.on(stream),begin,end,
-                 ZipCompare<GetElement>((deepestLevel)%numDims));
+                 ZipCompare<data_point_traits_t>((deepestLevel)%numDims));
 #if KDTREE_BUILDER_LOGGING
     cudaStreamSynchronize(stream);
     print("final sort\n",-1,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
   }
 
-  template<typename math_point_t,
-           typename data_point_t = math_point_t,
-           typename GetElement = common::TrivialPointInterface<data_point_t>>
+  template<typename math_point_traits_t,
+           typename data_point_traits_t = math_point_traits_t>
   __global__
-  void computeBounds_copyFirst(common::box_t<math_point_t> *d_bounds,
-                               const data_point_t *d_points)
+  void computeBounds_copyFirst(
+      common::box_t<typename math_point_traits_t::point_t> *d_bounds,
+      const typename data_point_traits_t::point_t *d_points)
   {
-    using scalar_t = typename point_traits<math_point_t>::scalar_t;
-    int numDims = point_traits<math_point_t>::numDims;
-    const data_point_t point = d_points[0];
-    for (int d=0;d<numDims;d++) {
-      scalar_t point_d = GetElement::get(point,d);
-      setCoord(d_bounds->lower,d,point_d);
-      setCoord(d_bounds->upper,d,point_d);
+    const auto point = d_points[0];
+    for (int d=0;d<math_point_traits_t::numDims;d++) {
+      const auto point_d = data_point_traits_t::getCoord(point,d);
+      math_point_traits_t::setCoord(d_bounds->lower,d,point_d);
+      math_point_traits_t::setCoord(d_bounds->upper,d,point_d);
     }
   }
 
@@ -280,57 +270,58 @@ namespace cukd {
     } while(old!=assumed);
     return old;
   }
-  
-  template<typename math_point_t,
-           typename data_point_t = math_point_t,
-           typename GetElement = common::TrivialPointInterface<data_point_t>>
+
+  template<typename math_point_traits_t,
+           typename data_point_traits_t = math_point_traits_t>
   __global__
-  void computeBounds_atomicGrow(common::box_t<math_point_t> *d_bounds,
-                                const data_point_t *d_points,
-                                int numPoints)
+  void computeBounds_atomicGrow(
+      common::box_t<typename math_point_traits_t::point_t> *d_bounds,
+      const typename data_point_traits_t::point_t *d_points,
+      int numPoints)
   {
-    using scalar_t = typename point_traits<math_point_t>::scalar_t;
-    int tid = threadIdx.x+blockIdx.x*blockDim.x;
+    static_assert(math_point_traits_t::numDims <= data_point_traits_t::numDims, "dimension error");
+    const int tid = threadIdx.x+blockIdx.x*blockDim.x;
     if (tid >= numPoints) return;
-    for (int d=0;d<point_traits<math_point_t>::numDims;d++) {
-      scalar_t point_d = GetElement::get(d_points[tid],d);
-      atomicMin(&d_bounds->lower.x+d,(float)point_d);
+    for (int d=0;d<math_point_traits_t::numDims;d++) {
+      const auto point_d = data_point_traits_t::getCoord(d_points[tid],d);
+      atomicMin(&d_bounds->lower.x+d,point_d);
       atomicMax(&d_bounds->upper.x+d,point_d);
     }
   }
-  
-  template<typename math_point_t,
-           typename data_point_t,
-           typename GetElement>
-  void computeBounds(common::box_t<math_point_t> *d_bounds,
-                     data_point_t *d_points,
+
+  template<typename math_point_traits_t,
+           typename data_point_traits_t>
+  void computeBounds(common::box_t<typename math_point_traits_t::point_t> *d_bounds,
+                     const typename data_point_traits_t::point_t *d_points,
                      int numPoints,
                      cudaStream_t s)
   {
-    computeBounds_copyFirst<<<1,1,0,s>>>
+    computeBounds_copyFirst<math_point_traits_t, data_point_traits_t>
+      <<<1,1,0,s>>>
       (d_bounds,d_points);
-    computeBounds_atomicGrow<<<common::divRoundUp(numPoints,128),128,0,s>>>
+    computeBounds_atomicGrow<math_point_traits_t, data_point_traits_t>
+      <<<common::divRoundUp(numPoints,128),128,0,s>>>
       (d_bounds,d_points,numPoints);
   }
-  
+
 
   /*! the actual comparison operator; will perform a
     'zip'-comparison in that the first element is the major sort
     order, and the second the minor one (for those of same major
     sort key) */
-  template<typename PointInterface>
+  template<typename point_traits_t>
   inline __device__
-  bool ZipCompare<PointInterface>::operator()
-    (const thrust::tuple<tag_t, typename PointInterface::point_t> &a,
-     const thrust::tuple<tag_t, typename PointInterface::point_t> &b)
+  bool ZipCompare<point_traits_t>::operator()
+    (const thrust::tuple<tag_t, typename point_traits_t::point_t> &a,
+     const thrust::tuple<tag_t, typename point_traits_t::point_t> &b)
   {
-    auto tag_a = thrust::get<0>(a);
-    auto tag_b = thrust::get<0>(b);
-    auto pnt_a = thrust::get<1>(a);
-    auto pnt_b = thrust::get<1>(b);
-    auto dim_a = PointInterface::get(pnt_a,dim);
-    auto dim_b = PointInterface::get(pnt_b,dim);
-    bool less =
+    const auto tag_a = thrust::get<0>(a);
+    const auto tag_b = thrust::get<0>(b);
+    const auto pnt_a = thrust::get<1>(a);
+    const auto pnt_b = thrust::get<1>(b);
+    const auto dim_a = point_traits_t::getCoord(pnt_a,dim);
+    const auto dim_b = point_traits_t::getCoord(pnt_b,dim);
+    const bool less =
       (tag_a < tag_b)
       ||
       ((tag_a == tag_b) && (dim_a < dim_b));
@@ -338,4 +329,3 @@ namespace cukd {
     return less;
   }
 }
-
