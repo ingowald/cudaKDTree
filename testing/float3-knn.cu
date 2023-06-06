@@ -46,7 +46,12 @@ __global__ void d_knn4(float *d_results,
   if (tid >= numQueries) return;
 
   cukd::FixedCandidateList<4> result(maxRadius);
-  d_results[tid] = sqrtf(cukd::knn(result,d_queries[tid],d_nodes,numNodes));
+  float sqrDist
+    = cukd::knn
+    <cukd::TrivialFloatPointTraits<float3>>
+    (result,d_queries[tid],d_nodes,numNodes);
+  d_results[tid] = sqrtf(sqrDist);//cukd::knn(result,d_queries[tid],d_nodes,numNodes));
+  // d_results[tid] = sqrtf(cukd::knn(result,d_queries[tid],d_nodes,numNodes));
 }
 
 void knn4(float *d_results,
@@ -74,7 +79,11 @@ __global__ void d_knn8(float *d_results,
   if (tid >= numQueries) return;
 
   cukd::FixedCandidateList<8> result(maxRadius);
-  d_results[tid] = sqrtf(cukd::knn(result,d_queries[tid],d_nodes,numNodes));
+  float sqrDist
+    = cukd::knn
+    <cukd::TrivialFloatPointTraits<float3>>
+    (result,d_queries[tid],d_nodes,numNodes);
+  d_results[tid] = sqrtf(sqrDist);//cukd::knn(result,d_queries[tid],d_nodes,numNodes));
 }
 
 void knn8(float *d_results,
@@ -102,7 +111,12 @@ __global__ void d_knn20(float *d_results,
   if (tid >= numQueries) return;
 
   cukd::HeapCandidateList<20> result(maxRadius);
-  d_results[tid] = sqrtf(cukd::knn(result,d_queries[tid],d_nodes,numNodes));
+  float sqrDist
+    = cukd::knn
+    <cukd::TrivialFloatPointTraits<float3>>
+    (result,d_queries[tid],d_nodes,numNodes);
+  d_results[tid] = sqrtf(sqrDist);//cukd::knn(result,d_queries[tid],d_nodes,numNodes));
+  // d_results[tid] = sqrtf(cukd::knn(result,d_queries[tid],d_nodes,numNodes));
 }
 
 void knn20(float *d_results,
@@ -130,7 +144,12 @@ __global__ void d_knn50(float *d_results,
   if (tid >= numQueries) return;
 
   cukd::HeapCandidateList<50> result(maxRadius);
-  d_results[tid] = sqrtf(cukd::knn(result,d_queries[tid],d_nodes,numNodes));
+  float sqrDist
+    = cukd::knn
+    <cukd::TrivialFloatPointTraits<float3>>
+    (result,d_queries[tid],d_nodes,numNodes);
+  d_results[tid] = sqrtf(sqrDist);//cukd::knn(result,d_queries[tid],d_nodes,numNodes));
+  // d_results[tid] = sqrtf(cukd::knn(result,d_queries[tid],d_nodes,numNodes));
 }
 
 void knn50(float *d_results,
@@ -153,7 +172,8 @@ inline void verifyKNN(int pointID, int k, float maxRadius,
 {
   std::priority_queue<float> closest_k;
   for (int i=0;i<numPoints;i++) {
-    float d = cukd::distance(queryPoint,points[i]);
+    float dist2 = cukd::sqrDistance<cukd::TrivialFloatPointTraits<float3>>(queryPoint,points[i]);
+    float d = sqrtf(dist2);//cukd::distance(queryP<oint,points[i]);
     if (d <= maxRadius)
       closest_k.push(d);
     if (closest_k.size() > k)
@@ -213,7 +233,8 @@ int main(int ac, const char **av)
   {
     double t0 = getCurrentTime();
     std::cout << "calling builder..." << std::endl;
-    cukd::buildTree<float3>(d_points,nPoints);
+    // float dist2 = cukd::sqrDistance<cukd::TrivialFloatPointTraits<float3>>(queryPoint,points[i]);
+    cukd::buildTree<cukd::TrivialFloatPointTraits<float3>>(d_points,nPoints);
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
     std::cout << "done building tree, took " << prettyDouble(t1-t0) << "s" << std::endl;

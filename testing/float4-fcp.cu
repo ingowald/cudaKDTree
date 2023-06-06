@@ -43,7 +43,7 @@ __global__ void d_fcp(int *d_results,
 
   d_results[tid]
     = cukd::fcp
-    <TrivialFloatPointTraits<float4>>
+    <cukd::TrivialFloatPointTraits<float4>>
     (d_queries[tid],d_nodes,numNodes);
 }
 
@@ -127,7 +127,7 @@ int main(int ac, const char **av)
   {
     double t0 = getCurrentTime();
     std::cout << "calling builder..." << std::endl;
-    cukd::buildTree<float4>(d_points,nPoints);
+    cukd::buildTree<cukd::TrivialFloatPointTraits<float4>>(d_points,nPoints);
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
     std::cout << "done building tree, took " << prettyDouble(t1-t0) << "s" << std::endl;
@@ -183,9 +183,16 @@ int main(int ac, const char **av)
       if (d_results[i] == -1) continue;
       
       float4 qp = d_queries[i];
-      float reportedDist = cukd::distance(qp,d_points[d_results[i]]);
+      float reportedDist
+        = cukd::distance
+        <cukd::TrivialFloatPointTraits<float4>>
+        (qp,d_points[d_results[i]]);
+      // float reportedDist = cukd::distance<cukd::TrivialFloatPointTraits<float4>>(qp,d_points[d_results[i]]);
       for (int j=0;j<nPoints;j++) {
-        float dist_j = cukd::distance(qp,d_points[j]);
+        float dist_j = cukd::distance
+          <cukd::TrivialFloatPointTraits<float4>>
+          (qp,d_points[j]);
+        // float dist_j = cukd::distance(qp,d_points[j]);
         if (dist_j < reportedDist) {
           printf("for query %i: found offending point %i (%f %f %f %f) with dist %f (vs %f)\n",
                  i,

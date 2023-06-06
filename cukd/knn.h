@@ -139,6 +139,8 @@ namespace cukd {
             const typename node_point_traits_t::point_t *d_nodes,
             int N)
   {
+    using point_t = typename math_point_traits_t::point_t;
+    
     float maxRadius2 = currentlyClosest.maxRadius2();
 
     int prev = -1;
@@ -161,7 +163,7 @@ namespace cukd {
       const int  child = 2*curr+1;
       const bool from_child = (prev >= child);
       if (!from_child) {
-        float dist2 = sqr_distance(queryPoint,d_nodes[curr]);
+        float dist2 = sqrDistance<math_point_traits_t>(queryPoint,d_nodes[curr]);
         if (dist2 <= maxRadius2) {
           currentlyClosest.push(dist2,curr);
           maxRadius2 = currentlyClosest.maxRadius2();
@@ -169,7 +171,7 @@ namespace cukd {
       }
 
       const auto &curr_node = d_nodes[curr];
-      const int   curr_dim = BinaryTree::levelOf(curr) % common::point_traits<point_t>::numDims;
+      const int   curr_dim = BinaryTree::levelOf(curr) % node_point_traits_t::numDims;
       const float curr_dim_dist = (&queryPoint.x)[curr_dim] - (&curr_node.x)[curr_dim];
       const int   curr_side = curr_dim_dist > 0.f;
       const int   curr_close_child = 2*curr + 1 + curr_side;
