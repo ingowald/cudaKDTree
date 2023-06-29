@@ -92,11 +92,11 @@ target_include_directories(cudaKDTree INTERFACE
   ${PROJECT_SOURCE_DIR}/
   )
 
-add_executable(cukd_test_float4-fcp testing/float4-fcp.cu)
-target_link_libraries(cukd_test_float4-fcp cudaKDTree)
+add_executable(cukd_test_float2-fcp testing/float2-fcp.cu)
+target_link_libraries(cukd_test_float2-fcp cudaKDTree)
 
-add_executable(cukd_test_float4-knn testing/float4-knn.cu)
-target_link_libraries(cukd_test_float4-knn cudaKDTree)
+add_executable(cukd_test_float2-knn testing/float2-knn.cu)
+target_link_libraries(cukd_test_float2-knn cudaKDTree)
 
 add_executable(cukd_test_float3-knn testing/float3-knn.cu)
 target_link_libraries(cukd_test_float3-knn cudaKDTree)
@@ -105,6 +105,12 @@ add_executable(cukd_test_float3-fcp testing/float3-fcp.cu)
 target_link_libraries(cukd_test_float3-fcp cudaKDTree)
 
   
+add_executable(cukd_test_float4-fcp testing/float4-fcp.cu)
+target_link_libraries(cukd_test_float4-fcp cudaKDTree)
+
+add_executable(cukd_test_float4-knn testing/float4-knn.cu)
+target_link_libraries(cukd_test_float4-knn cudaKDTree)
+
 
 
 

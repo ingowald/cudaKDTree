@@ -120,7 +120,7 @@ int main(int ac, const char **av)
 {
   using namespace cukd::common;
 
-  int testCaseID = 0;
+  // int testCaseID = 0;
   int nPoints = 173;
   bool verify = false;
   // float maxQueryRadius = std::numeric_limits<float>::infinity();
@@ -136,15 +136,13 @@ int main(int ac, const char **av)
       nQueries = atoi(av[++i]);
     else if (arg == "-nr")
       nRepeats = atoi(av[++i]);
-    else if (arg == "-tc")
-      testCaseID = atoi(av[++i]);
     // else if (arg == "-r")
     //   maxQueryRadius = std::stof(av[++i]);
     else
       throw std::runtime_error("known cmdline arg "+arg);
   }
   
-  float3 *d_points = generatePoints(nPoints);
+  float3 *d_points = loadPoints<float3>("data_points",nPoints);//generatePoints(nPoints);
 #if FCP2
   cukd::common::box_t<float3> *d_bounds;
   cudaMalloc((void**)&d_bounds,sizeof(cukd::common::box_t<float3>));
@@ -171,29 +169,31 @@ int main(int ac, const char **av)
       std::cout << "... passed" << std::endl;
   }
 
-  float3 *d_queries = generatePoints(nQueries);
-  for (int i=0;i<nQueries;i++) {
-    float3 &p = d_queries[i];
-    switch (testCaseID) {
-    case 1:
-      p.x = p.x * 0.8 + 0.1;
-      p.y = p.y * 0.2 + 0.7;
-      p.z = p.z * 0.5 + 0.3;
-      break;
-    case 2:
-      p.x = p.x * 1.2 - 0.1;
-      p.y = p.y * 1.2 - 0.1;
-      p.z = p.z * 1.2 - 0.1;
-      break;
-    case 3:
-      p.x = p.x * 2 - 1;
-      p.y = p.y * 2 - 1;
-      p.z = p.z * 2 - 1;
-      break;
-    default: /* leave on uniform [0,1] */
-      ;
-    }
-  }
+  float3 *d_queries = loadPoints<float3>("query_points",nQueries);
+  // float3 *d_queries = generatePoints(nQueries);
+  // xxx
+  // for (int i=0;i<nQueries;i++) {
+  //   float3 &p = d_queries[i];
+  //   switch (testCaseID) {
+  //   case 1:
+  //     p.x = p.x * 0.8 + 0.1;
+  //     p.y = p.y * 0.2 + 0.7;
+  //     p.z = p.z * 0.5 + 0.3;
+  //     break;
+  //   case 2:
+  //     p.x = p.x * 1.2 - 0.1;
+  //     p.y = p.y * 1.2 - 0.1;
+  //     p.z = p.z * 1.2 - 0.1;
+  //     break;
+  //   case 3:
+  //     p.x = p.x * 2 - 1;
+  //     p.y = p.y * 2 - 1;
+  //     p.z = p.z * 2 - 1;
+  //     break;
+  //   default: /* leave on uniform [0,1] */
+  //     ;
+  //   }
+  // }
   int    *d_results;
   CUKD_CUDA_CALL(MallocManaged((void**)&d_results,nQueries*sizeof(int)));
   {

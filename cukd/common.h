@@ -39,6 +39,7 @@
 #include <execinfo.h>
 #include <sys/time.h>
 #endif
+#include <fstream>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -320,6 +321,29 @@ namespace cukd {
 
     template<typename point_t> struct box_t { point_t lower, upper; };
 
+    template<typename T>
+    inline T *loadPoints(std::string fileName, size_t &count)
+    {
+      // size_t count;
+      std::cout << "loading points from " << fileName << std::endl;
+      std::ifstream in(fileName,std::ios::binary);
+      in.read((char*)&count,sizeof(count));
+      // numPoints = count;
+      std::cout << "loading " << count <<  " points" << std::endl;
+      T *d_points = 0;
+      cudaMallocManaged((void**)&d_points,count*sizeof(T));
+      in.read((char*)d_points,count*sizeof(T));
+      return d_points;
+    }
+    
+    template<typename T>
+    inline T *loadPoints(std::string fileName, int &count)
+    {
+      size_t count64;
+      T *t = loadPoints<T>(fileName, count64);
+      count = count64;
+      return t;
+    }
   } // ::cukd::common
   using cukd::common::TrivialFloatPointTraits;
 

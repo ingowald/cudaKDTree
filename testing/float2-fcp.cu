@@ -18,24 +18,22 @@
 // fcp = "find closest point" query
 #include "cukd/fcp.h"
 
-float4 *generatePoints(int N)
+float2 *generatePoints(int N)
 {
   std::cout << "generating " << N <<  " points" << std::endl;
-  float4 *d_points = 0;
-  CUKD_CUDA_CALL(MallocManaged((void**)&d_points,N*sizeof(float4)));
+  float2 *d_points = 0;
+  CUKD_CUDA_CALL(MallocManaged((void**)&d_points,N*sizeof(float2)));
   for (int i=0;i<N;i++) {
     d_points[i].x = (float)drand48();
     d_points[i].y = (float)drand48();
-    d_points[i].z = (float)drand48();
-    d_points[i].w = (float)drand48();
   }
   return d_points;
 }
 
 __global__ void d_fcp(int *d_results,
-                    float4 *d_queries,
+                    float2 *d_queries,
                     int numQueries,
-                    float4 *d_nodes,
+                    float2 *d_nodes,
                     int numNodes)
 {
   int tid = threadIdx.x+blockIdx.x*blockDim.x;
@@ -43,14 +41,14 @@ __global__ void d_fcp(int *d_results,
 
   d_results[tid]
     = cukd::fcp
-    <cukd::TrivialFloatPointTraits<float4>>
+    <cukd::TrivialFloatPointTraits<float2>>
     (d_queries[tid],d_nodes,numNodes);
 }
 
 void fcp(int *d_results,
-         float4 *d_queries,
+         float2 *d_queries,
          int numQueries,
-         float4 *d_nodes,
+         float2 *d_nodes,
          int numNodes)
 {
   int bs = 128;
@@ -58,7 +56,7 @@ void fcp(int *d_results,
   d_fcp<<<nb,bs>>>(d_results,d_queries,numQueries,d_nodes,numNodes);
 }
 
-bool noneBelow(float4 *d_points, int N, int curr, int dim, float value)
+bool noneBelow(float2 *d_points, int N, int curr, int dim, float value)
 {
   if (curr >= N) return true;
   return
@@ -67,7 +65,7 @@ bool noneBelow(float4 *d_points, int N, int curr, int dim, float value)
     && noneBelow(d_points,N,2*curr+2,dim,value);
 }
 
-bool noneAbove(float4 *d_points, int N, int curr, int dim, float value)
+bool noneAbove(float2 *d_points, int N, int curr, int dim, float value)
 {
   if (curr >= N) return true;
   return
@@ -76,7 +74,7 @@ bool noneAbove(float4 *d_points, int N, int curr, int dim, float value)
     && noneAbove(d_points,N,2*curr+2,dim,value);
 }
 
-bool checkTree(float4 *d_points, int N, int curr=0)
+bool checkTree(float2 *d_points, int N, int curr=0)
 {
   if (curr >= N) return true;
 
@@ -113,19 +111,17 @@ int main(int ac, const char **av)
       nQueries = atoi(av[++i]);
     else if (arg == "-nr")
       nRepeats = atoi(av[++i]);
-    // else if (arg == "-r")
-    //   maxQueryRadius = std::stof(av[++i]);
     else
       throw std::runtime_error("known cmdline arg "+arg);
   }
   
-  float4 *d_points = loadPoints<float4>("data_points",nPoints);//generatePoints(nPoints);
-  // float4 *d_points = generatePoints(nPoints);
+  float2 *d_points = loadPoints<float2>("data_points",nPoints);//generatePoints(nPoints);
+  // float2 *d_points = generatePoints(nPoints);
   
   {
     double t0 = getCurrentTime();
     std::cout << "calling builder..." << std::endl;
-    cukd::buildTree<cukd::TrivialFloatPointTraits<float4>>(d_points,nPoints);
+    cukd::buildTree<cukd::TrivialFloatPointTraits<float2>>(d_points,nPoints);
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
     std::cout << "done building tree, took " << prettyDouble(t1-t0) << "s" << std::endl;
@@ -139,8 +135,8 @@ int main(int ac, const char **av)
       std::cout << "... passed" << std::endl;
   }
 
-  // float4 *d_queries = generatePoints(nQueries);
-  float4 *d_queries = loadPoints<float4>("query_points",nQueries);
+  // float2 *d_queries = generatePoints(nQueries);
+  float2 *d_queries = loadPoints<float2>("query_points",nQueries);
   int    *d_results;
   CUKD_CUDA_CALL(MallocManaged((void**)&d_results,nQueries*sizeof(int)));
   {
@@ -159,25 +155,23 @@ int main(int ac, const char **av)
     for (int i=0;i<nQueries;i++) {
       if (d_results[i] == -1) continue;
       
-      float4 qp = d_queries[i];
+      float2 qp = d_queries[i];
       float reportedDist
         = cukd::distance
-        <cukd::TrivialFloatPointTraits<float4>>
+        <cukd::TrivialFloatPointTraits<float2>>
         (qp,d_points[d_results[i]]);
-      // float reportedDist = cukd::distance<cukd::TrivialFloatPointTraits<float4>>(qp,d_points[d_results[i]]);
+      // float reportedDist = cukd::distance<cukd::TrivialFloatPointTraits<float2>>(qp,d_points[d_results[i]]);
       for (int j=0;j<nPoints;j++) {
         float dist_j = cukd::distance
-          <cukd::TrivialFloatPointTraits<float4>>
+          <cukd::TrivialFloatPointTraits<float2>>
           (qp,d_points[j]);
         // float dist_j = cukd::distance(qp,d_points[j]);
         if (dist_j < reportedDist) {
-          printf("for query %i: found offending point %i (%f %f %f %f) with dist %f (vs %f)\n",
+          printf("for query %i: found offending point %i (%f %f) with dist %f (vs %f)\n",
                  i,
                  j,
                  d_points[j].x,
                  d_points[j].y,
-                 d_points[j].z,
-                 d_points[j].w,
                  dist_j,
                  reportedDist);
           
