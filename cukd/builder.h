@@ -19,6 +19,7 @@
 #include "helpers.h"
 
 #include <thrust/host_vector.h>
+#include <thrust/device_ptr.h>
 #include <thrust/device_vector.h>
 #include <thrust/execution_policy.h>
 #include <thrust/fill.h>
@@ -26,6 +27,7 @@
 #include <cuda.h>
 #include <thrust/binary_search.h>
 #include <device_launch_parameters.h>
+#include <thrust/mr/memory_resource.h>
 #include <thrust/random/linear_congruential_engine.h>
 #include <thrust/random/uniform_real_distribution.h>
 
@@ -60,7 +62,8 @@ namespace cukd {
   template<typename data_point_traits_t>
   void buildTree(typename data_point_traits_t::point_t *d_points,
                  int numPoints,
-                 cudaStream_t stream = 0);
+                 cudaStream_t stream,
+                 thrust::mr::memory_resource<thrust::device_ptr<void>>& mr);
 
   template<typename math_point_traits_t,
            typename data_point_traits_t = math_point_traits_t>
@@ -161,12 +164,15 @@ namespace cukd {
   template<typename data_point_traits_t>
   void buildTree(typename data_point_traits_t::point_t *d_points,
                  int numPoints,
-                 cudaStream_t stream)
+                 cudaStream_t stream,
+                 thrust::mr::memory_resource<thrust::device_ptr<void>>& mr)
   {
     /* thrust helper typedefs for the zip iterator, to make the code
        below more readable */
     using data_point_t = typename data_point_traits_t::point_t;
-    typedef typename thrust::device_vector<tag_t>::iterator tag_iterator;
+    typedef thrust::mr::allocator<tag_t, thrust::mr::memory_resource<thrust::device_ptr<void>>> tag_allocator;
+    typedef thrust::device_vector<tag_t, tag_allocator> tag_device_vector;
+    typedef typename tag_device_vector::iterator tag_iterator;
     typedef typename thrust::device_vector<data_point_t>::iterator point_iterator;
     typedef thrust::tuple<tag_iterator,point_iterator> iterator_tuple;
     typedef thrust::zip_iterator<iterator_tuple> tag_point_iterator;
@@ -176,7 +182,7 @@ namespace cukd {
 
     /* the helper array  we use to store each node's subtree ID in */
     // TODO allocate in stream?
-    thrust::device_vector<tag_t> tags(numPoints);
+    tag_device_vector tags(numPoints, tag_allocator{&mr});
     /* to kick off the build, every element is in the only
        level-0 subtree there is, namely subtree number 0... duh */
     thrust::fill(thrust::device.on(stream),tags.begin(),tags.end(),0);
