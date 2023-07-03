@@ -161,6 +161,23 @@ namespace cukd {
   }
 #endif
 
+  // From thrust examples/cuda/custom_temporary_allocation.cu
+  class MemoryResourceBackedAllocatorAdaptor {
+    public:
+      typedef char value_type;
+      explicit MemoryResourceBackedAllocatorAdaptor(
+        thrust::mr::memory_resource<thrust::device_ptr<void>>& mr)
+        : resource_{&mr} {}
+      char *allocate(std::ptrdiff_t num_bytes) {
+        return (char*)resource_->allocate(num_bytes).get();
+      }
+      void deallocate(char *ptr, size_t bytes) {
+        return resource_->deallocate(thrust::device_ptr<void>{ptr}, bytes);
+      }
+    private:
+      thrust::mr::memory_resource<thrust::device_ptr<void>>* resource_;
+  };
+
   template<typename data_point_traits_t>
   void buildTree(typename data_point_traits_t::point_t *d_points,
                  int numPoints,
@@ -180,12 +197,14 @@ namespace cukd {
     // check for invalid input, and return gracefully if so
     if (numPoints < 1) return;
 
+    const auto exec = thrust::cuda::par(MemoryResourceBackedAllocatorAdaptor{mr}).on(stream);
+
     /* the helper array  we use to store each node's subtree ID in */
     // TODO allocate in stream?
     tag_device_vector tags(numPoints, tag_allocator{&mr});
     /* to kick off the build, every element is in the only
        level-0 subtree there is, namely subtree number 0... duh */
-    thrust::fill(thrust::device.on(stream),tags.begin(),tags.end(),0);
+    thrust::fill(exec,tags.begin(),tags.end(),0);
 
     /* create the zip iterators we use for zip-sorting the tag and
        points array */
@@ -209,7 +228,7 @@ namespace cukd {
     /* now build each level, one after another, cycling through the
        dimensoins */
     for (int level=0;level<deepestLevel;level++) {
-      thrust::sort(thrust::device.on(stream),begin,end,
+      thrust::sort(exec,begin,end,
                    ZipCompare<data_point_traits_t>((level)%numDims));
 
 #if KDTREE_BUILDER_LOGGING
@@ -230,7 +249,7 @@ namespace cukd {
        element has its final (and unique) nodeID stored in the tag[]
        array, so the dimension we're sorting in really won't matter
        any more */
-    thrust::sort(thrust::device.on(stream),begin,end,
+    thrust::sort(exec,begin,end,
                  ZipCompare<data_point_traits_t>((deepestLevel)%numDims));
 #if KDTREE_BUILDER_LOGGING
     cudaStreamSynchronize(stream);
