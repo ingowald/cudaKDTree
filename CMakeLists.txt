@@ -58,7 +58,8 @@ if (NOT CUKD_IS_SUBPROJECT)
   SET(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 endif()
 
-set(CMAKE_CUDA_ARCHITECTURES 70 75 86)
+set(CMAKE_CUDA_ARCHITECTURES 70)
+#set(CMAKE_CUDA_ARCHITECTURES 70 75 86)
 if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.17)
   # nothing to do, setting CMAKE_CUDA_ARCHITECTURES is hte way to go
 else()
@@ -70,48 +71,73 @@ endif()
 
 
 
-set(CMAKE_CUDA_ARCHITECTURES 70 75 80 86)
-if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.17)
+#set(CMAKE_CUDA_ARCHITECTURES 70 75 80 86)
+#if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.17)
   # nothing to do, setting CMAKE_CUDA_ARCHITECTURES is hte way to go
-else()
-  foreach (arch IN ITEMS ${CMAKE_CUDA_ARCHITECTURES})
+#else()
+#  foreach (arch IN ITEMS ${CMAKE_CUDA_ARCHITECTURES})
 #    message("status adding arch=${arch}")
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${arch},code=sm_${arch}")
+#    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${arch},code=sm_${arch}")
+#  endforeach()
+#endif()
+
+
+foreach(stack_free ON OFF)
+  foreach(improved ON OFF)
+    message(STATUS "stack_free ${stack_free}")
+    message(STATUS "improved ${improved}")
+    if (${stack_free})
+      set(suffix "-sf")
+    else()
+      set(suffix "-sb")
+    endif()
+    
+    if (${improved})
+      set(suffix "${suffix}-imp")
+    else()
+      set(suffix "${suffix}-reg")
+    endif()
+
+    add_library(cudaKDTree${suffix} INTERFACE)
+    target_sources(cudaKDTree${suffix} INTERFACE
+      cukd/common.h
+      cukd/builder.h
+      cukd/fcp.h
+      cukd/knn.h
+      )
+    target_include_directories(cudaKDTree${suffix} INTERFACE
+      #target_link_libraries(cudaKDTree INTERFACE
+      ${PROJECT_SOURCE_DIR}/
+      )
+    if (${improved})
+      target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_IMPROVED_TRAVERSAL=1)
+    endif()
+    if (${stack_free})
+      target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_STACK_FREE=1)
+    endif()
+
+    add_executable(cukd_float2-fcp${suffix} testing/float2-fcp.cu)
+    target_link_libraries(cukd_float2-fcp${suffix} cudaKDTree${suffix})
+    
+    add_executable(cukd_float3-fcp${suffix} testing/float3-fcp.cu)
+    target_link_libraries(cukd_float3-fcp${suffix} cudaKDTree${suffix})
+        
+    add_executable(cukd_float4-fcp${suffix} testing/float4-fcp.cu)
+    target_link_libraries(cukd_float4-fcp${suffix} cudaKDTree${suffix})
+
+    # add_executable(cukd_float2-knn${suffix} testing/float2-knn.cu)
+    # target_link_libraries(cukd_float2-knn${suffix} cudaKDTree${suffix})
+    
+    # add_executable(cukd_float3-knn${suffix} testing/float3-knn.cu)
+    # target_link_libraries(cukd_float3-knn${suffix} cudaKDTree${suffix})
+
+    
+    set(DIMS_TO_BUILD 2 3 4)
+    foreach (D IN ITEMS ${DIMS_TO_BUILD})
+      add_executable(cukd_float${D}-knn${suffix} testing/floatN-knn.cu)
+      target_link_libraries(cukd_float${D}-knn${suffix} cudaKDTree${suffix})
+      target_compile_definitions(cukd_float${D}-knn${suffix} PUBLIC -DD_FROM_CMAKE=${D})
+    endforeach()
+
   endforeach()
-endif()
-
-add_library(cudaKDTree INTERFACE)
-target_sources(cudaKDTree INTERFACE
-  cukd/common.h
-  cukd/builder.h
-  cukd/fcp.h
-  cukd/knn.h
-  )
-target_include_directories(cudaKDTree INTERFACE
-#target_link_libraries(cudaKDTree INTERFACE
-  ${PROJECT_SOURCE_DIR}/
-  )
-
-add_executable(cukd_test_float2-fcp testing/float2-fcp.cu)
-target_link_libraries(cukd_test_float2-fcp cudaKDTree)
-
-add_executable(cukd_test_float2-knn testing/float2-knn.cu)
-target_link_libraries(cukd_test_float2-knn cudaKDTree)
-
-add_executable(cukd_test_float3-knn testing/float3-knn.cu)
-target_link_libraries(cukd_test_float3-knn cudaKDTree)
-
-add_executable(cukd_test_float3-fcp testing/float3-fcp.cu)
-target_link_libraries(cukd_test_float3-fcp cudaKDTree)
-
-  
-add_executable(cukd_test_float4-fcp testing/float4-fcp.cu)
-target_link_libraries(cukd_test_float4-fcp cudaKDTree)
-
-add_executable(cukd_test_float4-knn testing/float4-knn.cu)
-target_link_libraries(cukd_test_float4-knn cudaKDTree)
-
-
-
-
-
+endforeach()

@@ -22,7 +22,7 @@
     corner to far-side subtrees on the stack; requires a stack, and
     will be slower for simple caes... but much more stable for certain
     queries */
-#define FCP2 1
+// #define FCP2 1
 
 using namespace cukd::common;
 
@@ -39,12 +39,16 @@ float3 *generatePoints(int N)
   return d_points;
 }
 
-__global__ void d_fcp(int *d_results,
+__global__ void d_fcp(unsigned long long *d_stats,
+                      int *d_results,
                       float3 *d_queries,
                       int numQueries,
-#if FCP2
+#if CUKD_IMPROVED_TRAVERSAL
                       const cukd::common::box_t<float3> *d_bounds,
 #endif
+// #if FCP2
+//                       const cukd::common::box_t<float3> *d_bounds,
+// #endif
                       float3 *d_nodes,
                       int numNodes)
 {
@@ -54,9 +58,9 @@ __global__ void d_fcp(int *d_results,
   d_results[tid]
     = cukd::fcp
     <TrivialFloatPointTraits<float3>>
-    (d_queries[tid],
-#if FCP2
-                             d_bounds,
+    (d_stats,d_queries[tid],
+#if CUKD_IMPROVED_TRAVERSAL
+                             *d_bounds,
 #endif
                              d_nodes,numNodes);
 }
@@ -64,7 +68,7 @@ __global__ void d_fcp(int *d_results,
 void fcp(int *d_results,
          float3 *d_queries,
          int numQueries,
-#if FCP2
+#if CUKD_IMPROVED_TRAVERSAL
          const cukd::common::box_t<float3> *d_bounds,
 #endif
          float3 *d_nodes,
@@ -72,12 +76,31 @@ void fcp(int *d_results,
 {
   int bs = 128;
   int nb = cukd::common::divRoundUp(numQueries,bs);
-  d_fcp<<<nb,bs>>>(d_results,
-                   d_queries,numQueries,
-#if FCP2
+  unsigned long long *d_stats = 0;
+  static bool firstTime = true;
+  if (firstTime) {
+    cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
+    *d_stats = 0;
+  }
+  d_fcp<<<nb,bs>>>(d_stats,d_results,d_queries,numQueries,
+#if CUKD_IMPROVED_TRAVERSAL
                    d_bounds,
 #endif
                    d_nodes,numNodes);
+  if (firstTime) {
+    cudaDeviceSynchronize();
+    std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+    cudaFree(d_stats);
+    firstTime = false;
+  }
+//   int bs = 128;
+//   int nb = cukd::common::divRoundUp(numQueries,bs);
+//   d_fcp<<<nb,bs>>>(d_results,
+//                    d_queries,numQueries,
+// #if FCP2
+//                    d_bounds,
+// #endif
+//                    d_nodes,numNodes);
 }
 
 bool noneBelow(float3 *d_points, int N, int curr, int dim, float value)
@@ -143,7 +166,7 @@ int main(int ac, const char **av)
   }
   
   float3 *d_points = loadPoints<float3>("data_points",nPoints);//generatePoints(nPoints);
-#if FCP2
+#if CUKD_IMPROVED_TRAVERSAL
   cukd::common::box_t<float3> *d_bounds;
   cudaMalloc((void**)&d_bounds,sizeof(cukd::common::box_t<float3>));
   cukd::computeBounds
@@ -200,14 +223,14 @@ int main(int ac, const char **av)
     double t0 = getCurrentTime();
     for (int i=0;i<nRepeats;i++) {
       fcp(d_results,d_queries,nQueries,
-#if FCP2
+#if CUKD_IMPROVED_TRAVERSAL
           d_bounds,
 #endif
           d_points,nPoints);
     }
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
-    std::cout << "done " << nRepeats << " iterations of 10M fcp queries, took " << prettyDouble(t1-t0) << "s" << std::endl;
+    std::cout << "done " << nRepeats << " iterations of " << nQueries << " fcp queries, took " << prettyDouble(t1-t0) << "s" << std::endl;
     std::cout << "that is " << prettyDouble(nQueries*nRepeats/(t1-t0)) << " queries/s" << std::endl;
   }
   

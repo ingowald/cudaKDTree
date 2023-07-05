@@ -31,6 +31,20 @@
 
 namespace cukd {
 
+  // template<typename point_t>
+  // struct box_t {
+  //   box_t lower, upper;
+  // };
+
+  // template<typename point_traits_t>
+  // inline __device__ void clear(box_t<typename point_traits_t::point_t> &box)
+  // {
+  //   for (int d=0;d<point_traits_t::numDims;d++) {
+  //     point_traits_t::setCoord(box.lower,d,+INFINITY);
+  //     point_traits_t::setCoord(box.upper,d,-INFINITY);
+  //   }
+  // };
+  
   typedef uint32_t tag_t;
 
   // ==================================================================
@@ -254,7 +268,8 @@ namespace cukd {
     if(old <= value) return old;
     do {
       assumed = old;
-      old = atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value));
+      old = __int_as_float(atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value)));
+      value = min(value,old);
     } while(old!=assumed);
     return old;
   }
@@ -266,7 +281,8 @@ namespace cukd {
     if(old >= value) return old;
     do {
       assumed = old;
-      old = atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value));
+      old = __int_as_float(atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value)));
+      value = max(value,old);
     } while(old!=assumed);
     return old;
   }
@@ -299,9 +315,11 @@ namespace cukd {
     computeBounds_copyFirst<math_point_traits_t, data_point_traits_t>
       <<<1,1,0,s>>>
       (d_bounds,d_points);
+    cudaStreamSynchronize(s);
     computeBounds_atomicGrow<math_point_traits_t, data_point_traits_t>
       <<<common::divRoundUp(numPoints,128),128,0,s>>>
       (d_bounds,d_points,numPoints);
+    cudaStreamSynchronize(s);
   }
 
 

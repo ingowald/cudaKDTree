@@ -40,6 +40,7 @@
 #include <sys/time.h>
 #endif
 #include <fstream>
+#include <iostream>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -298,15 +299,15 @@ namespace cukd {
     };
 
     /*! Point trait.
-       The cukd library uses point traits template parameters to describe the
-       points. A  point trait is a struct that must provide the following members:
-       - numDims (int): the number of dimensions used in the kdtree (i.e.
-         without the payload).
-       - scalar_t (type): the scalar type used by the point (float usually).
-       - scalar_t getCoord(const point_t &p, int dim): static function that
-         returns the dim-th coord of the point.
-       - void setCoord(point_t &p, int dim, scalar_t value): static function
-         that sets the dim-th coord of the point.
+      The cukd library uses point traits template parameters to describe the
+      points. A  point trait is a struct that must provide the following members:
+      - numDims (int): the number of dimensions used in the kdtree (i.e.
+      without the payload).
+      - scalar_t (type): the scalar type used by the point (float usually).
+      - scalar_t getCoord(const point_t &p, int dim): static function that
+      returns the dim-th coord of the point.
+      - void setCoord(point_t &p, int dim, scalar_t value): static function
+      that sets the dim-th coord of the point.
 
       The trivial point traits here will work for most float type points, e.g.
       float3 and float4. Provided for convenience to make it easy to define
@@ -357,8 +358,8 @@ namespace cukd {
     box */
   template<typename point_traits_t>
   inline __device__ auto project(
-      const common::box_t<typename point_traits_t::point_t>& box,
-      const typename point_traits_t::point_t& point)
+                                 const common::box_t<typename point_traits_t::point_t>& box,
+                                 const typename point_traits_t::point_t& point)
   {
     typename point_traits_t::point_t projected;
 #pragma unroll
@@ -371,6 +372,14 @@ namespace cukd {
   }
 
 } // ::cukd
+
+
+inline std::ostream &operator<<(std::ostream &out,
+                                float2 v)
+{
+  out << "(" << v.x << "," << v.y << ")";
+  return out;
+}
 
 #define CUKD_CUDA_CHECK( call )                                         \
   {                                                                     \

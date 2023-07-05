@@ -80,168 +80,146 @@ namespace cukd {
 
     // Controls when to go down the far branch: only go down the far branch if
     // the distance to the far node is larger than this search radius.
-    float max_far_node_search_radius = 1e9f;
+    float max_far_node_search_radius = INFINITY;
   };
 
+
+
+
+
+  struct FCPResult {
+    inline __device__ float initialCullDist2() const
+    { return closestDist2; }
+    
+    inline __device__ float clear(float initialDist2)
+    {
+      closestDist2 = initialDist2;
+      closestPrimID = -1;
+      return closestDist2;
+    }
+    
+    /*! process a new candidate with given ID and (square) distance;
+        and return square distance to be used for subsequent
+        queries */
+    inline __device__ float processCandidate(int candPrimID, float candDist2)
+    {
+      if (candDist2 < closestDist2) {
+        closestDist2 = candDist2;
+        closestPrimID = candPrimID;
+      }
+      return closestDist2;
+    }
+
+    inline __device__ int returnValue() const
+    { return closestPrimID; }
+    
+    int   closestPrimID;
+    float closestDist2;
+  };
+  
+
+} // ::cukd
+
+
+
+
+
+#if CUKD_IMPROVED_TRAVERSAL
+# if CUKD_STACK_FREE
+// stack-free, improved traversal
+#  include "traverse-sf-imp.h"
+namespace cukd {
   template<
     typename math_point_traits_t,
     typename node_point_traits_t=math_point_traits_t>
   inline __device__
-  int fcp(typename math_point_traits_t::point_t queryPoint,
+  int fcp(unsigned long long *d_stats,
+          typename math_point_traits_t::point_t queryPoint,
+          const cukd::common::box_t<typename math_point_traits_t::point_t> worldBounds,
           const typename node_point_traits_t::point_t *d_nodes,
           int N,
           FcpSearchParams params = FcpSearchParams{})
   {
-    using scalar_t = typename math_point_traits_t::scalar_t;
-    const auto max_far_node_search_radius_sqr
-      = params.max_far_node_search_radius
-      * params.max_far_node_search_radius;
-    const auto epsErr = 1 + params.eps;
-
-    int   closest_found_so_far = -1;
-    float closest_dist_sqr_found_so_far = CUDART_INF;
-
-    int prev = -1;
-    int curr = 0;
-
-    while (true) {
-      const int parent = (curr+1)/2-1;
-      if (curr >= N) {
-        // in some (rare) cases it's possible that below traversal
-        // logic will go to a "close child", but may actually only
-        // have a far child. In that case it's easiest to fix this
-        // right here, pretend we've done that (non-existent) close
-        // child, and let parent pick up traversal as if it had been
-        // done.
-        prev = curr;
-        curr = parent;
-
-        continue;
-      }
-      const auto &curr_node = d_nodes[curr];
-      const int  child = 2*curr+1;
-      const bool from_child = (prev >= child);
-      if (!from_child) {
-        const auto dist_sqr =
-          sqrDistance<math_point_traits_t,node_point_traits_t>(queryPoint,curr_node);
-        if (dist_sqr < closest_dist_sqr_found_so_far) {
-          closest_dist_sqr_found_so_far = dist_sqr;
-          closest_found_so_far          = curr;
-        }
-      }
-
-      const int   curr_dim = BinaryTree::levelOf(curr) % math_point_traits_t::numDims;
-      const float curr_dim_dist = (&queryPoint.x)[curr_dim] - (&curr_node.x)[curr_dim];
-      const int   curr_side = curr_dim_dist > 0.f;
-      const int   curr_close_child = 2*curr + 1 + curr_side;
-      const int   curr_far_child   = 2*curr + 2 - curr_side;
-
-      int next = -1;
-      if (prev == curr_close_child)
-        // if we came from the close child, we may still have to check
-        // the far side - but only if this exists, and if far half of
-        // current space if even within search radius.
-        next
-          = ((curr_far_child<N) && ((curr_dim_dist * curr_dim_dist) * epsErr < min(max_far_node_search_radius_sqr, closest_dist_sqr_found_so_far)) && (--params.far_node_inspect_budget>=0))
-          ? curr_far_child
-          : parent;
-      else if (prev == curr_far_child)
-        // if we did come from the far child, then both children are
-        // done, and we can only go up.
-        next = parent;
-      else
-        // we didn't come from any child, so must be coming from a
-        // parent... we've already been processed ourselves just now,
-        // so next stop is to look at the children (unless there
-        // aren't any). this still leaves the case that we might have
-        // a child, but only a far child, and this far child may or
-        // may not be in range ... we'll fix that by just going to
-        // near child _even if_ only the far child exists, and have
-        // that child do a dummy traversal of that missing child, then
-        // pick up on the far-child logic when we return.
-        next
-          = (child<N)
-          ? curr_close_child
-          : parent;
-
-      if (next == -1)
-        // if (curr == 0 && from_child)
-        // this can only (and will) happen if and only if we come from a
-        // child, arrive at the root, and decide to go to the parent of
-        // the root ... while means we're done.
-        return closest_found_so_far;
-
-      prev = curr;
-      curr = next;
-    }
+    FCPResult result;
+    result.clear(sqr(params.max_far_node_search_radius));
+    traverse_sf_imp<math_point_traits_t,node_point_traits_t,FCPResult>
+      (result,d_stats,queryPoint,worldBounds,d_nodes,N);
+    return result.returnValue();
   }
+} // :: cukd
 
-  /*1 project a point into a boundinx box */
-  template <typename math_point_traits_t,
-            typename node_point_traits_t=math_point_traits_t>
+# else
+// stack-free, improved traversal
+#  include "traverse-sb-imp.h"
+namespace cukd {
+  template<
+    typename math_point_traits_t,
+    typename node_point_traits_t=math_point_traits_t>
   inline __device__
-  int fcp(typename math_point_traits_t::point_t queryPoint,
-          const common::box_t<typename math_point_traits_t::point_t> *d_bounds,
+  int fcp(unsigned long long *d_stats,
+          typename math_point_traits_t::point_t queryPoint,
+          const cukd::common::box_t<typename math_point_traits_t::point_t> worldBounds,
           const typename node_point_traits_t::point_t *d_nodes,
-          int numPoints,
+          int N,
           FcpSearchParams params = FcpSearchParams{})
   {
-    using scalar_t = typename math_point_traits_t::scalar_t;
-    scalar_t cullDist = sqr(params.max_far_node_search_radius);
-    int   closestID = -1;
-
-    struct StackEntry {
-      typename math_point_traits_t::point_t closestCorner;
-      int          nodeID;
-    };
-    /* can do at most 2**30 points... */
-    StackEntry  stackBase[30];
-    StackEntry *stackPtr = stackBase;
-
-    int nodeID = 0;
-    auto closestPointOnSubtreeBounds = project<math_point_traits_t>(*d_bounds,queryPoint);
-    if (sqrDistance<math_point_traits_t>(queryPoint,closestPointOnSubtreeBounds) > cullDist)
-      return closestID;
-
-
-    while (true) {
-      if (nodeID >= numPoints) {
-        while (true) {
-          if (stackPtr == stackBase)
-            return closestID;
-          --stackPtr;
-          closestPointOnSubtreeBounds = stackPtr->closestCorner;
-          if (sqrDistance<math_point_traits_t>(closestPointOnSubtreeBounds,queryPoint) > cullDist)
-            continue;
-          nodeID = stackPtr->nodeID;
-          break;
-        }
-      }
-      const int dim    = BinaryTree::levelOf(nodeID) % math_point_traits_t::numDims;
-      const auto node  = d_nodes[nodeID];
-      const auto sqrDist = sqrDistance<node_point_traits_t,math_point_traits_t>(node,queryPoint);
-      if (sqrDist < cullDist) {
-        cullDist  = sqrDist;
-        closestID = nodeID;
-      }
-
-      const auto node_dim   = node_point_traits_t::getCoord(node,dim);
-      const auto query_dim  = math_point_traits_t::getCoord(queryPoint,dim);
-      const bool  leftIsClose = query_dim < node_dim;
-      const int   lChild = 2*nodeID+1;
-      const int   rChild = lChild+1;
-
-      auto farSideCorner = closestPointOnSubtreeBounds;
-      const int farChild = leftIsClose?rChild:lChild;
-      math_point_traits_t::setCoord(farSideCorner,dim,node_dim);
-      if (farChild < numPoints && sqrDistance<math_point_traits_t>(farSideCorner,queryPoint) <= cullDist) {
-        stackPtr->closestCorner = farSideCorner;
-        stackPtr->nodeID = farChild;
-        stackPtr++;
-      }
-
-      nodeID = leftIsClose?lChild:rChild;
-    }
+    FCPResult result;
+    result.clear(sqr(params.max_far_node_search_radius));
+    traverse_sb_imp<math_point_traits_t,node_point_traits_t,FCPResult>
+      (result,d_stats,queryPoint,worldBounds,d_nodes,N);
+    return result.returnValue();
   }
-} // ::cukd
+} // :: cukd
+
+# endif
+#else
+# if CUKD_STACK_FREE
+// stack-free, regular traversal
+#  include "traverse-sf-reg.h"
+namespace cukd {
+  template<
+    typename math_point_traits_t,
+    typename node_point_traits_t=math_point_traits_t>
+  inline __device__
+  int fcp(unsigned long long *d_stats,
+          typename math_point_traits_t::point_t queryPoint,
+          // const cukd::common::box_t<typename math_point_traits_t::point_t> worldBounds,
+          const typename node_point_traits_t::point_t *d_nodes,
+          int N,
+          FcpSearchParams params = FcpSearchParams{})
+  {
+    FCPResult result;
+    result.clear(sqr(params.max_far_node_search_radius));
+    traverse_sf_reg<math_point_traits_t,node_point_traits_t,FCPResult>
+      (result,d_stats,queryPoint// ,worldBounds
+       ,d_nodes,N);
+    return result.returnValue();
+  }
+} // :: cukd
+# else
+// stack-based, regular traversal
+#  include "traverse-sb-reg.h"
+namespace cukd {
+  template<
+    typename math_point_traits_t,
+    typename node_point_traits_t=math_point_traits_t>
+  inline __device__
+  int fcp(unsigned long long *d_stats,
+          typename math_point_traits_t::point_t queryPoint,
+          // const cukd::common::box_t<typename math_point_traits_t::point_t> worldBounds,
+          const typename node_point_traits_t::point_t *d_nodes,
+          int N,
+          FcpSearchParams params = FcpSearchParams{})
+  {
+    FCPResult result;
+    result.clear(sqr(params.max_far_node_search_radius));
+    traverse_sb_reg<math_point_traits_t,node_point_traits_t,FCPResult>
+      (result,d_stats,queryPoint// ,worldBounds
+       ,d_nodes,N);
+    return result.returnValue();
+  }
+} // :: cukd
+
+# endif
+#endif
 

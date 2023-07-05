@@ -24,29 +24,40 @@
 using namespace cukd;
 using namespace cukd::common;
 
-float4 *generatePoints(int N)
-{
-  std::cout << "generating " << N <<  " points" << std::endl;
-  float4 *d_points = 0;
-  CUKD_CUDA_CALL(MallocManaged((void**)&d_points,N*sizeof(float4)));
-  for (int i=0;i<N;i++) {
-    d_points[i].x = (float)drand48();
-    d_points[i].y = (float)drand48();
-    d_points[i].z = (float)drand48();
-    d_points[i].w = (float)drand48();
-  }
-  return d_points;
-}
+
+#if D_FROM_CMAKE == 2
+using floatN = float2;
+#elif D_FROM_CMAKE == 3
+using floatN = float3;
+#elif D_FROM_CMAKE == 4
+using floatN = float4;
+#else
+#pragma error("error ... should get a value of 2, 3, or 4 from cmakefile...")
+#endif
+
+// floatN *generatePoints(int N)
+// {
+//   std::cout << "generating " << N <<  " points" << std::endl;
+//   floatN *d_points = 0;
+//   CUKD_CUDA_CALL(MallocManaged((void**)&d_points,N*sizeof(floatN)));
+//   for (int i=0;i<N;i++) {
+//     d_points[i].x = (float)drand48();
+//     d_points[i].y = (float)drand48();
+//     d_points[i].z = (float)drand48();
+//     d_points[i].w = (float)drand48();
+//   }
+//   return d_points;
+// }
 
 // ==================================================================
 __global__ void d_knn4(unsigned long long *d_stats,
                        float *d_results,
-                       float4 *d_queries,
+                       floatN *d_queries,
                        int numQueries,
 #if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<float4> *d_bounds,
+         const cukd::common::box_t<floatN> *d_bounds,
 #endif
-                       float4 *d_nodes,
+                       floatN *d_nodes,
                        int numNodes,
                        float maxRadius)
 {
@@ -56,9 +67,9 @@ __global__ void d_knn4(unsigned long long *d_stats,
   cukd::FixedCandidateList<4> result(maxRadius);
   float sqrDist
     = cukd::knn
-    <cukd::TrivialFloatPointTraits<float4>,
+    <cukd::TrivialFloatPointTraits<floatN>,
      cukd::FixedCandidateList<4>,
-     cukd::TrivialFloatPointTraits<float4>>
+     cukd::TrivialFloatPointTraits<floatN>>
     (d_stats,result,d_queries[tid],
 #if CUKD_IMPROVED_TRAVERSAL
      *d_bounds,
@@ -68,12 +79,12 @@ __global__ void d_knn4(unsigned long long *d_stats,
 }
 
 void knn4(float *d_results,
-          float4 *d_queries,
+          floatN *d_queries,
           int numQueries,
 #if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<float4> *d_bounds,
+         const cukd::common::box_t<floatN> *d_bounds,
 #endif
-          float4 *d_nodes,
+          floatN *d_nodes,
           int numNodes,
           float maxRadius)
 {
@@ -102,12 +113,12 @@ void knn4(float *d_results,
 // ==================================================================
 __global__ void d_knn8(unsigned long long *d_stats,
                        float *d_results,
-                       float4 *d_queries,
+                       floatN *d_queries,
                        int numQueries,
 #if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<float4> *d_bounds,
+         const cukd::common::box_t<floatN> *d_bounds,
 #endif
-                       float4 *d_nodes,
+                       floatN *d_nodes,
                        int numNodes,
                        float maxRadius)
 {
@@ -117,7 +128,7 @@ __global__ void d_knn8(unsigned long long *d_stats,
   cukd::FixedCandidateList<8> result(maxRadius);
   float sqrDist
     = cukd::knn
-    <cukd::TrivialFloatPointTraits<float4>>
+    <cukd::TrivialFloatPointTraits<floatN>>
     (d_stats,result,d_queries[tid],
 #if CUKD_IMPROVED_TRAVERSAL
      *d_bounds,
@@ -127,12 +138,12 @@ __global__ void d_knn8(unsigned long long *d_stats,
 }
 
 void knn8(float *d_results,
-          float4 *d_queries,
+          floatN *d_queries,
           int numQueries,
 #if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<float4> *d_bounds,
+         const cukd::common::box_t<floatN> *d_bounds,
 #endif
-          float4 *d_nodes,
+          floatN *d_nodes,
           int numNodes,
           float maxRadius)
 {
@@ -161,12 +172,12 @@ void knn8(float *d_results,
 // ==================================================================
 __global__ void d_knn20(unsigned long long *d_stats,
                        float *d_results,
-                        float4 *d_queries,
+                        floatN *d_queries,
                         int numQueries,
 #if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<float4> *d_bounds,
+         const cukd::common::box_t<floatN> *d_bounds,
 #endif
-                        float4 *d_nodes,
+                        floatN *d_nodes,
                         int numNodes,
                         float maxRadius)
 {
@@ -176,7 +187,7 @@ __global__ void d_knn20(unsigned long long *d_stats,
   cukd::HeapCandidateList<20> result(maxRadius);
   d_results[tid]
     = sqrtf(cukd::knn
-            <cukd::TrivialFloatPointTraits<float4>>
+            <cukd::TrivialFloatPointTraits<floatN>>
             (d_stats,result,d_queries[tid],
 #if CUKD_IMPROVED_TRAVERSAL
              *d_bounds,
@@ -185,12 +196,12 @@ __global__ void d_knn20(unsigned long long *d_stats,
 }
 
 void knn20(float *d_results,
-           float4 *d_queries,
+           floatN *d_queries,
            int numQueries,
 #if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<float4> *d_bounds,
+         const cukd::common::box_t<floatN> *d_bounds,
 #endif
-           float4 *d_nodes,
+           floatN *d_nodes,
            int numNodes,
            float maxRadius)
 {
@@ -219,12 +230,12 @@ void knn20(float *d_results,
 // ==================================================================
 __global__ void d_knn50(unsigned long long *d_stats,
                        float *d_results,
-                        float4 *d_queries,
+                        floatN *d_queries,
                         int numQueries,
 #if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<float4> *d_bounds,
+         const cukd::common::box_t<floatN> *d_bounds,
 #endif
-                        float4 *d_nodes,
+                        floatN *d_nodes,
                         int numNodes,
                         float maxRadius)
 {
@@ -233,7 +244,7 @@ __global__ void d_knn50(unsigned long long *d_stats,
 
   cukd::HeapCandidateList<50> result(maxRadius);
   d_results[tid] = sqrtf(cukd::knn
-                         <cukd::TrivialFloatPointTraits<float4>>
+                         <cukd::TrivialFloatPointTraits<floatN>>
                          (d_stats,result,d_queries[tid],
 #if CUKD_IMPROVED_TRAVERSAL
                      *d_bounds,
@@ -242,12 +253,12 @@ __global__ void d_knn50(unsigned long long *d_stats,
 }
 
 void knn50(float *d_results,
-           float4 *d_queries,
+           floatN *d_queries,
            int numQueries,
 #if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<float4> *d_bounds,
+         const cukd::common::box_t<floatN> *d_bounds,
 #endif
-           float4 *d_nodes,
+           floatN *d_nodes,
            int numNodes,
            float maxRadius)
 {
@@ -274,14 +285,14 @@ void knn50(float *d_results,
 
 // ==================================================================
 inline void verifyKNN(int pointID, int k, float maxRadius,
-                      float4 *points, int numPoints,
-                      float4 queryPoint,
+                      floatN *points, int numPoints,
+                      floatN queryPoint,
                       float presumedResult)
 {
   std::priority_queue<float> closest_k;
   for (int i=0;i<numPoints;i++) {
     float d = sqrtf(cukd::sqrDistance
-                    <cukd::TrivialFloatPointTraits<float4>>
+                    <cukd::TrivialFloatPointTraits<floatN>>
                     (queryPoint,points[i]));
     if (d <= maxRadius)
       closest_k.push(d);
@@ -337,12 +348,13 @@ int main(int ac, const char **av)
       throw std::runtime_error("known cmdline arg "+arg);
   }
   
-  float4 *d_points = generatePoints(nPoints);
+  // floatN *d_points = generatePoints(nPoints);
+  floatN *d_points = loadPoints<floatN>("data_points",nPoints);//generatePoints(nPoints);
 #if CUKD_IMPROVED_TRAVERSAL
-    cukd::common::box_t<float4> *d_bounds;
-    cudaMalloc((void**)&d_bounds,sizeof(cukd::common::box_t<float4>));
+    cukd::common::box_t<floatN> *d_bounds;
+    cudaMalloc((void**)&d_bounds,sizeof(cukd::common::box_t<floatN>));
     cukd::computeBounds
-      <cukd::TrivialFloatPointTraits<float4>>
+      <cukd::TrivialFloatPointTraits<floatN>>
       (d_bounds,d_points,nPoints);
 #endif
 
@@ -350,7 +362,7 @@ int main(int ac, const char **av)
     double t0 = getCurrentTime();
     std::cout << "calling builder..." << std::endl;
     cukd::buildTree
-      <cukd::TrivialFloatPointTraits<float4>>
+      <cukd::TrivialFloatPointTraits<floatN>>
       (d_points,nPoints);
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
@@ -358,7 +370,8 @@ int main(int ac, const char **av)
   }
 
   size_t nQueries = 10*1000*1000;
-  float4 *d_queries = generatePoints(nQueries);
+  floatN *d_queries = loadPoints<floatN>("query_points",nQueries);
+  // floatN *d_queries = generatePoints(nQueries);
   float  *d_results;
   CUKD_CUDA_CALL(MallocManaged((void**)&d_results,nQueries*sizeof(float)));
 

@@ -30,9 +30,12 @@ float2 *generatePoints(int N)
   return d_points;
 }
 
-__global__ void d_fcp(int *d_results,
+__global__ void d_fcp(unsigned long long *d_stats, int *d_results,
                     float2 *d_queries,
                     int numQueries,
+#if CUKD_IMPROVED_TRAVERSAL
+                      const cukd::common::box_t<float2> *d_bounds,
+#endif
                     float2 *d_nodes,
                     int numNodes)
 {
@@ -42,18 +45,44 @@ __global__ void d_fcp(int *d_results,
   d_results[tid]
     = cukd::fcp
     <cukd::TrivialFloatPointTraits<float2>>
-    (d_queries[tid],d_nodes,numNodes);
+    (d_stats,d_queries[tid],
+#if CUKD_IMPROVED_TRAVERSAL
+                             *d_bounds,
+#endif
+     d_nodes,numNodes);
 }
 
 void fcp(int *d_results,
          float2 *d_queries,
          int numQueries,
+#if CUKD_IMPROVED_TRAVERSAL
+         const cukd::common::box_t<float2> *d_bounds,
+#endif
          float2 *d_nodes,
          int numNodes)
 {
   int bs = 128;
   int nb = cukd::common::divRoundUp(numQueries,bs);
-  d_fcp<<<nb,bs>>>(d_results,d_queries,numQueries,d_nodes,numNodes);
+  unsigned long long *d_stats = 0;
+  static bool firstTime = true;
+  if (firstTime) {
+    cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
+    *d_stats = 0;
+  }
+  d_fcp<<<nb,bs>>>(d_stats,d_results,d_queries,numQueries,
+#if CUKD_IMPROVED_TRAVERSAL
+                   d_bounds,
+#endif
+                   d_nodes,numNodes);
+  if (firstTime) {
+    cudaDeviceSynchronize();
+    std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+    cudaFree(d_stats);
+    firstTime = false;
+  }
+  // int bs = 128;
+  // int nb = cukd::common::divRoundUp(numQueries,bs);
+  // d_fcp<<<nb,bs>>>(d_results,d_queries,numQueries,d_nodes,numNodes);
 }
 
 bool noneBelow(float2 *d_points, int N, int curr, int dim, float value)
@@ -78,7 +107,7 @@ bool checkTree(float2 *d_points, int N, int curr=0)
 {
   if (curr >= N) return true;
 
-  int dim = cukd::BinaryTree::levelOf(curr)%4;
+  int dim = cukd::BinaryTree::levelOf(curr)%2;
   float value = (&d_points[curr].x)[dim];
   
   if (!noneAbove(d_points,N,2*curr+1,dim,value))
@@ -116,6 +145,15 @@ int main(int ac, const char **av)
   }
   
   float2 *d_points = loadPoints<float2>("data_points",nPoints);//generatePoints(nPoints);
+#if CUKD_IMPROVED_TRAVERSAL
+  cukd::common::box_t<float2> *d_bounds;
+  cudaMallocManaged((void**)&d_bounds,sizeof(cukd::common::box_t<float2>));
+  cukd::computeBounds
+    <cukd::TrivialFloatPointTraits<float2>>
+    (d_bounds,d_points,nPoints);
+  PRINT(d_bounds->lower);
+  PRINT(d_bounds->upper);
+#endif
   // float2 *d_points = generatePoints(nPoints);
   
   {
@@ -142,11 +180,15 @@ int main(int ac, const char **av)
   {
     double t0 = getCurrentTime();
     for (int i=0;i<nRepeats;i++) {
-      fcp(d_results,d_queries,nQueries,d_points,nPoints);
+      fcp(d_results,d_queries,nQueries,
+#if CUKD_IMPROVED_TRAVERSAL
+          d_bounds,
+#endif
+          d_points,nPoints);
     }
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
-    std::cout << "done " << nRepeats << " iterations of 10M fcp queries, took " << prettyDouble(t1-t0) << "s" << std::endl;
+    std::cout << "done " << nRepeats << " iterations of " << nQueries << " fcp queries, took " << prettyDouble(t1-t0) << "s" << std::endl;
     std::cout << "that is " << prettyDouble(nQueries*nRepeats/(t1-t0)) << " queries/s" << std::endl;
   }
   
@@ -181,4 +223,11 @@ int main(int ac, const char **av)
     }
     std::cout << "verification succeeded... done." << std::endl;
   }
+
+#if 1
+  double sum = 0.;
+  for (int i=0;i<nQueries;i++)
+    sum += d_results[i];
+  std::cout << "CHECKSUM " << sum << std::endl;
+#endif
 }
