@@ -55,6 +55,9 @@ namespace cukd {
       }
     }
 
+    inline __device__ float get_dist2(int i) const { return decode_dist2(entry[i]); }
+    inline __device__ int get_pointID(int i) const { return decode_pointID(entry[i]); }
+    
     inline __device__ float maxRadius2() const
     { return decode_dist2(entry[k-1]); }
     
@@ -64,6 +67,7 @@ namespace cukd {
     { return int(v); }
 
     uint64_t entry[k];
+    enum { num_k = k };
   };
 
   template<int k>
@@ -75,6 +79,10 @@ namespace cukd {
     { push(candDist2,candPrimID); return maxRadius2(); }
     inline __device__ float initialCullDist2() const { return maxRadius2(); }
     
+    inline __device__ float get_dist2(int i) const { return decode_dist2(entry[i]); }
+    inline __device__ int get_pointID(int i) const { return decode_pointID(entry[i]); }
+
+
     inline __device__ uint64_t encode(float f, int i)
     {
       return (uint64_t(__float_as_uint(f)) << 32) | uint32_t(i);
@@ -127,6 +135,7 @@ namespace cukd {
     { return int(v); }
 
     uint64_t entry[k];
+    enum { num_k = k };
   };
 
 
@@ -340,8 +349,17 @@ namespace cukd {
     traverse_sb_reg<math_point_traits_t,node_point_traits_t,CandidateList>
       (result,d_stats,queryPoint// ,worldBounds
        ,d_nodes,N);
+
+    int tid = threadIdx.x+blockIdx.x*blockDim.x;
+    bool dbg = tid == 1117;
+    if (dbg) {
+      printf("query %f %f result radius2 %f \n",queryPoint.x,queryPoint.y,result.maxRadius2());
+      for (int i=0;i<result.num_k;i++)
+        printf("   #%02i   dist %f item %i \n",i,result.get_dist2(i),result.get_pointID(i));
+    }
     return result.returnValue();
   }
+  
 } // :: cukd
 
 # endif

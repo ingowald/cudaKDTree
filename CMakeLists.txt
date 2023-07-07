@@ -116,14 +116,14 @@ foreach(stack_free ON OFF)
       target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_STACK_FREE=1)
     endif()
 
-    add_executable(cukd_float2-fcp${suffix} testing/float2-fcp.cu)
-    target_link_libraries(cukd_float2-fcp${suffix} cudaKDTree${suffix})
+    # add_executable(cukd_float2-fcp${suffix} testing/float2-fcp.cu)
+    # target_link_libraries(cukd_float2-fcp${suffix} cudaKDTree${suffix})
     
-    add_executable(cukd_float3-fcp${suffix} testing/float3-fcp.cu)
-    target_link_libraries(cukd_float3-fcp${suffix} cudaKDTree${suffix})
+    # add_executable(cukd_float3-fcp${suffix} testing/float3-fcp.cu)
+    # target_link_libraries(cukd_float3-fcp${suffix} cudaKDTree${suffix})
         
-    add_executable(cukd_float4-fcp${suffix} testing/float4-fcp.cu)
-    target_link_libraries(cukd_float4-fcp${suffix} cudaKDTree${suffix})
+    # add_executable(cukd_float4-fcp${suffix} testing/float4-fcp.cu)
+    # target_link_libraries(cukd_float4-fcp${suffix} cudaKDTree${suffix})
 
     # add_executable(cukd_float2-knn${suffix} testing/float2-knn.cu)
     # target_link_libraries(cukd_float2-knn${suffix} cudaKDTree${suffix})
@@ -132,11 +132,15 @@ foreach(stack_free ON OFF)
     # target_link_libraries(cukd_float3-knn${suffix} cudaKDTree${suffix})
 
     
-    set(DIMS_TO_BUILD 2 3 4)
+    set(DIMS_TO_BUILD 2 3 4 8)
     foreach (D IN ITEMS ${DIMS_TO_BUILD})
       add_executable(cukd_float${D}-knn${suffix} testing/floatN-knn.cu)
       target_link_libraries(cukd_float${D}-knn${suffix} cudaKDTree${suffix})
       target_compile_definitions(cukd_float${D}-knn${suffix} PUBLIC -DD_FROM_CMAKE=${D})
+
+      add_executable(cukd_float${D}-fcp${suffix} testing/floatN-fcp.cu)
+      target_link_libraries(cukd_float${D}-fcp${suffix} cudaKDTree${suffix})
+      target_compile_definitions(cukd_float${D}-fcp${suffix} PUBLIC -DD_FROM_CMAKE=${D})
     endforeach()
 
   endforeach()

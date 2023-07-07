@@ -371,6 +371,22 @@ namespace cukd {
     return projected;
   }
 
+
+
+
+  template<int N>
+  struct vec_float {
+    union {
+      struct {
+        float x;
+        float y;
+        // ...
+      };
+      float v[N];
+    };
+  };
+  
+  
 } // ::cukd
 
 

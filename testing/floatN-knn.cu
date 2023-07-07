@@ -31,6 +31,8 @@ using floatN = float2;
 using floatN = float3;
 #elif D_FROM_CMAKE == 4
 using floatN = float4;
+#elif D_FROM_CMAKE == 8
+using floatN = cukd::vec_float<8>;
 #else
 #pragma error("error ... should get a value of 2, 3, or 4 from cmakefile...")
 #endif
@@ -104,6 +106,7 @@ void knn4(float *d_results,
   if (firstTime) {
     cudaDeviceSynchronize();
     std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+    std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
     cudaFree(d_stats);
     firstTime = false;
   }
@@ -163,6 +166,67 @@ void knn8(float *d_results,
   if (firstTime) {
     cudaDeviceSynchronize();
     std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+    std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
+    cudaFree(d_stats);
+    firstTime = false;
+  }
+}
+
+
+// ==================================================================
+__global__ void d_knn64(unsigned long long *d_stats,
+                       float *d_results,
+                       floatN *d_queries,
+                       int numQueries,
+#if CUKD_IMPROVED_TRAVERSAL
+         const cukd::common::box_t<floatN> *d_bounds,
+#endif
+                       floatN *d_nodes,
+                       int numNodes,
+                       float maxRadius)
+{
+  int tid = threadIdx.x+blockIdx.x*blockDim.x;
+  if (tid >= numQueries) return;
+
+  cukd::FixedCandidateList<64> result(maxRadius);
+  float sqrDist
+    = cukd::knn
+    <cukd::TrivialFloatPointTraits<floatN>>
+    (d_stats,result,d_queries[tid],
+#if CUKD_IMPROVED_TRAVERSAL
+     *d_bounds,
+#endif
+     d_nodes,numNodes);
+  d_results[tid] = sqrtf(sqrDist);
+}
+
+void knn64(float *d_results,
+          floatN *d_queries,
+          int numQueries,
+#if CUKD_IMPROVED_TRAVERSAL
+         const cukd::common::box_t<floatN> *d_bounds,
+#endif
+          floatN *d_nodes,
+          int numNodes,
+          float maxRadius)
+{
+  int bs = 128;
+  int nb = cukd::common::divRoundUp(numQueries,bs);
+  unsigned long long *d_stats = 0;
+  static bool firstTime = true;
+  if (firstTime) {
+    cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
+    *d_stats = 0;
+  }
+  d_knn64<<<nb,bs>>>(d_stats,d_results,d_queries,numQueries,
+#if CUKD_IMPROVED_TRAVERSAL
+                    d_bounds,
+#endif
+                    d_nodes,numNodes,maxRadius);
+  if (firstTime) {
+    cudaDeviceSynchronize();
+    std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+    std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
     cudaFree(d_stats);
     firstTime = false;
   }
@@ -221,6 +285,7 @@ void knn20(float *d_results,
   if (firstTime) {
     cudaDeviceSynchronize();
     std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+    std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
     cudaFree(d_stats);
     firstTime = false;
   }
@@ -278,6 +343,7 @@ void knn50(float *d_results,
   if (firstTime) {
     cudaDeviceSynchronize();
     std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+    std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
     cudaFree(d_stats);
     firstTime = false;
   }
@@ -393,6 +459,12 @@ int main(int ac, const char **av)
           d_bounds,
 #endif
            d_points,nPoints,maxQueryRadius);
+    else if (k == 64)
+      knn64(d_results,d_queries,nQueries,
+#if CUKD_IMPROVED_TRAVERSAL
+          d_bounds,
+#endif
+           d_points,nPoints,maxQueryRadius);
     else if (k == 20)
       knn20(d_results,d_queries,nQueries,
 #if CUKD_IMPROVED_TRAVERSAL
@@ -406,12 +478,25 @@ int main(int ac, const char **av)
 #endif
             d_points,nPoints,maxQueryRadius);
     else
-      throw std::runtime_error("unsupported k or knn queries");
+      throw std::runtime_error("unsupported k for knn queries");
+
+
   
   // knn4(d_results,d_queries,nQueries,d_points,nPoints,maxQueryRadius);
+  
   CUKD_CUDA_SYNC_CHECK();
+  for (int i=0;i<14;i++) {
+    int idx = nQueries-1-(1<<i);
+    std::cout << "  result[" << idx << "] = " << d_results[idx] << std::endl;;
+  }
+  double sum = 0;
+  for (int i=0;i<nQueries;i++)
+    sum += d_results[i];
+  std::cout << "CHECKSUM " << sum << std::endl;
+
+  
   double t1 = getCurrentTime();
-  std::cout << "done " << nRepeats << " iterations of knn4 query, took " << prettyDouble(t1-t0) << "s" << std::endl;
+  std::cout << "done " << nRepeats << " iterations of knn query, took " << prettyDouble(t1-t0) << "s" << std::endl;
   std::cout << " that's " << prettyDouble((t1-t0)/nRepeats) << "s per query (avg)..." << std::endl;
   std::cout << " ... or " << prettyDouble(nQueries*nRepeats/(t1-t0)) << " queries/s" << std::endl;
   
