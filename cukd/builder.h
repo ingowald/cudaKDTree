@@ -31,22 +31,73 @@
 
 namespace cukd {
 
-  // template<typename point_t>
-  // struct box_t {
-  //   box_t lower, upper;
-  // };
-
-  // template<typename point_traits_t>
-  // inline __device__ void clear(box_t<typename point_traits_t::point_t> &box)
-  // {
-  //   for (int d=0;d<point_traits_t::numDims;d++) {
-  //     point_traits_t::setCoord(box.lower,d,+INFINITY);
-  //     point_traits_t::setCoord(box.upper,d,-INFINITY);
-  //   }
-  // };
-  
   typedef uint32_t tag_t;
 
+  /*! template interface for cuda vector types (such as float3, int4,
+      etc), that allows for querying which scalar type this vec is
+      defined over */
+  template<typename cuda_vec_t> struct scalar_type_of;
+  template<> struct scalar_type_of<float2> { using type = float; };
+  template<> struct scalar_type_of<float3> { using type = float; };
+  template<> struct scalar_type_of<float4> { using type = float; };
+  template<> struct scalar_type_of<int2>   { using type = int; };
+  template<> struct scalar_type_of<int3>   { using type = int; };
+  template<> struct scalar_type_of<int4>   { using type = int; };
+ 
+
+  
+  /*! defines an abstract interface to what a 'node' in a k-d tree
+    is. This needs to define the follwing:
+
+    - node_traits::scalar_t: the scalar type of each point member (eg,
+    float for a float3 node_t)
+
+    - enum node_traits::num_dims: the number of dimensions of the
+    data; e.g., a k-d tree build over float4 4d points would define
+    tihs to '4'; a kd tree built over a struct htat has 3d position
+    and some other additional payload would use '3'.
+
+    - scalar_t node_traits::get(node_t &, int d) : return a
+    reference to the 'd'th positional coordinate of the given node
+
+    - enum node_traits::has_explicit_dim : whether that node type
+    has a field to store an explicit split dimensoin in each
+    node. If not, the k-d tree builder and traverse _have_ to use
+    round-robin for split distance; otherwise, it will alwyas
+    split the widest dimensoin
+
+    - enum node_traits::set_dim(node_t &, int) and
+    node_traits::get_dim(node_t &
+  */
+  template<typename node_t> struct node_traits;
+
+  template<typename node_t> struct default_node_traits {
+    /* the scalar type of each point member (eg, float for a float3
+       node_t) */
+    using scalar_t = typename scalar_type_of<node_t>::type;
+    
+    /* the number of dimensions of the data; e.g., a k-d tree build
+       over float4 4d points would define tihs to '4'; a kd tree built
+       over a struct htat has 3d position and some other additional
+       payload would use '3' */
+    enum { num_dims = sizeof(node_t)/sizeof(scalar_t) };
+    
+    /* whether that node type has a field to store an explicit split
+       dimensoin in each node. If not, the k-d tree builder and
+       traverse _have_ to use round-robin for split distance;
+       otherwise, it will alwyas split the widest dimensoin */
+    enum { has_explicit_dim = false };
+    
+    /*! return a reference to the 'd'th positional coordinate of the
+      given node */
+    static inline __device__ scalar_t get(node_t &n, int dim) { return (&n.x)[dim]; }
+
+    /*! just defining this for completeness, it will should never get
+        called for thistype becaues we have set has_explicit_dim set
+        to false */
+    static inline __device__ int get_dim(node_t &n);
+  };
+  
   // ==================================================================
   // INTERFACE SECTION
   // ==================================================================
@@ -250,8 +301,8 @@ namespace cukd {
            typename data_point_traits_t = math_point_traits_t>
   __global__
   void computeBounds_copyFirst(
-      common::box_t<typename math_point_traits_t::point_t> *d_bounds,
-      const typename data_point_traits_t::point_t *d_points)
+                               common::box_t<typename math_point_traits_t::point_t> *d_bounds,
+                               const typename data_point_traits_t::point_t *d_points)
   {
     const auto point = d_points[0];
     for (int d=0;d<math_point_traits_t::numDims;d++) {
@@ -291,9 +342,9 @@ namespace cukd {
            typename data_point_traits_t = math_point_traits_t>
   __global__
   void computeBounds_atomicGrow(
-      common::box_t<typename math_point_traits_t::point_t> *d_bounds,
-      const typename data_point_traits_t::point_t *d_points,
-      int numPoints)
+                                common::box_t<typename math_point_traits_t::point_t> *d_bounds,
+                                const typename data_point_traits_t::point_t *d_points,
+                                int numPoints)
   {
     static_assert(math_point_traits_t::numDims <= data_point_traits_t::numDims, "dimension error");
     const int tid = threadIdx.x+blockIdx.x*blockDim.x;
