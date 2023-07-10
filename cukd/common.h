@@ -320,7 +320,9 @@ namespace cukd {
       using point_t = _point_t;
     };
 
-    template<typename point_t> struct box_t { point_t lower, upper; };
+    template<typename point_t> struct box_t {
+      point_t lower, upper;
+    };
 
     template<typename T>
     inline T *loadPoints(std::string fileName, size_t &count)
@@ -356,22 +358,13 @@ namespace cukd {
     box; if point itself is inside that box it'll be the point
     itself, otherwise it'll be a point on the outside surface of the
     box */
-  template<typename point_traits_t>
-  inline __device__ auto project(
-                                 const common::box_t<typename point_traits_t::point_t>& box,
-                                 const typename point_traits_t::point_t& point)
+  template<typename point_t>
+  inline __device__
+  point_t project(const common::box_t<point_t>  &box,
+                  const point_t                 &point)
   {
-    typename point_traits_t::point_t projected;
-#pragma unroll
-    for (int d=0;d<point_traits_t::numDims;d++) {
-      auto lo = point_traits_t::getCoord(box.lower,d);
-      auto hi = point_traits_t::getCoord(box.upper,d);
-      point_traits_t::setCoord(projected,d,clamp(point_traits_t::getCoord(point,d),lo,hi));
-    }
-    return projected;
+    return min(max(point,box.lower),box.upper);
   }
-
-
 
 
   template<int N>

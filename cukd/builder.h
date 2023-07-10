@@ -72,15 +72,17 @@ namespace cukd {
   template<typename node_t> struct node_traits;
 
   template<typename node_t> struct default_node_traits {
+    using point_t = node_t;
+    
     /* the scalar type of each point member (eg, float for a float3
        node_t) */
-    using scalar_t = typename scalar_type_of<node_t>::type;
+    using scalar_t = typename scalar_type_of<point_t>::type;
     
     /* the number of dimensions of the data; e.g., a k-d tree build
        over float4 4d points would define tihs to '4'; a kd tree built
        over a struct htat has 3d position and some other additional
        payload would use '3' */
-    enum { num_dims = sizeof(node_t)/sizeof(scalar_t) };
+    enum { num_dims = sizeof(point_t)/sizeof(scalar_t) };
     
     /* whether that node type has a field to store an explicit split
        dimensoin in each node. If not, the k-d tree builder and
@@ -90,7 +92,7 @@ namespace cukd {
     
     /*! return a reference to the 'd'th positional coordinate of the
       given node */
-    static inline __device__ scalar_t get(node_t &n, int dim) { return (&n.x)[dim]; }
+    static inline __device__ point_t &get_point(node_t &n) { return n; }
 
     /*! just defining this for completeness, it will should never get
         called for thistype becaues we have set has_explicit_dim set
@@ -127,9 +129,9 @@ namespace cukd {
                  int numPoints,
                  cudaStream_t stream = 0);
 
-  template<typename math_point_traits_t,
-           typename data_point_traits_t = math_point_traits_t>
-  void computeBounds(common::box_t<typename math_point_traits_t::point_t> *d_bounds,
+  template<typename node_t,
+           typename traits_t = default_node_traits<node_t>>
+  void computeBounds(common::box_t<typename traits_t::scalar_t, traits_t::num_dims> *d_bounds,
                      const typename data_point_traits_t::point_t *d_points,
                      int numPoints,
                      cudaStream_t stream=0);
