@@ -17,6 +17,7 @@
 #pragma once
 
 #include "cukd/common.h"
+#include "cukd/math.h"
 
 namespace cukd {
 

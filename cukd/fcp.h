@@ -126,23 +126,22 @@ namespace cukd {
 
 #if CUKD_IMPROVED_TRAVERSAL
 # if CUKD_STACK_FREE
-// stack-free, improved traversal
+// stack-free, improved traversal -- only for refernce, this doesn't make sense in practice
 #  include "traverse-sf-imp.h"
 namespace cukd {
-  template<
-    typename math_point_traits_t,
-    typename node_point_traits_t=math_point_traits_t>
+  template<typename node_t,
+           typename node_traits=default_node_traits<node_t>>
   inline __device__
   int fcp(unsigned long long *d_stats,
-          typename math_point_traits_t::point_t queryPoint,
-          const cukd::common::box_t<typename math_point_traits_t::point_t> worldBounds,
-          const typename node_point_traits_t::point_t *d_nodes,
+          typename node_traits::point_t queryPoint,
+          const box_t<typename node_traits::point_t> worldBounds,
+          const node_t *d_nodes,
           int N,
           FcpSearchParams params = FcpSearchParams{})
   {
     FCPResult result;
     result.clear(sqr(params.max_far_node_search_radius));
-    traverse_sf_imp<math_point_traits_t,node_point_traits_t,FCPResult>
+    traverse_sf_imp<FCPResult,node_t,node_traits>
       (result,d_stats,queryPoint,worldBounds,d_nodes,N);
     return result.returnValue();
   }
@@ -150,22 +149,21 @@ namespace cukd {
 
 # else
 // stack-free, improved traversal
-#  include "traverse-sb-imp.h"
+#  include "traverse-cct.h"
 namespace cukd {
-  template<
-    typename math_point_traits_t,
-    typename node_point_traits_t=math_point_traits_t>
+  template<typename node_t,
+           typename node_traits=default_node_traits<node_t>>
   inline __device__
   int fcp(unsigned long long *d_stats,
-          typename math_point_traits_t::point_t queryPoint,
-          const cukd::common::box_t<typename math_point_traits_t::point_t> worldBounds,
-          const typename node_point_traits_t::point_t *d_nodes,
+          typename node_traits::point_t queryPoint,
+          const box_t<typename node_traits::point_t> worldBounds,
+          const node_t *d_nodes,
           int N,
           FcpSearchParams params = FcpSearchParams{})
   {
     FCPResult result;
     result.clear(sqr(params.max_far_node_search_radius));
-    traverse_sb_imp<math_point_traits_t,node_point_traits_t,FCPResult>
+    traverse_cct<FCPResult,node_t,node_traits>
       (result,d_stats,queryPoint,worldBounds,d_nodes,N);
     return result.returnValue();
   }
@@ -177,45 +175,39 @@ namespace cukd {
 // stack-free, regular traversal
 #  include "traverse-sf-reg.h"
 namespace cukd {
-  template<
-    typename math_point_traits_t,
-    typename node_point_traits_t=math_point_traits_t>
+  template<typename node_t,
+           typename node_traits=default_node_traits<node_t>>
   inline __device__
   int fcp(unsigned long long *d_stats,
-          typename math_point_traits_t::point_t queryPoint,
-          // const cukd::common::box_t<typename math_point_traits_t::point_t> worldBounds,
-          const typename node_point_traits_t::point_t *d_nodes,
+          typename node_traits::point_t queryPoint,
+          const node_t *d_nodes,
           int N,
           FcpSearchParams params = FcpSearchParams{})
   {
     FCPResult result;
     result.clear(sqr(params.max_far_node_search_radius));
-    traverse_sf_reg<math_point_traits_t,node_point_traits_t,FCPResult>
-      (result,d_stats,queryPoint// ,worldBounds
-       ,d_nodes,N);
+    traverse_sf_reg<FCPResult,node_t,node_traits>
+      (result,d_stats,queryPoint,d_nodes,N);
     return result.returnValue();
   }
 } // :: cukd
 # else
-// stack-based, regular traversal
-#  include "traverse-sb-reg.h"
+// default stack-based traversal
+#  include "traverse-default-stack-based.h"
 namespace cukd {
-  template<
-    typename math_point_traits_t,
-    typename node_point_traits_t=math_point_traits_t>
+  template<typename node_t,
+           typename node_traits=default_node_traits<node_t>>
   inline __device__
   int fcp(unsigned long long *d_stats,
-          typename math_point_traits_t::point_t queryPoint,
-          // const cukd::common::box_t<typename math_point_traits_t::point_t> worldBounds,
-          const typename node_point_traits_t::point_t *d_nodes,
+          typename node_traits::point_t queryPoint,
+          const node_t *d_nodes,
           int N,
           FcpSearchParams params = FcpSearchParams{})
   {
     FCPResult result;
     result.clear(sqr(params.max_far_node_search_radius));
-    traverse_sb_reg<math_point_traits_t,node_point_traits_t,FCPResult>
-      (result,d_stats,queryPoint// ,worldBounds
-       ,d_nodes,N);
+    traverse_default<FCPResult,node_t,node_traits>
+      (result,d_stats,queryPoint,d_nodes,N);
     return result.returnValue();
   }
 } // :: cukd

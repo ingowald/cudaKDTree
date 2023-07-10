@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2018-2022 Ingo Wald                                            //
+// Copyright 2018-2023 Ingo Wald                                            //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -30,26 +30,14 @@ using floatN = cukd::vec_float<8>;
 #pragma error("error ... should get a value of 2, 3, or 4 from cmakefile...")
 #endif
 
-// floatN *generatePoints(int N)
-// {
-//   std::cout << "generating " << N <<  " points" << std::endl;
-//   floatN *d_points = 0;
-//   CUKD_CUDA_CALL(MallocManaged((void**)&d_points,N*sizeof(floatN)));
-//   for (int i=0;i<N;i++) {
-//     d_points[i].x = (float)drand48();
-//     d_points[i].y = (float)drand48();
-//     d_points[i].z = (float)drand48();
-//     d_points[i].w = (float)drand48();
-//   }
-//   return d_points;
-// }
+using namespace cukd;
 
 __global__ void d_fcp(unsigned long long *d_stats,
                       int *d_results,
                       floatN *d_queries,
                       int numQueries,
 #if CUKD_IMPROVED_TRAVERSAL
-                      const cukd::common::box_t<floatN> *d_bounds,
+                      const cukd::box_t<floatN> *d_bounds,
 #endif
                       floatN *d_nodes,
                       int numNodes)
@@ -59,7 +47,6 @@ __global__ void d_fcp(unsigned long long *d_stats,
 
   d_results[tid]
     = cukd::fcp
-    <cukd::TrivialFloatPointTraits<floatN>>
     (d_stats,d_queries[tid],
 #if CUKD_IMPROVED_TRAVERSAL
      *d_bounds,
@@ -71,13 +58,13 @@ void fcp(int *d_results,
          floatN *d_queries,
          int numQueries,
 #if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<floatN> *d_bounds,
+         const cukd::box_t<floatN> *d_bounds,
 #endif
          floatN *d_nodes,
          int numNodes)
 {
   int bs = 128;
-  int nb = cukd::common::divRoundUp(numQueries,bs);
+  int nb = divRoundUp(numQueries,bs);
   unsigned long long *d_stats = 0;
   static bool firstTime = true;
   if (firstTime) {
@@ -162,16 +149,15 @@ int main(int ac, const char **av)
   // floatN *d_points = generatePoints(nPoints);
   
 #if CUKD_IMPROVED_TRAVERSAL
-    cukd::common::box_t<floatN> *d_bounds;
-    cudaMalloc((void**)&d_bounds,sizeof(cukd::common::box_t<floatN>));
-    cukd::computeBounds
-      <cukd::TrivialFloatPointTraits<floatN>>
-      (d_bounds,d_points,nPoints);
+  cukd::box_t<floatN> *d_bounds;
+  cudaMalloc((void**)&d_bounds,sizeof(cukd::box_t<floatN>));
+  cukd::computeBounds
+    (d_bounds,d_points,nPoints);
 #endif
   {
     double t0 = getCurrentTime();
     std::cout << "calling builder..." << std::endl;
-    cukd::buildTree<cukd::TrivialFloatPointTraits<floatN>>(d_points,nPoints);
+    cukd::buildTree(d_points,nPoints);
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
     std::cout << "done building tree, took " << prettyDouble(t1-t0) << "s" << std::endl;
@@ -211,15 +197,9 @@ int main(int ac, const char **av)
       
       floatN qp = d_queries[i];
       float reportedDist
-        = cukd::distance
-        <cukd::TrivialFloatPointTraits<floatN>>
-        (qp,d_points[d_results[i]]);
-      // float reportedDist = cukd::distance<cukd::TrivialFloatPointTraits<floatN>>(qp,d_points[d_results[i]]);
+        = cukd::distance(qp,d_points[d_results[i]]);
       for (int j=0;j<nPoints;j++) {
-        float dist_j = cukd::distance
-          <cukd::TrivialFloatPointTraits<floatN>>
-          (qp,d_points[j]);
-        // float dist_j = cukd::distance(qp,d_points[j]);
+        float dist_j = cukd::distance(qp,d_points[j]);
         if (dist_j < reportedDist) {
 #if D_FROM_CMAKE == 2
 #elif D_FROM_CMAKE == 3

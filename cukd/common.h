@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2018-2022 Ingo Wald                                            //
+// Copyright 2018-2023 Ingo Wald                                            //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -164,29 +164,6 @@
 namespace cukd {
   namespace common {
 
-#ifdef __CUDA_ARCH__
-    using ::min;
-    using ::max;
-    using std::abs;
-#else
-    using std::min;
-    using std::max;
-    using std::abs;
-    inline __both__ float saturate(const float &f) { return min(1.f,max(0.f,f)); }
-#endif
-
-    inline __both__ float rcp(float f)      { return 1.f/f; }
-    inline __both__ double rcp(double d)    { return 1./d; }
-
-    inline __both__ int32_t divRoundUp(int32_t a, int32_t b) { return (a+b-1)/b; }
-    inline __both__ uint32_t divRoundUp(uint32_t a, uint32_t b) { return (a+b-1)/b; }
-    inline __both__ int64_t divRoundUp(int64_t a, int64_t b) { return (a+b-1)/b; }
-    inline __both__ uint64_t divRoundUp(uint64_t a, uint64_t b) { return (a+b-1)/b; }
-
-    using ::sin; // this is the double version
-    using ::cos; // this is the double version
-
-
 #ifdef __WIN32__
 #  define osp_snprintf sprintf_s
 #else
@@ -280,115 +257,38 @@ namespace cukd {
     {
       return s.substr(s.size()-suffix.size()) == suffix;
     }
+  } // ::common
 
-    /*! Trivial implementation of the point interface for those kinds of
-      point types where the first K elements are the K-dimensional
-      coordinates that we buid the K-d tree over; the point_t struct
-      may contain additional data at the end, too (ie, you can build,
-      for exapmle, a 2-d tree over a float4 point type - in this case
-      the x and y coordinates are the point coordinates, and z and w
-      are any other payload that does not get considered during the
-      (2-d) construction). See also point traits below. */
-    template<typename _point_t, typename _scalar_t>
-    struct TrivialPointInterface
-    {
-      inline static __host__ __device__
-      _scalar_t getCoord(const _point_t &p, int dim) { return ((_scalar_t*)&p)[dim]; }
-      inline static __host__ __device__
-      void setCoord(_point_t &p, int dim, _scalar_t value) { ((_scalar_t*)&p)[dim] = value; }
-    };
-
-    /*! Point trait.
-      The cukd library uses point traits template parameters to describe the
-      points. A  point trait is a struct that must provide the following members:
-      - numDims (int): the number of dimensions used in the kdtree (i.e.
-      without the payload).
-      - scalar_t (type): the scalar type used by the point (float usually).
-      - scalar_t getCoord(const point_t &p, int dim): static function that
-      returns the dim-th coord of the point.
-      - void setCoord(point_t &p, int dim, scalar_t value): static function
-      that sets the dim-th coord of the point.
-
-      The trivial point traits here will work for most float type points, e.g.
-      float3 and float4. Provided for convenience to make it easy to define
-      the point_traits for such points. */
-    template<typename _point_t, int _numDims = sizeof(_point_t) / sizeof(float)>
-    struct TrivialFloatPointTraits : TrivialPointInterface<_point_t, float>
-    {
-      enum { numDims = _numDims };
-      using scalar_t = float;
-      using point_t = _point_t;
-    };
-
-    template<typename point_t> struct box_t {
-      point_t lower, upper;
-    };
-
-    template<typename T>
-    inline T *loadPoints(std::string fileName, size_t &count)
-    {
-      // size_t count;
-      std::cout << "loading points from " << fileName << std::endl;
-      std::ifstream in(fileName,std::ios::binary);
-      in.read((char*)&count,sizeof(count));
-      // numPoints = count;
-      std::cout << "loading " << count <<  " points" << std::endl;
-      T *d_points = 0;
-      cudaMallocManaged((void**)&d_points,count*sizeof(T));
-      in.read((char*)d_points,count*sizeof(T));
-      return d_points;
-    }
-    
-    template<typename T>
-    inline T *loadPoints(std::string fileName, int &count)
-    {
-      size_t count64;
-      T *t = loadPoints<T>(fileName, count64);
-      count = count64;
-      return t;
-    }
-  } // ::cukd::common
-  using cukd::common::TrivialFloatPointTraits;
-
-  template<typename scalar_t>
-  inline __device__ scalar_t clamp(scalar_t v, scalar_t lo, scalar_t hi)
-  { return min(max(v,lo),hi); }
-
-  /*! computes the closest point to 'point' that's within the given
-    box; if point itself is inside that box it'll be the point
-    itself, otherwise it'll be a point on the outside surface of the
-    box */
-  template<typename point_t>
-  inline __device__
-  point_t project(const common::box_t<point_t>  &box,
-                  const point_t                 &point)
+  template<typename T>
+  inline T *loadPoints(std::string fileName, size_t &count)
   {
-    return min(max(point,box.lower),box.upper);
+    // size_t count;
+    std::cout << "loading points from " << fileName << std::endl;
+    std::ifstream in(fileName,std::ios::binary);
+    in.read((char*)&count,sizeof(count));
+    // numPoints = count;
+    std::cout << "loading " << count <<  " points" << std::endl;
+    T *d_points = 0;
+    cudaMallocManaged((void**)&d_points,count*sizeof(T));
+    in.read((char*)d_points,count*sizeof(T));
+    return d_points;
+  }
+    
+  template<typename T>
+  inline T *loadPoints(std::string fileName, int &count)
+  {
+    size_t count64;
+    T *t = loadPoints<T>(fileName, count64);
+    count = count64;
+    return t;
   }
 
+  // template<typename scalar_t>
+  // inline __device__ scalar_t clamp(scalar_t v, scalar_t lo, scalar_t hi)
+  // { return min(max(v,lo),hi); }
 
-  template<int N>
-  struct vec_float {
-    union {
-      struct {
-        float x;
-        float y;
-        // ...
-      };
-      float v[N];
-    };
-  };
-  
-  
 } // ::cukd
 
-
-inline std::ostream &operator<<(std::ostream &out,
-                                float2 v)
-{
-  out << "(" << v.x << "," << v.y << ")";
-  return out;
-}
 
 #define CUKD_CUDA_CHECK( call )                                         \
   {                                                                     \

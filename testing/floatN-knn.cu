@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2022-2022 Ingo Wald                                            //
+// Copyright 2022-2023 Ingo Wald                                            //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -37,317 +37,361 @@ using floatN = cukd::vec_float<8>;
 #pragma error("error ... should get a value of 2, 3, or 4 from cmakefile...")
 #endif
 
-// floatN *generatePoints(int N)
+// ==================================================================
+template<typename CandidateList>
+__global__ void d_knn(unsigned long long *d_stats,
+                      float *d_results,
+                      floatN *d_queries,
+                      int numQueries,
+#if CUKD_IMPROVED_TRAVERSAL
+                      const cukd::box_t<floatN> *d_bounds,
+#endif
+                      floatN *d_nodes,
+                      int numNodes,
+                      float maxRadius)
+{
+  int tid = threadIdx.x+blockIdx.x*blockDim.x;
+  if (tid >= numQueries) return;
+  
+  CandidateList result(maxRadius);
+  float sqrDist
+    = cukd::knn(d_stats,result,d_queries[tid],
+#if CUKD_IMPROVED_TRAVERSAL
+                *d_bounds,
+#endif
+                d_nodes,numNodes);
+  d_results[tid] = sqrtf(sqrDist);
+}
+
+template<typename CandidateList>
+void knn(float *d_results,
+         floatN *d_queries,
+         int numQueries,
+#if CUKD_IMPROVED_TRAVERSAL
+         const cukd::box_t<floatN> *d_bounds,
+#endif
+         floatN *d_nodes,
+         int numNodes,
+         float maxRadius)
+{
+  int bs = 128;
+  int nb = divRoundUp(numQueries,bs);
+  unsigned long long *d_stats = 0;
+  static bool firstTime = true;
+  if (firstTime) {
+    cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
+    *d_stats = 0;
+  }
+  d_knn<CandidateList><<<nb,bs>>>(d_stats,d_results,d_queries,numQueries,
+#if CUKD_IMPROVED_TRAVERSAL
+                                  d_bounds,
+#endif
+                                  d_nodes,numNodes,maxRadius);
+  if (firstTime) {
+    cudaDeviceSynchronize();
+    std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+    std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
+    cudaFree(d_stats);
+    firstTime = false;
+  }
+}
+
+
+
+// __global__ void d_knn4(unsigned long long *d_stats,
+//                        float *d_results,
+//                        floatN *d_queries,
+//                        int numQueries,
+// #if CUKD_IMPROVED_TRAVERSAL
+//                        const cukd::box_t<floatN> *d_bounds,
+// #endif
+//                        floatN *d_nodes,
+//                        int numNodes,
+//                        float maxRadius)
 // {
-//   std::cout << "generating " << N <<  " points" << std::endl;
-//   floatN *d_points = 0;
-//   CUKD_CUDA_CALL(MallocManaged((void**)&d_points,N*sizeof(floatN)));
-//   for (int i=0;i<N;i++) {
-//     d_points[i].x = (float)drand48();
-//     d_points[i].y = (float)drand48();
-//     d_points[i].z = (float)drand48();
-//     d_points[i].w = (float)drand48();
-//   }
-//   return d_points;
+//   int tid = threadIdx.x+blockIdx.x*blockDim.x;
+//   if (tid >= numQueries) return;
+
+//   cukd::FixedCandidateList<4> result(maxRadius);
+//   float sqrDist
+//     = cukd::knn
+//     <cukd::FixedCandidateList<4>>
+//     (d_stats,result,d_queries[tid],
+// #if CUKD_IMPROVED_TRAVERSAL
+//      *d_bounds,
+// #endif
+//      d_nodes,numNodes);
+//   d_results[tid] = sqrtf(sqrDist);
 // }
 
-// ==================================================================
-__global__ void d_knn4(unsigned long long *d_stats,
-                       float *d_results,
-                       floatN *d_queries,
-                       int numQueries,
-#if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<floatN> *d_bounds,
-#endif
-                       floatN *d_nodes,
-                       int numNodes,
-                       float maxRadius)
-{
-  int tid = threadIdx.x+blockIdx.x*blockDim.x;
-  if (tid >= numQueries) return;
-
-  cukd::FixedCandidateList<4> result(maxRadius);
-  float sqrDist
-    = cukd::knn
-    <cukd::TrivialFloatPointTraits<floatN>,
-     cukd::FixedCandidateList<4>,
-     cukd::TrivialFloatPointTraits<floatN>>
-    (d_stats,result,d_queries[tid],
-#if CUKD_IMPROVED_TRAVERSAL
-     *d_bounds,
-#endif
-     d_nodes,numNodes);
-  d_results[tid] = sqrtf(sqrDist);
-}
-
-void knn4(float *d_results,
-          floatN *d_queries,
-          int numQueries,
-#if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<floatN> *d_bounds,
-#endif
-          floatN *d_nodes,
-          int numNodes,
-          float maxRadius)
-{
-  int bs = 128;
-  int nb = cukd::common::divRoundUp(numQueries,bs);
-  unsigned long long *d_stats = 0;
-  static bool firstTime = true;
-  if (firstTime) {
-    cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
-    *d_stats = 0;
-  }
-  d_knn4<<<nb,bs>>>(d_stats,d_results,d_queries,numQueries,
-#if CUKD_IMPROVED_TRAVERSAL
-                    d_bounds,
-#endif
-                    d_nodes,numNodes,maxRadius);
-  if (firstTime) {
-    cudaDeviceSynchronize();
-    std::cout << "KDTREE_STATS " << *d_stats << std::endl;
-    std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
-    cudaFree(d_stats);
-    firstTime = false;
-  }
-}
+// void knn4(float *d_results,
+//           floatN *d_queries,
+//           int numQueries,
+// #if CUKD_IMPROVED_TRAVERSAL
+//           const cukd::box_t<floatN> *d_bounds,
+// #endif
+//           floatN *d_nodes,
+//           int numNodes,
+//           float maxRadius)
+// {
+//   int bs = 128;
+//   int nb = divRoundUp(numQueries,bs);
+//   unsigned long long *d_stats = 0;
+//   static bool firstTime = true;
+//   if (firstTime) {
+//     cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
+//     *d_stats = 0;
+//   }
+//   d_knn4<<<nb,bs>>>(d_stats,d_results,d_queries,numQueries,
+// #if CUKD_IMPROVED_TRAVERSAL
+//                     d_bounds,
+// #endif
+//                     d_nodes,numNodes,maxRadius);
+//   if (firstTime) {
+//     cudaDeviceSynchronize();
+//     std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+//     std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
+//     cudaFree(d_stats);
+//     firstTime = false;
+//   }
+// }
 
 
-// ==================================================================
-__global__ void d_knn8(unsigned long long *d_stats,
-                       float *d_results,
-                       floatN *d_queries,
-                       int numQueries,
-#if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<floatN> *d_bounds,
-#endif
-                       floatN *d_nodes,
-                       int numNodes,
-                       float maxRadius)
-{
-  int tid = threadIdx.x+blockIdx.x*blockDim.x;
-  if (tid >= numQueries) return;
+// // ==================================================================
+// __global__ void d_knn8(unsigned long long *d_stats,
+//                        float *d_results,
+//                        floatN *d_queries,
+//                        int numQueries,
+// #if CUKD_IMPROVED_TRAVERSAL
+//                        const cukd::box_t<floatN> *d_bounds,
+// #endif
+//                        floatN *d_nodes,
+//                        int numNodes,
+//                        float maxRadius)
+// {
+//   int tid = threadIdx.x+blockIdx.x*blockDim.x;
+//   if (tid >= numQueries) return;
 
-  cukd::FixedCandidateList<8> result(maxRadius);
-  float sqrDist
-    = cukd::knn
-    <cukd::TrivialFloatPointTraits<floatN>>
-    (d_stats,result,d_queries[tid],
-#if CUKD_IMPROVED_TRAVERSAL
-     *d_bounds,
-#endif
-     d_nodes,numNodes);
-  d_results[tid] = sqrtf(sqrDist);
-}
+//   cukd::FixedCandidateList<8> result(maxRadius);
+//   float sqrDist
+//     = cukd::knn
+//     <cukd::TrivialFloatPointTraits<floatN>>
+//     (d_stats,result,d_queries[tid],
+// #if CUKD_IMPROVED_TRAVERSAL
+//      *d_bounds,
+// #endif
+//      d_nodes,numNodes);
+//   d_results[tid] = sqrtf(sqrDist);
+// }
 
-void knn8(float *d_results,
-          floatN *d_queries,
-          int numQueries,
-#if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<floatN> *d_bounds,
-#endif
-          floatN *d_nodes,
-          int numNodes,
-          float maxRadius)
-{
-  int bs = 128;
-  int nb = cukd::common::divRoundUp(numQueries,bs);
-  unsigned long long *d_stats = 0;
-  static bool firstTime = true;
-  if (firstTime) {
-    cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
-    *d_stats = 0;
-  }
-  d_knn8<<<nb,bs>>>(d_stats,d_results,d_queries,numQueries,
-#if CUKD_IMPROVED_TRAVERSAL
-                    d_bounds,
-#endif
-                    d_nodes,numNodes,maxRadius);
-  if (firstTime) {
-    cudaDeviceSynchronize();
-    std::cout << "KDTREE_STATS " << *d_stats << std::endl;
-    std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
-    cudaFree(d_stats);
-    firstTime = false;
-  }
-}
-
-
-// ==================================================================
-__global__ void d_knn64(unsigned long long *d_stats,
-                       float *d_results,
-                       floatN *d_queries,
-                       int numQueries,
-#if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<floatN> *d_bounds,
-#endif
-                       floatN *d_nodes,
-                       int numNodes,
-                       float maxRadius)
-{
-  int tid = threadIdx.x+blockIdx.x*blockDim.x;
-  if (tid >= numQueries) return;
-
-  cukd::FixedCandidateList<64> result(maxRadius);
-  float sqrDist
-    = cukd::knn
-    <cukd::TrivialFloatPointTraits<floatN>>
-    (d_stats,result,d_queries[tid],
-#if CUKD_IMPROVED_TRAVERSAL
-     *d_bounds,
-#endif
-     d_nodes,numNodes);
-  d_results[tid] = sqrtf(sqrDist);
-}
-
-void knn64(float *d_results,
-          floatN *d_queries,
-          int numQueries,
-#if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<floatN> *d_bounds,
-#endif
-          floatN *d_nodes,
-          int numNodes,
-          float maxRadius)
-{
-  int bs = 128;
-  int nb = cukd::common::divRoundUp(numQueries,bs);
-  unsigned long long *d_stats = 0;
-  static bool firstTime = true;
-  if (firstTime) {
-    cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
-    *d_stats = 0;
-  }
-  d_knn64<<<nb,bs>>>(d_stats,d_results,d_queries,numQueries,
-#if CUKD_IMPROVED_TRAVERSAL
-                    d_bounds,
-#endif
-                    d_nodes,numNodes,maxRadius);
-  if (firstTime) {
-    cudaDeviceSynchronize();
-    std::cout << "KDTREE_STATS " << *d_stats << std::endl;
-    std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
-    cudaFree(d_stats);
-    firstTime = false;
-  }
-}
+// void knn8(float *d_results,
+//           floatN *d_queries,
+//           int numQueries,
+// #if CUKD_IMPROVED_TRAVERSAL
+//           const cukd::box_t<floatN> *d_bounds,
+// #endif
+//           floatN *d_nodes,
+//           int numNodes,
+//           float maxRadius)
+// {
+//   int bs = 128;
+//   int nb = divRoundUp(numQueries,bs);
+//   unsigned long long *d_stats = 0;
+//   static bool firstTime = true;
+//   if (firstTime) {
+//     cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
+//     *d_stats = 0;
+//   }
+//   d_knn8<<<nb,bs>>>(d_stats,d_results,d_queries,numQueries,
+// #if CUKD_IMPROVED_TRAVERSAL
+//                     d_bounds,
+// #endif
+//                     d_nodes,numNodes,maxRadius);
+//   if (firstTime) {
+//     cudaDeviceSynchronize();
+//     std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+//     std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
+//     cudaFree(d_stats);
+//     firstTime = false;
+//   }
+// }
 
 
-// ==================================================================
-__global__ void d_knn20(unsigned long long *d_stats,
-                       float *d_results,
-                        floatN *d_queries,
-                        int numQueries,
-#if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<floatN> *d_bounds,
-#endif
-                        floatN *d_nodes,
-                        int numNodes,
-                        float maxRadius)
-{
-  int tid = threadIdx.x+blockIdx.x*blockDim.x;
-  if (tid >= numQueries) return;
+// // ==================================================================
+// __global__ void d_knn64(unsigned long long *d_stats,
+//                         float *d_results,
+//                         floatN *d_queries,
+//                         int numQueries,
+// #if CUKD_IMPROVED_TRAVERSAL
+//                         const cukd::box_t<floatN> *d_bounds,
+// #endif
+//                         floatN *d_nodes,
+//                         int numNodes,
+//                         float maxRadius)
+// {
+//   int tid = threadIdx.x+blockIdx.x*blockDim.x;
+//   if (tid >= numQueries) return;
 
-  cukd::HeapCandidateList<20> result(maxRadius);
-  d_results[tid]
-    = sqrtf(cukd::knn
-            <cukd::TrivialFloatPointTraits<floatN>>
-            (d_stats,result,d_queries[tid],
-#if CUKD_IMPROVED_TRAVERSAL
-             *d_bounds,
-#endif
-             d_nodes,numNodes));
-}
+//   cukd::FixedCandidateList<64> result(maxRadius);
+//   float sqrDist
+//     = cukd::knn
+//     <cukd::TrivialFloatPointTraits<floatN>>
+//     (d_stats,result,d_queries[tid],
+// #if CUKD_IMPROVED_TRAVERSAL
+//      *d_bounds,
+// #endif
+//      d_nodes,numNodes);
+//   d_results[tid] = sqrtf(sqrDist);
+// }
 
-void knn20(float *d_results,
-           floatN *d_queries,
-           int numQueries,
-#if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<floatN> *d_bounds,
-#endif
-           floatN *d_nodes,
-           int numNodes,
-           float maxRadius)
-{
-  int bs = 128;
-  int nb = cukd::common::divRoundUp(numQueries,bs);
-  unsigned long long *d_stats = 0;
-  static bool firstTime = true;
-  if (firstTime) {
-    cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
-    *d_stats = 0;
-  }
-  d_knn20<<<nb,bs>>>(d_stats,d_results,d_queries,numQueries,
-#if CUKD_IMPROVED_TRAVERSAL
-                     d_bounds,
-#endif
-                     d_nodes,numNodes,maxRadius);
-  if (firstTime) {
-    cudaDeviceSynchronize();
-    std::cout << "KDTREE_STATS " << *d_stats << std::endl;
-    std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
-    cudaFree(d_stats);
-    firstTime = false;
-  }
-}
+// void knn64(float *d_results,
+//            floatN *d_queries,
+//            int numQueries,
+// #if CUKD_IMPROVED_TRAVERSAL
+//            const cukd::box_t<floatN> *d_bounds,
+// #endif
+//            floatN *d_nodes,
+//            int numNodes,
+//            float maxRadius)
+// {
+//   int bs = 128;
+//   int nb = divRoundUp(numQueries,bs);
+//   unsigned long long *d_stats = 0;
+//   static bool firstTime = true;
+//   if (firstTime) {
+//     cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
+//     *d_stats = 0;
+//   }
+//   d_knn64<<<nb,bs>>>(d_stats,d_results,d_queries,numQueries,
+// #if CUKD_IMPROVED_TRAVERSAL
+//                      d_bounds,
+// #endif
+//                      d_nodes,numNodes,maxRadius);
+//   if (firstTime) {
+//     cudaDeviceSynchronize();
+//     std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+//     std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
+//     cudaFree(d_stats);
+//     firstTime = false;
+//   }
+// }
 
 
-// ==================================================================
-__global__ void d_knn50(unsigned long long *d_stats,
-                       float *d_results,
-                        floatN *d_queries,
-                        int numQueries,
-#if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<floatN> *d_bounds,
-#endif
-                        floatN *d_nodes,
-                        int numNodes,
-                        float maxRadius)
-{
-  int tid = threadIdx.x+blockIdx.x*blockDim.x;
-  if (tid >= numQueries) return;
+// // ==================================================================
+// __global__ void d_knn20(unsigned long long *d_stats,
+//                         float *d_results,
+//                         floatN *d_queries,
+//                         int numQueries,
+// #if CUKD_IMPROVED_TRAVERSAL
+//                         const cukd::box_t<floatN> *d_bounds,
+// #endif
+//                         floatN *d_nodes,
+//                         int numNodes,
+//                         float maxRadius)
+// {
+//   int tid = threadIdx.x+blockIdx.x*blockDim.x;
+//   if (tid >= numQueries) return;
 
-  cukd::HeapCandidateList<50> result(maxRadius);
-  d_results[tid] = sqrtf(cukd::knn
-                         <cukd::TrivialFloatPointTraits<floatN>>
-                         (d_stats,result,d_queries[tid],
-#if CUKD_IMPROVED_TRAVERSAL
-                     *d_bounds,
-#endif
-                          d_nodes,numNodes));
-}
+//   cukd::HeapCandidateList<20> result(maxRadius);
+//   d_results[tid]
+//     = sqrtf(cukd::knn
+//             <cukd::TrivialFloatPointTraits<floatN>>
+//             (d_stats,result,d_queries[tid],
+// #if CUKD_IMPROVED_TRAVERSAL
+//              *d_bounds,
+// #endif
+//              d_nodes,numNodes));
+// }
 
-void knn50(float *d_results,
-           floatN *d_queries,
-           int numQueries,
-#if CUKD_IMPROVED_TRAVERSAL
-         const cukd::common::box_t<floatN> *d_bounds,
-#endif
-           floatN *d_nodes,
-           int numNodes,
-           float maxRadius)
-{
-  int bs = 128;
-  int nb = cukd::common::divRoundUp(numQueries,bs);
-  unsigned long long *d_stats = 0;
-  static bool firstTime = true;
-  if (firstTime) {
-    cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
-    *d_stats = 0;
-  }
-  d_knn50<<<nb,bs>>>(d_stats,d_results,d_queries,numQueries,
-#if CUKD_IMPROVED_TRAVERSAL
-                     d_bounds,
-#endif
-                     d_nodes,numNodes,maxRadius);
-  if (firstTime) {
-    cudaDeviceSynchronize();
-    std::cout << "KDTREE_STATS " << *d_stats << std::endl;
-    std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
-    cudaFree(d_stats);
-    firstTime = false;
-  }
-}
+// void knn20(float *d_results,
+//            floatN *d_queries,
+//            int numQueries,
+// #if CUKD_IMPROVED_TRAVERSAL
+//            const cukd::box_t<floatN> *d_bounds,
+// #endif
+//            floatN *d_nodes,
+//            int numNodes,
+//            float maxRadius)
+// {
+//   int bs = 128;
+//   int nb = divRoundUp(numQueries,bs);
+//   unsigned long long *d_stats = 0;
+//   static bool firstTime = true;
+//   if (firstTime) {
+//     cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
+//     *d_stats = 0;
+//   }
+//   d_knn20<<<nb,bs>>>(d_stats,d_results,d_queries,numQueries,
+// #if CUKD_IMPROVED_TRAVERSAL
+//                      d_bounds,
+// #endif
+//                      d_nodes,numNodes,maxRadius);
+//   if (firstTime) {
+//     cudaDeviceSynchronize();
+//     std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+//     std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
+//     cudaFree(d_stats);
+//     firstTime = false;
+//   }
+// }
+
+
+// // ==================================================================
+// __global__ void d_knn50(unsigned long long *d_stats,
+//                         float *d_results,
+//                         floatN *d_queries,
+//                         int numQueries,
+// #if CUKD_IMPROVED_TRAVERSAL
+//                         const cukd::box_t<floatN> *d_bounds,
+// #endif
+//                         floatN *d_nodes,
+//                         int numNodes,
+//                         float maxRadius)
+// {
+//   int tid = threadIdx.x+blockIdx.x*blockDim.x;
+//   if (tid >= numQueries) return;
+
+//   cukd::HeapCandidateList<50> result(maxRadius);
+//   d_results[tid] = sqrtf(cukd::knn
+//                          <cukd::TrivialFloatPointTraits<floatN>>
+//                          (d_stats,result,d_queries[tid],
+// #if CUKD_IMPROVED_TRAVERSAL
+//                           *d_bounds,
+// #endif
+//                           d_nodes,numNodes));
+// }
+
+// void knn50(float *d_results,
+//            floatN *d_queries,
+//            int numQueries,
+// #if CUKD_IMPROVED_TRAVERSAL
+//            const cukd::box_t<floatN> *d_bounds,
+// #endif
+//            floatN *d_nodes,
+//            int numNodes,
+//            float maxRadius)
+// {
+//   int bs = 128;
+//   int nb = divRoundUp(numQueries,bs);
+//   unsigned long long *d_stats = 0;
+//   static bool firstTime = true;
+//   if (firstTime) {
+//     cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
+//     *d_stats = 0;
+//   }
+//   d_knn50<<<nb,bs>>>(d_stats,d_results,d_queries,numQueries,
+// #if CUKD_IMPROVED_TRAVERSAL
+//                      d_bounds,
+// #endif
+//                      d_nodes,numNodes,maxRadius);
+//   if (firstTime) {
+//     cudaDeviceSynchronize();
+//     std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+//     std::cout << "NICE_STATS " << prettyNumber(*d_stats) << std::endl;
+//     cudaFree(d_stats);
+//     firstTime = false;
+//   }
+// }
 
 // ==================================================================
 inline void verifyKNN(int pointID, int k, float maxRadius,
@@ -357,9 +401,7 @@ inline void verifyKNN(int pointID, int k, float maxRadius,
 {
   std::priority_queue<float> closest_k;
   for (int i=0;i<numPoints;i++) {
-    float d = sqrtf(cukd::sqrDistance
-                    <cukd::TrivialFloatPointTraits<floatN>>
-                    (queryPoint,points[i]));
+    float d = sqrtf(cukd::fSqrDistance(queryPoint,points[i]));
     if (d <= maxRadius)
       closest_k.push(d);
     if (closest_k.size() > k)
@@ -417,18 +459,16 @@ int main(int ac, const char **av)
   // floatN *d_points = generatePoints(nPoints);
   floatN *d_points = loadPoints<floatN>("data_points",nPoints);//generatePoints(nPoints);
 #if CUKD_IMPROVED_TRAVERSAL
-    cukd::common::box_t<floatN> *d_bounds;
-    cudaMalloc((void**)&d_bounds,sizeof(cukd::common::box_t<floatN>));
-    cukd::computeBounds
-      <cukd::TrivialFloatPointTraits<floatN>>
-      (d_bounds,d_points,nPoints);
+  cukd::box_t<floatN> *d_bounds;
+  cudaMalloc((void**)&d_bounds,sizeof(cukd::box_t<floatN>));
+  cukd::computeBounds(d_bounds,d_points,nPoints);
 #endif
 
   {
     double t0 = getCurrentTime();
     std::cout << "calling builder..." << std::endl;
     cukd::buildTree
-      <cukd::TrivialFloatPointTraits<floatN>>
+      // <cukd::TrivialFloatPointTraits<floatN>>
       (d_points,nPoints);
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
@@ -448,33 +488,33 @@ int main(int ac, const char **av)
   double t0 = getCurrentTime();
   for (int i=0;i<nRepeats;i++)
     if (k == 4)
-      knn4(d_results,d_queries,nQueries,
+      knn<FixedCandidateList<4>>(d_results,d_queries,nQueries,
 #if CUKD_IMPROVED_TRAVERSAL
-          d_bounds,
+           d_bounds,
 #endif
            d_points,nPoints,maxQueryRadius);
     else if (k == 8)
-      knn8(d_results,d_queries,nQueries,
+      knn<FixedCandidateList<8>>(d_results,d_queries,nQueries,
 #if CUKD_IMPROVED_TRAVERSAL
-          d_bounds,
+           d_bounds,
 #endif
            d_points,nPoints,maxQueryRadius);
     else if (k == 64)
-      knn64(d_results,d_queries,nQueries,
+      knn<HeapCandidateList<64>>(d_results,d_queries,nQueries,
 #if CUKD_IMPROVED_TRAVERSAL
-          d_bounds,
+            d_bounds,
 #endif
-           d_points,nPoints,maxQueryRadius);
+            d_points,nPoints,maxQueryRadius);
     else if (k == 20)
-      knn20(d_results,d_queries,nQueries,
+      knn<HeapCandidateList<20>>(d_results,d_queries,nQueries,
 #if CUKD_IMPROVED_TRAVERSAL
-          d_bounds,
+            d_bounds,
 #endif
             d_points,nPoints,maxQueryRadius);
     else if (k == 50)
-      knn50(d_results,d_queries,nQueries,
+      knn<HeapCandidateList<50>>(d_results,d_queries,nQueries,
 #if CUKD_IMPROVED_TRAVERSAL
-          d_bounds,
+            d_bounds,
 #endif
             d_points,nPoints,maxQueryRadius);
     else
@@ -506,67 +546,67 @@ int main(int ac, const char **av)
       verifyKNN(i,k,maxQueryRadius,d_points,nPoints,d_queries[i],d_results[i]);
     std::cout << "verification passed ... " << std::endl;
   }
-// }
+  // }
 
-//   // ==================================================================
-//   {
-//     std::cout << "running " << nRepeats << " sets of knn8 queries..." << std::endl;
-//     double t0 = getCurrentTime();
-//     for (int i=0;i<nRepeats;i++)
-//       knn8(d_results,d_queries,nQueries,d_points,nPoints,maxQueryRadius);
-//     CUKD_CUDA_SYNC_CHECK();
-//     double t1 = getCurrentTime();
-//     std::cout << "done " << nRepeats << " iterations of knn8 query, took " << prettyDouble(t1-t0) << "s" << std::endl;
-//     std::cout << " that's " << prettyDouble((t1-t0)/nRepeats) << "s per query (avg)..." << std::endl;
-//     std::cout << " ... or " << prettyDouble(nQueries*nRepeats/(t1-t0)) << " queries/s" << std::endl;
+  //   // ==================================================================
+  //   {
+  //     std::cout << "running " << nRepeats << " sets of knn8 queries..." << std::endl;
+  //     double t0 = getCurrentTime();
+  //     for (int i=0;i<nRepeats;i++)
+  //       knn8(d_results,d_queries,nQueries,d_points,nPoints,maxQueryRadius);
+  //     CUKD_CUDA_SYNC_CHECK();
+  //     double t1 = getCurrentTime();
+  //     std::cout << "done " << nRepeats << " iterations of knn8 query, took " << prettyDouble(t1-t0) << "s" << std::endl;
+  //     std::cout << " that's " << prettyDouble((t1-t0)/nRepeats) << "s per query (avg)..." << std::endl;
+  //     std::cout << " ... or " << prettyDouble(nQueries*nRepeats/(t1-t0)) << " queries/s" << std::endl;
 
-//     if (verify) {
-//       std::cout << "verifying result ..." << std::endl;
-//       for (int i=0;i<nQueries;i++)
-//         verifyKNN(i,8,maxQueryRadius,d_points,nPoints,d_queries[i],d_results[i]);
-//       std::cout << "verification passed ... " << std::endl;
-//     }
-//   }
-// #endif
+  //     if (verify) {
+  //       std::cout << "verifying result ..." << std::endl;
+  //       for (int i=0;i<nQueries;i++)
+  //         verifyKNN(i,8,maxQueryRadius,d_points,nPoints,d_queries[i],d_results[i]);
+  //       std::cout << "verification passed ... " << std::endl;
+  //     }
+  //   }
+  // #endif
   
-//   // ==================================================================
-//   {
-//     std::cout << "running " << nRepeats << " sets of knn20 queries..." << std::endl;
-//     double t0 = getCurrentTime();
-//     for (int i=0;i<nRepeats;i++)
-//       knn20(d_results,d_queries,nQueries,d_points,nPoints,maxQueryRadius);
-//     CUKD_CUDA_SYNC_CHECK();
-//     double t1 = getCurrentTime();
-//     std::cout << "done " << nRepeats << " iterations of knn20 query, took " << prettyDouble(t1-t0) << "s" << std::endl;
-//     std::cout << " that's " << prettyDouble((t1-t0)/nRepeats) << "s per query (avg)..." << std::endl;
-//     std::cout << " ... or " << prettyDouble(nQueries*nRepeats/(t1-t0)) << " queries/s" << std::endl;
+  //   // ==================================================================
+  //   {
+  //     std::cout << "running " << nRepeats << " sets of knn20 queries..." << std::endl;
+  //     double t0 = getCurrentTime();
+  //     for (int i=0;i<nRepeats;i++)
+  //       knn20(d_results,d_queries,nQueries,d_points,nPoints,maxQueryRadius);
+  //     CUKD_CUDA_SYNC_CHECK();
+  //     double t1 = getCurrentTime();
+  //     std::cout << "done " << nRepeats << " iterations of knn20 query, took " << prettyDouble(t1-t0) << "s" << std::endl;
+  //     std::cout << " that's " << prettyDouble((t1-t0)/nRepeats) << "s per query (avg)..." << std::endl;
+  //     std::cout << " ... or " << prettyDouble(nQueries*nRepeats/(t1-t0)) << " queries/s" << std::endl;
 
-//     if (verify) {
-//       std::cout << "verifying result ..." << std::endl;
-//       for (int i=0;i<nQueries;i++)
-//         verifyKNN(i,20,maxQueryRadius,d_points,nPoints,d_queries[i],d_results[i]);
-//       std::cout << "verification passed ... " << std::endl;
-//     }
-//   }
+  //     if (verify) {
+  //       std::cout << "verifying result ..." << std::endl;
+  //       for (int i=0;i<nQueries;i++)
+  //         verifyKNN(i,20,maxQueryRadius,d_points,nPoints,d_queries[i],d_results[i]);
+  //       std::cout << "verification passed ... " << std::endl;
+  //     }
+  //   }
 
-//   // ==================================================================
-//   {
-//     std::cout << "running " << nRepeats << " sets of knn50 queries..." << std::endl;
-//     double t0 = getCurrentTime();
-//     for (int i=0;i<nRepeats;i++)
-//       knn50(d_results,d_queries,nQueries,d_points,nPoints,maxQueryRadius);
-//     CUKD_CUDA_SYNC_CHECK();
-//     double t1 = getCurrentTime();
-//     std::cout << "done " << nRepeats << " iterations of knn50 query, took " << prettyDouble(t1-t0) << "s" << std::endl;
-//     std::cout << " that's " << prettyDouble((t1-t0)/nRepeats) << "s per query (avg)..." << std::endl;
-//     std::cout << " ... or " << prettyDouble(nQueries*nRepeats/(t1-t0)) << " queries/s" << std::endl;
+  //   // ==================================================================
+  //   {
+  //     std::cout << "running " << nRepeats << " sets of knn50 queries..." << std::endl;
+  //     double t0 = getCurrentTime();
+  //     for (int i=0;i<nRepeats;i++)
+  //       knn50(d_results,d_queries,nQueries,d_points,nPoints,maxQueryRadius);
+  //     CUKD_CUDA_SYNC_CHECK();
+  //     double t1 = getCurrentTime();
+  //     std::cout << "done " << nRepeats << " iterations of knn50 query, took " << prettyDouble(t1-t0) << "s" << std::endl;
+  //     std::cout << " that's " << prettyDouble((t1-t0)/nRepeats) << "s per query (avg)..." << std::endl;
+  //     std::cout << " ... or " << prettyDouble(nQueries*nRepeats/(t1-t0)) << " queries/s" << std::endl;
 
-//     if (verify) {
-//       std::cout << "verifying result ..." << std::endl;
-//       for (int i=0;i<nQueries;i++)
-//         verifyKNN(i,50,maxQueryRadius,d_points,nPoints,d_queries[i],d_results[i]);
-//       std::cout << "verification passed ... " << std::endl;
-//     }
-// }
+  //     if (verify) {
+  //       std::cout << "verifying result ..." << std::endl;
+  //       for (int i=0;i<nQueries;i++)
+  //         verifyKNN(i,50,maxQueryRadius,d_points,nPoints,d_queries[i],d_results[i]);
+  //       std::cout << "verification passed ... " << std::endl;
+  //     }
+  // }
 
 }

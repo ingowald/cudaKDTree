@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2019-2021 Ingo Wald                                            //
+// Copyright 2019-2023 Ingo Wald                                            //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -16,7 +16,8 @@
 
 #pragma once
 
-#include "helpers.h"
+#include "cukd/helpers.h"
+#include "cukd/box.h"
 
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
@@ -30,22 +31,9 @@
 #include <thrust/random/uniform_real_distribution.h>
 
 namespace cukd {
-
+  
   typedef uint32_t tag_t;
 
-  /*! template interface for cuda vector types (such as float3, int4,
-      etc), that allows for querying which scalar type this vec is
-      defined over */
-  template<typename cuda_vec_t> struct scalar_type_of;
-  template<> struct scalar_type_of<float2> { using type = float; };
-  template<> struct scalar_type_of<float3> { using type = float; };
-  template<> struct scalar_type_of<float4> { using type = float; };
-  template<> struct scalar_type_of<int2>   { using type = int; };
-  template<> struct scalar_type_of<int3>   { using type = int; };
-  template<> struct scalar_type_of<int4>   { using type = int; };
- 
-
-  
   /*! defines an abstract interface to what a 'node' in a k-d tree
     is. This needs to define the follwing:
 
@@ -64,41 +52,78 @@ namespace cukd {
     has a field to store an explicit split dimensoin in each
     node. If not, the k-d tree builder and traverse _have_ to use
     round-robin for split distance; otherwise, it will alwyas
-    split the widest dimensoin
+    split the widest dimension
 
     - enum node_traits::set_dim(node_t &, int) and
     node_traits::get_dim(node_t &
   */
-  template<typename node_t> struct node_traits;
-
   template<typename node_t> struct default_node_traits {
+
+    // ------------------------------------------------------------------
+    /* part I : describes the _types_ of node of the tree, position,
+       scalar, dimnensionaltiy, etc */
+    // ------------------------------------------------------------------
+
+    /*! the *logical* type used for mathematical things like distance
+        computations, specifiing the location of a data point,
+        etc. this defines number of dimensions, scalar type, etc, but
+        leaves the node to define its own data layout */
     using point_t = node_t;
     
-    /* the scalar type of each point member (eg, float for a float3
-       node_t) */
-    using scalar_t = typename scalar_type_of<point_t>::type;
+    // ------------------------------------------------------------------
+    /* part II : how to extract a point or coordinate from an actual
+       data struct */
+    // ------------------------------------------------------------------
+
+    /*! return a reference to the 'd'th positional coordinate of the
+      given node */
+    static inline __device__ const point_t &get_point(const node_t &n) { return n; }
     
-    /* the number of dimensions of the data; e.g., a k-d tree build
-       over float4 4d points would define tihs to '4'; a kd tree built
-       over a struct htat has 3d position and some other additional
-       payload would use '3' */
-    enum { num_dims = sizeof(point_t)/sizeof(scalar_t) };
+    /*! return a reference to the 'd'th positional coordinate of the
+      given node */
+    static inline __device__
+    typename scalar_type_of<point_t>::type get_coord(const node_t &n, int d)
+    { return cukd::get_coord(get_point(n),d); }
     
+    // ------------------------------------------------------------------
+    /* part III : whether the data struct has a way of storing a split
+       dimension for non-round robin paritioning, and if so, how to
+       store (for building) and read (for traversing) that split
+       dimensional in/from a node */
+    // ------------------------------------------------------------------
+
     /* whether that node type has a field to store an explicit split
        dimensoin in each node. If not, the k-d tree builder and
        traverse _have_ to use round-robin for split distance;
        otherwise, it will alwyas split the widest dimensoin */
     enum { has_explicit_dim = false };
     
-    /*! return a reference to the 'd'th positional coordinate of the
-      given node */
-    static inline __device__ point_t &get_point(node_t &n) { return n; }
-
-    /*! just defining this for completeness, it will should never get
-        called for thistype becaues we have set has_explicit_dim set
-        to false */
-    static inline __device__ int get_dim(node_t &n);
+    /*! !{ just defining this for completeness, get/set_dim should never
+        get called for this type becaues we have set has_explicit_dim
+        set to false. note traversal should ONLY ever call this
+        function for node_t's that define has_explicit_dim to true */
+    static inline __device__ int  get_dim(const node_t &) { return -1; }
+    static inline __device__ void set_dim(node_t &, int) {}
+    /*! @} */
   };
+
+
+  /*! defines default node traits for our own vec_float<N> vector type */
+  template<int N> struct default_node_traits<vec_float<N>> {
+    using node_t   = vec_float<N>;
+    using scalar_t = float;
+    using point_t  = node_t;
+    
+    enum { has_explicit_dim = false };
+    
+    static inline __device__ const point_t &get_point(const node_t &n) { return n; }
+    static inline __device__ scalar_t get_coord(const node_t &n, int d) { return n.v[d]; }
+    static inline __device__ int  get_dim(const node_t &n) { return -1; }
+    static inline __device__ void set_dim(node_t &n, int dim) {}
+  };
+  
+
+  
   
   // ==================================================================
   // INTERFACE SECTION
@@ -124,15 +149,14 @@ namespace cukd {
 
     buildKDTree<float4>(...);
   */
-  template<typename data_point_traits_t>
-  void buildTree(typename data_point_traits_t::point_t *d_points,
+  template<typename node_t, typename node_traits=default_node_traits<node_t>>
+  void buildTree(node_t *d_points,
                  int numPoints,
                  cudaStream_t stream = 0);
 
-  template<typename node_t,
-           typename traits_t = default_node_traits<node_t>>
-  void computeBounds(common::box_t<typename traits_t::scalar_t, traits_t::num_dims> *d_bounds,
-                     const typename data_point_traits_t::point_t *d_points,
+  template<typename node_t, typename node_traits=default_node_traits<node_t>>
+  void computeBounds(cukd::box_t<typename node_traits::point_t> *d_bounds,
+                     const node_t *d_points,
                      int numPoints,
                      cudaStream_t stream=0);
 
@@ -225,19 +249,22 @@ namespace cukd {
   }
 #endif
 
-  template<typename data_point_traits_t>
-  void buildTree(typename data_point_traits_t::point_t *d_points,
+  template<typename node_t, typename node_traits>
+  void buildTree(node_t *d_points,
                  int numPoints,
                  cudaStream_t stream)
   {
+    using point_t  = typename node_traits::point_t;
+    using scalar_t = typename scalar_type_of<point_t>::type;
+    enum { num_dims = num_dims_of<point_t>::value };
+    
     /* thrust helper typedefs for the zip iterator, to make the code
        below more readable */
-    using data_point_t = typename data_point_traits_t::point_t;
     typedef typename thrust::device_vector<tag_t>::iterator tag_iterator;
-    typedef typename thrust::device_vector<data_point_t>::iterator point_iterator;
+    typedef typename thrust::device_vector<node_t>::iterator point_iterator;
     typedef thrust::tuple<tag_iterator,point_iterator> iterator_tuple;
     typedef thrust::zip_iterator<iterator_tuple> tag_point_iterator;
-    enum { numDims = data_point_traits_t::numDims };
+
     // check for invalid input, and return gracefully if so
     if (numPoints < 1) return;
 
@@ -250,8 +277,8 @@ namespace cukd {
 
     /* create the zip iterators we use for zip-sorting the tag and
        points array */
-    thrust::device_ptr<data_point_t> points_begin(d_points);
-    thrust::device_ptr<data_point_t> points_end(d_points+numPoints);
+    thrust::device_ptr<node_t> points_begin(d_points);
+    thrust::device_ptr<node_t> points_end(d_points+numPoints);
     tag_point_iterator begin = thrust::make_zip_iterator
       (thrust::make_tuple(tags.begin(),points_begin));
     tag_point_iterator end = thrust::make_zip_iterator
@@ -271,7 +298,7 @@ namespace cukd {
        dimensoins */
     for (int level=0;level<deepestLevel;level++) {
       thrust::sort(thrust::device.on(stream),begin,end,
-                   ZipCompare<data_point_traits_t>((level)%numDims));
+                   ZipCompare<node_traits>((level)%num_dims));
 
 #if KDTREE_BUILDER_LOGGING
       cudaStreamSynchronize(stream);
@@ -279,7 +306,7 @@ namespace cukd {
 #endif
       const int blockSize = 32;
       const int numSettled = FullBinaryTreeOf(level).numNodes();
-      updateTag<<<common::divRoundUp(numPoints,blockSize),blockSize,1,stream>>>
+      updateTag<<<divRoundUp(numPoints,blockSize),blockSize,1,stream>>>
         (thrust::raw_pointer_cast(tags.data()),numPoints,level);
 
 #if KDTREE_BUILDER_LOGGING
@@ -292,26 +319,21 @@ namespace cukd {
        array, so the dimension we're sorting in really won't matter
        any more */
     thrust::sort(thrust::device.on(stream),begin,end,
-                 ZipCompare<data_point_traits_t>((deepestLevel)%numDims));
+                 ZipCompare<node_traits>((deepestLevel)%num_dims));
 #if KDTREE_BUILDER_LOGGING
     cudaStreamSynchronize(stream);
     print("final sort\n",-1,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
   }
 
-  template<typename math_point_traits_t,
-           typename data_point_traits_t = math_point_traits_t>
+  template<typename node_t, typename node_traits>
   __global__
-  void computeBounds_copyFirst(
-                               common::box_t<typename math_point_traits_t::point_t> *d_bounds,
-                               const typename data_point_traits_t::point_t *d_points)
+  void computeBounds_copyFirst(box_t<typename node_traits::point_t> *d_bounds,
+                               const node_t *d_points)
   {
-    const auto point = d_points[0];
-    for (int d=0;d<math_point_traits_t::numDims;d++) {
-      const auto point_d = data_point_traits_t::getCoord(point,d);
-      math_point_traits_t::setCoord(d_bounds->lower,d,point_d);
-      math_point_traits_t::setCoord(d_bounds->upper,d,point_d);
-    }
+    using point_t = typename node_traits::point_t;
+    const point_t point = node_traits::get_point(d_points[0]);
+    d_bounds->lower = d_bounds->upper = point;
   }
 
   inline __device__
@@ -340,39 +362,43 @@ namespace cukd {
     return old;
   }
 
-  template<typename math_point_traits_t,
-           typename data_point_traits_t = math_point_traits_t>
+  template<typename node_t,
+           typename node_traits>
   __global__
-  void computeBounds_atomicGrow(
-                                common::box_t<typename math_point_traits_t::point_t> *d_bounds,
-                                const typename data_point_traits_t::point_t *d_points,
+  void computeBounds_atomicGrow(box_t<typename node_traits::point_t> *d_bounds,
+                                const node_t *d_points,
                                 int numPoints)
   {
-    static_assert(math_point_traits_t::numDims <= data_point_traits_t::numDims, "dimension error");
+    using point_t = typename node_traits::point_t;
+    enum { num_dims = num_dims_of<point_t>::value };
+    
     const int tid = threadIdx.x+blockIdx.x*blockDim.x;
     if (tid >= numPoints) return;
-    for (int d=0;d<math_point_traits_t::numDims;d++) {
-      const auto point_d = data_point_traits_t::getCoord(d_points[tid],d);
-      atomicMin(&d_bounds->lower.x+d,point_d);
-      atomicMax(&d_bounds->upper.x+d,point_d);
+    
+    using point_t = typename node_traits::point_t;
+    const point_t point = node_traits::get_point(d_points[0]);
+#pragma unroll(num_dims)
+    for (int d=0;d<num_dims;d++) {
+      float &lo = get_coord(d_bounds->lower,d);
+      float &hi = get_coord(d_bounds->upper,d);
+      float f = get_coord(point,d);
+      atomicMin(&lo,f);
+      atomicMin(&hi,f);
     }
   }
 
-  template<typename math_point_traits_t,
-           typename data_point_traits_t>
-  void computeBounds(common::box_t<typename math_point_traits_t::point_t> *d_bounds,
-                     const typename data_point_traits_t::point_t *d_points,
+  template<typename node_t, typename node_traits>
+  void computeBounds(box_t<typename node_traits::point_t> *d_bounds,
+                     const node_t *d_points,
                      int numPoints,
                      cudaStream_t s)
   {
-    computeBounds_copyFirst<math_point_traits_t, data_point_traits_t>
+    computeBounds_copyFirst<node_t,node_traits>
       <<<1,1,0,s>>>
       (d_bounds,d_points);
-    cudaStreamSynchronize(s);
-    computeBounds_atomicGrow<math_point_traits_t, data_point_traits_t>
-      <<<common::divRoundUp(numPoints,128),128,0,s>>>
+    computeBounds_atomicGrow<node_t,node_traits>
+      <<<divRoundUp(numPoints,128),128,0,s>>>
       (d_bounds,d_points,numPoints);
-    cudaStreamSynchronize(s);
   }
 
 
@@ -390,8 +416,8 @@ namespace cukd {
     const auto tag_b = thrust::get<0>(b);
     const auto pnt_a = thrust::get<1>(a);
     const auto pnt_b = thrust::get<1>(b);
-    const auto dim_a = point_traits_t::getCoord(pnt_a,dim);
-    const auto dim_b = point_traits_t::getCoord(pnt_b,dim);
+    const auto dim_a = point_traits_t::get_coord(pnt_a,dim);
+    const auto dim_b = point_traits_t::get_coord(pnt_b,dim);
     const bool less =
       (tag_a < tag_b)
       ||
