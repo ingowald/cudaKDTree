@@ -254,7 +254,8 @@ namespace cukd {
     if(old <= value) return old;
     do {
       assumed = old;
-      old = atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value));
+      old = __int_as_float(atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value)));
+      value = min(value,old);
     } while(old!=assumed);
     return old;
   }
@@ -266,7 +267,8 @@ namespace cukd {
     if(old >= value) return old;
     do {
       assumed = old;
-      old = atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value));
+      old = __int_as_float(atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value)));
+      value = max(value,old);
     } while(old!=assumed);
     return old;
   }
