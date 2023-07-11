@@ -69,7 +69,7 @@ namespace cukd {
         etc. this defines number of dimensions, scalar type, etc, but
         leaves the node to define its own data layout */
     using point_t = node_t;
-    
+
     // ------------------------------------------------------------------
     /* part II : how to extract a point or coordinate from an actual
        data struct */
@@ -164,20 +164,147 @@ namespace cukd {
   // IMPLEMENTATION SECTION
   // ==================================================================
 
-  template<typename point_traits_t>
+  template<typename node_t, typename node_traits>
+  __global__
+  void computeBounds_copyFirst(box_t<typename node_traits::point_t> *d_bounds,
+                               const node_t *d_points)
+  {
+    using point_t = typename node_traits::point_t;
+    const point_t point = node_traits::get_point(d_points[0]);
+    d_bounds->lower = d_bounds->upper = point;
+  }
+
+  inline __device__
+  float atomicMin(float *addr, float value)
+  {
+    float old = *addr, assumed;
+    if(old <= value) return old;
+    do {
+      assumed = old;
+      old = __int_as_float(atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value)));
+      value = min(value,old);
+    } while(old!=assumed);
+    return old;
+  }
+
+  inline __device__
+  float atomicMax(float *addr, float value)
+  {
+    float old = *addr, assumed;
+    if(old >= value) return old;
+    do {
+      assumed = old;
+      old = __int_as_float(atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value)));
+      value = max(value,old);
+    } while(old!=assumed);
+    return old;
+  }
+
+  template<typename node_t,
+           typename node_traits>
+  __global__
+  void computeBounds_atomicGrow(box_t<typename node_traits::point_t> *d_bounds,
+                                const node_t *d_points,
+                                int numPoints)
+  {
+    using point_t = typename node_traits::point_t;
+    enum { num_dims = num_dims_of<point_t>::value };
+    
+    const int tid = threadIdx.x+blockIdx.x*blockDim.x;
+    if (tid >= numPoints) return;
+    
+    using point_t = typename node_traits::point_t;
+    point_t point = node_traits::get_point(d_points[0]);
+#pragma unroll(num_dims)
+    for (int d=0;d<num_dims;d++) {
+      float &lo = get_coord(d_bounds->lower,d);
+      float &hi = get_coord(d_bounds->upper,d);
+      float f = get_coord(point,d);
+      atomicMin(&lo,f);
+      atomicMin(&hi,f);
+    }
+  }
+
+  template<typename node_t, typename node_traits>
+  void computeBounds(box_t<typename node_traits::point_t> *d_bounds,
+                     const node_t *d_points,
+                     int numPoints,
+                     cudaStream_t s)
+  {
+    computeBounds_copyFirst<node_t,node_traits>
+      <<<1,1,0,s>>>
+      (d_bounds,d_points);
+    computeBounds_atomicGrow<node_t,node_traits>
+      <<<divRoundUp(numPoints,128),128,0,s>>>
+      (d_bounds,d_points,numPoints);
+  }
+
+
+  template<typename node_t, typename node_traits>
   struct ZipCompare {
-    ZipCompare(const int dim) : dim(dim) {}
+    ZipCompare(const int dim, const node_t *nodes) : dim(dim), nodes(nodes) {}
 
     /*! the actual comparison operator; will perform a
       'zip'-comparison in that the first element is the major sort
       order, and the second the minor one (for those of same major
       sort key) */
     inline __device__ bool operator()
-    (const thrust::tuple<tag_t, typename point_traits_t::point_t> &a,
-     const thrust::tuple<tag_t, typename point_traits_t::point_t> &b);
+    (const thrust::tuple<tag_t, node_t> &a,
+     const thrust::tuple<tag_t, node_t> &b);
 
     const int dim;
+    const node_t *nodes;
   };
+
+  template<typename node_t,typename node_traits>
+  __global__
+  void chooseDims(int numLevelsDone,
+                  const box_t<typename node_traits::point_t> *d_bounds,
+                  tag_t  *tags,
+                  node_t *d_nodes,
+                  int numPoints)
+  {
+    using point_t  = typename node_traits::point_t;
+    using scalar_t = typename scalar_type_of<point_t>::type;
+    enum { num_dims = num_dims_of<point_t>::value };
+    
+    const int tid = threadIdx.x+blockIdx.x*blockDim.x;
+    if (tid >= numPoints) return;
+
+    const int numSettled = FullBinaryTreeOf(numLevelsDone).numNodes();
+    if (tid < numSettled)
+      return;
+
+    // compute bbox of subtree that node is currently in
+    box_t<point_t> bounds = *d_bounds;
+    int curr = tags[tid];
+    while (curr > 0) {
+      const int     parent = (curr+1)/2-1;
+      const node_t &parent_node = d_nodes[parent];
+      const int     parent_dim
+        = node_traits::has_explicit_dim
+        ? node_traits::get_dim(parent_node)
+        : (BinaryTree::levelOf(parent) % num_dims);
+      const scalar_t parent_split_pos
+        = node_traits::get_coord(parent_node,parent_dim);
+      
+      if (curr & 1) {
+        // curr is left child, set upper
+        get_coord(bounds.upper,parent_dim)
+          = min(parent_split_pos,
+                get_coord(bounds.upper,parent_dim));
+      } else {
+        // curr is right child, set lower
+        get_coord(bounds.lower,parent_dim)
+          = max(parent_split_pos,
+                get_coord(bounds.lower,parent_dim));
+      }
+      curr = parent;
+    }
+    
+    int dim = arg_max(bounds.size());
+    node_traits::set_dim(d_nodes[tid],dim);
+  }
 
   /* performs the L-th step's tag update: each input tag refers to a
      subtree ID on level L, and - assuming all points and tags are in
@@ -293,20 +420,37 @@ namespace cukd {
     cudaStreamSynchronize(stream);
     print("init\n",-1,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
+    
+    using box_t = cukd::box_t<point_t>;
+    box_t *worldBounds = 0;
+    if (node_traits::has_explicit_dim) {
+      cudaMallocAsync((void **)&worldBounds,sizeof(*worldBounds),stream);
+      // computeBounds<node_t,node_traits,0,stream>(worldBounds,d_points,numPoints);
+      computeBounds<node_t,node_traits>(worldBounds,d_points,numPoints,stream);
+      // setDims<node_t,node_traits><<<1,32>>>(d_points,0,1,worldBounds);
+    }
 
     /* now build each level, one after another, cycling through the
        dimensoins */
     for (int level=0;level<deepestLevel;level++) {
+      if (node_traits::has_explicit_dim) {
+        const int blockSize = 32;
+        chooseDims<node_t,node_traits>
+          <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
+          (level,worldBounds,
+           thrust::raw_pointer_cast(tags.data()),d_points,numPoints);
+        // setDims<node_t,node_traits><<<1,32>>>(d_points,0,1,worldBounds);
+      }
       thrust::sort(thrust::device.on(stream),begin,end,
-                   ZipCompare<node_traits>((level)%num_dims));
+                   ZipCompare<node_t,node_traits>((level)%num_dims,d_points));
 
 #if KDTREE_BUILDER_LOGGING
       cudaStreamSynchronize(stream);
       print("step %i sort\n",level,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
       const int blockSize = 32;
-      const int numSettled = FullBinaryTreeOf(level).numNodes();
-      updateTag<<<divRoundUp(numPoints,blockSize),blockSize,1,stream>>>
+      // const int numSettled = FullBinaryTreeOf(level).numNodes();
+      updateTag<<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
         (thrust::raw_pointer_cast(tags.data()),numPoints,level);
 
 #if KDTREE_BUILDER_LOGGING
@@ -319,105 +463,35 @@ namespace cukd {
        array, so the dimension we're sorting in really won't matter
        any more */
     thrust::sort(thrust::device.on(stream),begin,end,
-                 ZipCompare<node_traits>((deepestLevel)%num_dims));
+                 ZipCompare<node_t,node_traits>((deepestLevel)%num_dims,d_points));
 #if KDTREE_BUILDER_LOGGING
     cudaStreamSynchronize(stream);
     print("final sort\n",-1,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
 #endif
+    if (node_traits::has_explicit_dim) 
+      cudaFreeAsync(worldBounds,stream);
   }
-
-  template<typename node_t, typename node_traits>
-  __global__
-  void computeBounds_copyFirst(box_t<typename node_traits::point_t> *d_bounds,
-                               const node_t *d_points)
-  {
-    using point_t = typename node_traits::point_t;
-    const point_t point = node_traits::get_point(d_points[0]);
-    d_bounds->lower = d_bounds->upper = point;
-  }
-
-  inline __device__
-  float atomicMin(float *addr, float value)
-  {
-    float old = *addr, assumed;
-    if(old <= value) return old;
-    do {
-      assumed = old;
-      old = __int_as_float(atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value)));
-      value = min(value,old);
-    } while(old!=assumed);
-    return old;
-  }
-
-  inline __device__
-  float atomicMax(float *addr, float value)
-  {
-    float old = *addr, assumed;
-    if(old >= value) return old;
-    do {
-      assumed = old;
-      old = __int_as_float(atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value)));
-      value = max(value,old);
-    } while(old!=assumed);
-    return old;
-  }
-
-  template<typename node_t,
-           typename node_traits>
-  __global__
-  void computeBounds_atomicGrow(box_t<typename node_traits::point_t> *d_bounds,
-                                const node_t *d_points,
-                                int numPoints)
-  {
-    using point_t = typename node_traits::point_t;
-    enum { num_dims = num_dims_of<point_t>::value };
-    
-    const int tid = threadIdx.x+blockIdx.x*blockDim.x;
-    if (tid >= numPoints) return;
-    
-    using point_t = typename node_traits::point_t;
-    const point_t point = node_traits::get_point(d_points[0]);
-#pragma unroll(num_dims)
-    for (int d=0;d<num_dims;d++) {
-      float &lo = get_coord(d_bounds->lower,d);
-      float &hi = get_coord(d_bounds->upper,d);
-      float f = get_coord(point,d);
-      atomicMin(&lo,f);
-      atomicMin(&hi,f);
-    }
-  }
-
-  template<typename node_t, typename node_traits>
-  void computeBounds(box_t<typename node_traits::point_t> *d_bounds,
-                     const node_t *d_points,
-                     int numPoints,
-                     cudaStream_t s)
-  {
-    computeBounds_copyFirst<node_t,node_traits>
-      <<<1,1,0,s>>>
-      (d_bounds,d_points);
-    computeBounds_atomicGrow<node_t,node_traits>
-      <<<divRoundUp(numPoints,128),128,0,s>>>
-      (d_bounds,d_points,numPoints);
-  }
-
 
   /*! the actual comparison operator; will perform a
     'zip'-comparison in that the first element is the major sort
     order, and the second the minor one (for those of same major
     sort key) */
-  template<typename point_traits_t>
+  template<typename node_t, typename node_traits>
   inline __device__
-  bool ZipCompare<point_traits_t>::operator()
-    (const thrust::tuple<tag_t, typename point_traits_t::point_t> &a,
-     const thrust::tuple<tag_t, typename point_traits_t::point_t> &b)
+  bool ZipCompare<node_t,node_traits>::operator()
+    (const thrust::tuple<tag_t, node_t> &a,
+     const thrust::tuple<tag_t, node_t> &b)
   {
     const auto tag_a = thrust::get<0>(a);
     const auto tag_b = thrust::get<0>(b);
     const auto pnt_a = thrust::get<1>(a);
     const auto pnt_b = thrust::get<1>(b);
-    const auto dim_a = point_traits_t::get_coord(pnt_a,dim);
-    const auto dim_b = point_traits_t::get_coord(pnt_b,dim);
+    int dim
+      = node_traits::has_explicit_dim
+      ? node_traits::get_dim(this->nodes[tag_a])
+      : this->dim;
+    const auto dim_a = node_traits::get_coord(pnt_a,dim);
+    const auto dim_b = node_traits::get_coord(pnt_b,dim);
     const bool less =
       (tag_a < tag_b)
       ||

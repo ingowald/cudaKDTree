@@ -199,7 +199,7 @@ namespace cukd {
 #else
 # if CUKD_STACK_FREE
 // stack-free, regular traversal
-#  include "traverse-sf-reg.h"
+#  include "traverse-stack-free.h"
 namespace cukd {
   template<typename CandidateList,
            typename node_t,
@@ -207,11 +207,11 @@ namespace cukd {
   inline __device__
   float knn(unsigned long long *d_stats,
             CandidateList &result,
-            typename math_point_traits_t::point_t queryPoint,
+            typename node_traits::point_t queryPoint,
             const node_t *d_nodes,
             int N)
   {
-    traverse_sf_reg<CandidateList,node_t,node_traits>
+    traverse_stack_free<CandidateList,node_t,node_traits>
       (result,d_stats,queryPoint,d_nodes,N);
     return result.returnValue();
   }

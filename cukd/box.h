@@ -23,6 +23,8 @@
 namespace cukd {
   
   template<typename point_t> struct box_t {
+    inline __both__ point_t size() const { return upper - lower; }
+    
     point_t lower, upper;
   };
   

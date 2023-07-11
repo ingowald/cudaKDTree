@@ -124,9 +124,11 @@ namespace cukd {
   
   template<int N>
   inline __both__ float &get_coord(vec_float<N> &v, int d) { return v.v[d]; }
+  template<int N>
+  inline __both__ float get_coord(const vec_float<N> &v, int d) { return v.v[d]; }
 
   template<int N>
-  inline __device__ vec_float<N> min(vec_float<N> a, vec_float<N> b)
+  inline __both__ vec_float<N> min(vec_float<N> a, vec_float<N> b)
   {
     vec_float<N> r;
     for (int i=0;i<N;i++) r.v[i] = min(a.v[i],b.v[i]);
@@ -134,7 +136,7 @@ namespace cukd {
   }
   
   template<int N>
-  inline __device__ vec_float<N> max(vec_float<N> a, vec_float<N> b)
+  inline __both__ vec_float<N> max(vec_float<N> a, vec_float<N> b)
   {
     vec_float<N> r;
     for (int i=0;i<N;i++) r.v[i] = max(a.v[i],b.v[i]);
@@ -142,7 +144,7 @@ namespace cukd {
   }
 
   template<int N>
-  inline __device__ float dot(vec_float<N> a, vec_float<N> b)
+  inline __both__ float dot(vec_float<N> a, vec_float<N> b)
   {
     float sum = 0.f;
     for (int i=0;i<N;i++) sum += a.v[i] * b.v[i];
@@ -150,7 +152,7 @@ namespace cukd {
   }
   
   template<int N>
-  inline __device__ vec_float<N> operator-(const vec_float<N> &a, const vec_float<N> &b)
+  inline __both__ vec_float<N> operator-(const vec_float<N> &a, const vec_float<N> &b)
   {
     vec_float<N> r;
     for (int i=0;i<N;i++) r.v[i] = a.v[i] - b.v[i];
@@ -165,8 +167,8 @@ namespace cukd {
       can reliably compute distance in float with conservative
       distance metric */
 
-  template<typename T> inline __device__ float as_float_rz(T t);
-  template<> inline __device__ float as_float_rz(float f) { return f; }
+  template<typename T> inline __both__ float as_float_rz(T t);
+  template<> inline __both__ float as_float_rz(float f) { return f; }
   template<> inline __device__ float as_float_rz(int i) { return __int2float_rz(i); }
   
   /*! @] */
@@ -196,6 +198,24 @@ namespace cukd {
   template<typename point_t>
   inline __both__ auto distance(const point_t &a, const point_t &b)
   { return square_root(sqrDistance(a,b)); }
+  
+  // ------------------------------------------------------------------
+  template<typename point_t>
+  inline __both__ int arg_max(point_t p)
+  {
+    enum { num_dims = num_dims_of<point_t>::value };
+    using scalar_t = typename scalar_type_of<point_t>::type;
+    int best_dim = 0;
+    scalar_t best_val = get_coord(p,0);
+#pragma unroll
+    for (int i=1;i<num_dims;i++) {
+      scalar_t f = get_coord(p,i);
+      if (f <= best_val) continue;
+      best_val = f;
+      best_dim = i;
+    }
+    return best_dim;
+  }
   
   // ------------------------------------------------------------------
   inline std::ostream &operator<<(std::ostream &out,

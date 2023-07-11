@@ -1,30 +1,39 @@
+// ======================================================================== //
+// Copyright 2022-2023 Ingo Wald                                            //
+//                                                                          //
+// Licensed under the Apache License, Version 2.0 (the "License");          //
+// you may not use this file except in compliance with the License.         //
+// You may obtain a copy of the License at                                  //
+//                                                                          //
+//     http://www.apache.org/licenses/LICENSE-2.0                           //
+//                                                                          //
+// Unless required by applicable law or agreed to in writing, software      //
+// distributed under the License is distributed on an "AS IS" BASIS,        //
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. //
+// See the License for the specific language governing permissions and      //
+// limitations under the License.                                           //
+// ======================================================================== //
+
 #pragma once
 
 namespace cukd {
 
-  template<
-    typename math_point_traits_t,
-    typename node_point_traits_t,
-    typename result_t>
-    // typename math_point_traits_t,
-    // typename node_point_traits_t=math_point_traits_t>
+  template<typename result_t,
+           typename node_t,
+           typename node_traits=default_node_traits<node_t>>
   inline __device__
-  void traverse_sf_reg(result_t &result,
-                      unsigned long long *d_stats,
-                      typename math_point_traits_t::point_t queryPoint,
-                      const typename node_point_traits_t::point_t *d_nodes,
-                      int N)
+  void traverse_stack_free(result_t &result,
+                           unsigned long long *d_stats,
+                           typename node_traits::point_t queryPoint,
+                           const node_t *d_nodes,
+                           int N)
   {
-    using scalar_t = typename math_point_traits_t::scalar_t;
+    using point_t  = typename node_traits::point_t;
+    using scalar_t = typename scalar_type_of<point_t>::type;
+    enum { num_dims = num_dims_of<point_t>::value };
+
     scalar_t cullDist = result.initialCullDist2();
-    // const auto max_far_node_search_radius_sqr
-    //   = params.max_far_node_search_radius
-    //   * params.max_far_node_search_radius;
-    // const auto epsErr = 1 + params.eps;
-
-    // int   closest_found_so_far = -1;
-    // float closest_sqrDist_found_so_far = CUDART_INF;
-
+    
     int prev = -1;
     int curr = 0;
 
@@ -49,17 +58,17 @@ namespace cukd {
       const bool from_child = (prev >= child);
       if (!from_child) {
         const auto sqrDist =
-          sqrDistance<math_point_traits_t,node_point_traits_t>(queryPoint,curr_node);
+          sqrDistance(queryPoint,node_traits::get_point(curr_node));
         cullDist = result.processCandidate(curr,sqrDist);
-        
-        // if (sqrDist < closest_sqrDist_found_so_far) {
-        //   closest_sqrDist_found_so_far = sqrDist;
-        //   closest_found_so_far          = curr;
-        // }
       }
 
-      const int   curr_dim = BinaryTree::levelOf(curr) % math_point_traits_t::numDims;
-      const float curr_dim_dist = (&queryPoint.x)[curr_dim] - (&curr_node.x)[curr_dim];
+      const int  curr_dim
+        = node_traits::has_explicit_dim
+        ? node_traits::get_dim(d_nodes[curr])
+        : (BinaryTree::levelOf(curr) % num_dims);
+      const float curr_dim_dist
+        = get_coord(queryPoint,curr_dim)
+        - node_traits::get_coord(curr_node,curr_dim);
       const int   curr_side = curr_dim_dist > 0.f;
       const int   curr_close_child = 2*curr + 1 + curr_side;
       const int   curr_far_child   = 2*curr + 2 - curr_side;

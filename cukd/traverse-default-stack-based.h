@@ -56,13 +56,13 @@ namespace cukd {
           = node_traits::has_explicit_dim
           ? node_traits::get_dim(d_nodes[curr])
           : (BinaryTree::levelOf(curr) % num_dims);
-        const auto curr_node  = d_nodes[curr];
+        const node_t &curr_node  = d_nodes[curr];
         const auto sqrDist = sqrDistance(node_traits::get_point(curr_node),queryPoint);
         
         cullDist = result.processCandidate(curr,sqrDist);
 
         const auto node_coord   = node_traits::get_coord(curr_node,curr_dim);
-        const auto query_coord  = node_traits::get_coord(queryPoint,curr_dim);
+        const auto query_coord  = get_coord(queryPoint,curr_dim);
         const bool  leftIsClose = query_coord < node_coord;
         const int   lChild = 2*curr+1;
         const int   rChild = lChild+1;

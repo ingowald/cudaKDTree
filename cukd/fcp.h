@@ -173,7 +173,7 @@ namespace cukd {
 #else
 # if CUKD_STACK_FREE
 // stack-free, regular traversal
-#  include "traverse-sf-reg.h"
+#  include "traverse-stack-free.h"
 namespace cukd {
   template<typename node_t,
            typename node_traits=default_node_traits<node_t>>
@@ -186,7 +186,7 @@ namespace cukd {
   {
     FCPResult result;
     result.clear(sqr(params.max_far_node_search_radius));
-    traverse_sf_reg<FCPResult,node_t,node_traits>
+    traverse_stack_free<FCPResult,node_t,node_traits>
       (result,d_stats,queryPoint,d_nodes,N);
     return result.returnValue();
   }
