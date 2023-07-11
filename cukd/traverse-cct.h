@@ -67,9 +67,10 @@ namespace cukd {
       }
       if (d_stats)
         atomicAdd(d_stats,1);
-      const auto node  = d_nodes[nodeID];
+      const auto &node  = d_nodes[nodeID];
+      const point_t nodePoint = node_traits::get_point(node);
       {
-        const auto sqrDist = sqrDistance(node,queryPoint);
+        const auto sqrDist = sqrDistance(nodePoint,queryPoint);
         cullDist = result.processCandidate(nodeID,sqrDist);
       }
       
@@ -77,8 +78,8 @@ namespace cukd {
         = node_traits::has_explicit_dim
         ? node_traits::get_dim(d_nodes[nodeID])
         : (BinaryTree::levelOf(nodeID) % num_dims);
-      const auto node_dim   = node_traits::get_coord(node,dim);
-      const auto query_dim  = node_traits::get_coord(queryPoint,dim);
+      const auto node_dim   = get_coord(nodePoint,dim);
+      const auto query_dim  = get_coord(queryPoint,dim);
       const bool  leftIsClose = query_dim < node_dim;
       const int   lChild = 2*nodeID+1;
       const int   rChild = lChild+1;

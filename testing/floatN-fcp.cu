@@ -203,7 +203,7 @@ int main(int ac, const char **av)
 #if CUKD_IMPROVED_TRAVERSAL
   cukd::box_t<floatN> *d_bounds;
   cudaMalloc((void**)&d_bounds,sizeof(cukd::box_t<floatN>));
-  cukd::computeBounds
+  cukd::computeBounds<node_t,node_traits>
     (d_bounds,d_points,nPoints);
 #endif
   {
@@ -258,7 +258,8 @@ int main(int ac, const char **av)
       float reportedDist
         = cukd::distance(qp,found_point_i);//node_traits::get_point(d_points[d_results[i]]));
       for (int j=0;j<nPoints;j++) {
-        float dist_j = cukd::distance(qp,node_traits::get_point(d_points[j]));
+        auto point_j = node_traits::get_point(d_points[j]);
+        float dist_j = cukd::distance(qp,point_j);
         if (dist_j < reportedDist) {
 #if D_FROM_CMAKE == 2
 #elif D_FROM_CMAKE == 3
@@ -267,10 +268,10 @@ int main(int ac, const char **av)
           printf("for query %i: found offending point %i (%f %f %f %f) with dist %f (vs %f)\n",
                  i,
                  j,
-                 d_points[j].x,
-                 d_points[j].y,
-                 d_points[j].z,
-                 d_points[j].w,
+                 point_j.x,
+                 point_j.y,
+                 point_j.z,
+                 point_j.w,
                  dist_j,
                  reportedDist);
 #elif D_FROM_CMAKE == 8

@@ -77,11 +77,11 @@ namespace cukd {
 
     /*! return a reference to the 'd'th positional coordinate of the
       given node */
-    static inline __device__ const point_t &get_point(const node_t &n) { return n; }
+    static inline __both__ const point_t &get_point(const node_t &n) { return n; }
     
     /*! return a reference to the 'd'th positional coordinate of the
       given node */
-    static inline __device__
+    static inline __both__
     typename scalar_type_of<point_t>::type get_coord(const node_t &n, int d)
     { return cukd::get_coord(get_point(n),d); }
     
@@ -116,10 +116,10 @@ namespace cukd {
     
     enum { has_explicit_dim = false };
     
-    static inline __device__ const point_t &get_point(const node_t &n) { return n; }
-    static inline __device__ scalar_t get_coord(const node_t &n, int d) { return n.v[d]; }
-    static inline __device__ int  get_dim(const node_t &n) { return -1; }
-    static inline __device__ void set_dim(node_t &n, int dim) {}
+    static inline __both__ const point_t &get_point(const node_t &n) { return n; }
+    static inline __both__ scalar_t get_coord(const node_t &n, int d) { return n.v[d]; }
+    static inline __both__ int  get_dim(const node_t &n) { return -1; }
+    static inline __both__ void set_dim(node_t &n, int dim) {}
   };
   
 
