@@ -210,9 +210,10 @@ namespace cukd {
 #pragma unroll
     for (int i=1;i<num_dims;i++) {
       scalar_t f = get_coord(p,i);
-      if (f <= best_val) continue;
-      best_val = f;
-      best_dim = i;
+      if (f > best_val) {
+        best_val = f;
+        best_dim = i;
+      }
     }
     return best_dim;
   }

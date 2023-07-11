@@ -1,3 +1,7 @@
+#if 1
+#define USE_KNN 1
+#include "floatN-fcp.cu"
+#else
 // ======================================================================== //
 // Copyright 2022-2023 Ingo Wald                                            //
 //                                                                          //
@@ -610,3 +614,4 @@ int main(int ac, const char **av)
   // }
 
 }
+#endif

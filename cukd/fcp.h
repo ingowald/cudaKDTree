@@ -70,17 +70,14 @@ namespace cukd {
   struct FcpSearchParams {
     // Controls how many "far branches" of the tree will be searched. If set to
     // 0 the algorithm will only go down the tree once following the nearest
-    // branch each time.
+    // branch each time. Kernels may ignore this value.
     int far_node_inspect_budget = INT_MAX;
 
-    // Controls when to go down the far branch: only follow a far branch if
-    // (1+eps) * D is within the search radius, where D is the distance to the
-    // far node. Similar to FLANN eps parameter.
-    float eps = 0.f;
-
-    // Controls when to go down the far branch: only go down the far branch if
-    // the distance to the far node is larger than this search radius.
-    float max_far_node_search_radius = INFINITY;
+    /*! will only search for elements that are BELOW (i.e., NOT
+        including) this radius. This in particular allows for cutting
+        down on the number of branches to be visited during
+        traversal */
+    float cutOffRadius = INFINITY;
   };
 
 
@@ -140,7 +137,7 @@ namespace cukd {
           FcpSearchParams params = FcpSearchParams{})
   {
     FCPResult result;
-    result.clear(sqr(params.max_far_node_search_radius));
+    result.clear(sqr(params.cutOffRadius));
     traverse_sf_imp<FCPResult,node_t,node_traits>
       (result,d_stats,queryPoint,worldBounds,d_nodes,N);
     return result.returnValue();
@@ -162,7 +159,7 @@ namespace cukd {
           FcpSearchParams params = FcpSearchParams{})
   {
     FCPResult result;
-    result.clear(sqr(params.max_far_node_search_radius));
+    result.clear(sqr(params.cutOffRadius));
     traverse_cct<FCPResult,node_t,node_traits>
       (result,d_stats,queryPoint,worldBounds,d_nodes,N);
     return result.returnValue();
@@ -185,7 +182,7 @@ namespace cukd {
           FcpSearchParams params = FcpSearchParams{})
   {
     FCPResult result;
-    result.clear(sqr(params.max_far_node_search_radius));
+    result.clear(sqr(params.cutOffRadius));
     traverse_stack_free<FCPResult,node_t,node_traits>
       (result,d_stats,queryPoint,d_nodes,N);
     return result.returnValue();
@@ -205,7 +202,7 @@ namespace cukd {
           FcpSearchParams params = FcpSearchParams{})
   {
     FCPResult result;
-    result.clear(sqr(params.max_far_node_search_radius));
+    result.clear(sqr(params.cutOffRadius));
     traverse_default<FCPResult,node_t,node_traits>
       (result,d_stats,queryPoint,d_nodes,N);
     return result.returnValue();

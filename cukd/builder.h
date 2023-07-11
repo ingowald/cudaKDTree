@@ -169,6 +169,8 @@ namespace cukd {
   void computeBounds_copyFirst(box_t<typename node_traits::point_t> *d_bounds,
                                const node_t *d_points)
   {
+    if (threadIdx.x != 0) return;
+    
     using point_t = typename node_traits::point_t;
     const point_t point = node_traits::get_point(d_points[0]);
     d_bounds->lower = d_bounds->upper = point;
@@ -214,14 +216,14 @@ namespace cukd {
     if (tid >= numPoints) return;
     
     using point_t = typename node_traits::point_t;
-    point_t point = node_traits::get_point(d_points[0]);
+    point_t point = node_traits::get_point(d_points[tid]);
 #pragma unroll(num_dims)
     for (int d=0;d<num_dims;d++) {
       float &lo = get_coord(d_bounds->lower,d);
       float &hi = get_coord(d_bounds->upper,d);
       float f = get_coord(point,d);
       atomicMin(&lo,f);
-      atomicMin(&hi,f);
+      atomicMax(&hi,f);
     }
   }
 
@@ -258,11 +260,9 @@ namespace cukd {
 
   template<typename node_t,typename node_traits>
   __global__
-  void chooseDims(int numLevelsDone,
-                  const box_t<typename node_traits::point_t> *d_bounds,
-                  tag_t  *tags,
-                  node_t *d_nodes,
-                  int numPoints)
+  void chooseInitialDim(const box_t<typename node_traits::point_t> *d_bounds,
+                        node_t *d_nodes,
+                        int numPoints)
   {
     using point_t  = typename node_traits::point_t;
     using scalar_t = typename scalar_type_of<point_t>::type;
@@ -271,41 +271,10 @@ namespace cukd {
     const int tid = threadIdx.x+blockIdx.x*blockDim.x;
     if (tid >= numPoints) return;
 
-    const int numSettled = FullBinaryTreeOf(numLevelsDone).numNodes();
-    if (tid < numSettled)
-      return;
-
-    // compute bbox of subtree that node is currently in
-    box_t<point_t> bounds = *d_bounds;
-    int curr = tags[tid];
-    while (curr > 0) {
-      const int     parent = (curr+1)/2-1;
-      const node_t &parent_node = d_nodes[parent];
-      const int     parent_dim
-        = node_traits::has_explicit_dim
-        ? node_traits::get_dim(parent_node)
-        : (BinaryTree::levelOf(parent) % num_dims);
-      const scalar_t parent_split_pos
-        = node_traits::get_coord(parent_node,parent_dim);
-      
-      if (curr & 1) {
-        // curr is left child, set upper
-        get_coord(bounds.upper,parent_dim)
-          = min(parent_split_pos,
-                get_coord(bounds.upper,parent_dim));
-      } else {
-        // curr is right child, set lower
-        get_coord(bounds.lower,parent_dim)
-          = max(parent_split_pos,
-                get_coord(bounds.lower,parent_dim));
-      }
-      curr = parent;
-    }
-    
-    int dim = arg_max(bounds.size());
+    int dim = arg_max(d_bounds->size());
     node_traits::set_dim(d_nodes[tid],dim);
   }
-
+  
   /* performs the L-th step's tag update: each input tag refers to a
      subtree ID on level L, and - assuming all points and tags are in
      the expected sort order described inthe paper - this kernel will
@@ -349,32 +318,120 @@ namespace cukd {
   }
 
 
-#if KDTREE_BUILDER_LOGGING
-  void print(const char *txt,
-             int step,
-             int numPoints,
-             tag_t *d_tags,
-             int1 *d_points)
+  template<typename T> struct is_float2 { enum { value = false }; };
+  template<> struct is_float2<float2> { enum { value = true }; };
+    
+
+  template<typename node_t,typename node_traits>
+  inline __device__
+  box_t<typename node_traits::point_t>
+  findBounds(int subtree,
+             const box_t<typename node_traits::point_t> *d_bounds,
+             node_t *d_nodes)
   {
-    std::vector<int> points(numPoints), tags(numPoints);
-    cudaMemcpy(points.data(),d_points,numPoints*sizeof(int),cudaMemcpyDefault);
-    cudaMemcpy(tags.data(),d_tags,numPoints*sizeof(int),cudaMemcpyDefault);
-    printf("-----------\n");
-    printf(txt,step);
-    printf("arry:");
-    for (int i=0;i<numPoints;i++)
-      printf("%6i",i);
-    printf("\n");
-    printf("tags:");
-    for (int i=0;i<numPoints;i++)
-      printf("%6i",tags[i]);
-    printf("\n");
-    printf("pnts:");
-    for (int i=0;i<numPoints;i++)
-      printf("%6i",points[i]);
-    printf("\n");
+    using point_t  = typename node_traits::point_t;
+    using scalar_t = typename scalar_type_of<point_t>::type;
+    enum { num_dims = num_dims_of<point_t>::value };
+    
+    box_t<point_t> bounds = *d_bounds;
+    int curr = subtree;
+    const bool dbg = false;
+    while (curr > 0) {
+      const int     parent = (curr+1)/2-1;
+      const node_t &parent_node = d_nodes[parent];
+      const int     parent_dim
+        = node_traits::has_explicit_dim
+        ? node_traits::get_dim(parent_node)
+        : (BinaryTree::levelOf(parent) % num_dims);
+      const scalar_t parent_split_pos
+        = node_traits::get_coord(parent_node,parent_dim);
+      
+      if (dbg) printf("# curr %i parent %i parent_dim %i parent_split %f\n",
+                      curr,parent,parent_dim,parent_split_pos);
+
+ 
+      if (dbg)
+        printf("  > in  (%f %f)(%f %f)\n",
+               ((float2&)bounds.lower).x,
+               ((float2&)bounds.lower).y,
+               ((float2&)bounds.upper).x,
+               ((float2&)bounds.upper).y);
+      if (curr & 1) {
+        // curr is left child, set upper
+        get_coord(bounds.upper,parent_dim)
+          = min(parent_split_pos,
+                get_coord(bounds.upper,parent_dim));
+      } else {
+        // curr is right child, set lower
+        get_coord(bounds.lower,parent_dim)
+          = max(parent_split_pos,
+                get_coord(bounds.lower,parent_dim));
+      }
+      if (dbg) printf("  > out (%f %f)(%f %f)\n",
+                      ((float2&)bounds.lower).x,
+                      ((float2&)bounds.lower).y,
+                      ((float2&)bounds.upper).x,
+                      ((float2&)bounds.upper).y);
+      curr = parent;
+    }
+    
+    return bounds;
   }
-#endif
+  
+
+  /* performs the L-th step's tag update: each input tag refers to a
+     subtree ID on level L, and - assuming all points and tags are in
+     the expected sort order described inthe paper - this kernel will
+     update each of these tags to either left or right child (or root
+     node) of given subtree*/
+  template<typename node_t, typename node_traits>
+  __global__
+  void updateTagsAndSetDims(/*! array of tags we need to update */
+                            const box_t<typename node_traits::point_t> *d_bounds,
+                            tag_t  *tag,
+                            node_t *d_nodes,
+                            /*! num elements in the tag[] array */
+                            int numPoints,
+                            /*! which step we're in             */
+                            int L)
+  {
+    const int gid = threadIdx.x+blockIdx.x*blockDim.x;
+    if (gid >= numPoints) return;
+
+    const int numSettled = FullBinaryTreeOf(L).numNodes();
+    if (gid < numSettled) return;
+
+    // get the subtree that the given node is in - which is exactly
+    // what the tag stores...
+    int subtree = tag[gid];
+    box_t<typename node_traits::point_t> bounds
+      = findBounds<node_t,node_traits>(subtree,d_bounds,d_nodes);
+    // computed the expected positoin of the pivot element for the
+    // given subtree when using our speific array layout.
+    const int pivotPos = ArrayLayoutInStep(L,numPoints).pivotPosOf(subtree);
+
+    const int   pivotDim   = node_traits::get_dim(d_nodes[pivotPos]);
+    const float pivotCoord = node_traits::get_coord(d_nodes[pivotPos],pivotDim);
+    
+    if (gid < pivotPos) {
+      // point is to left of pivot -> must be smaller or equal to
+      // pivot in given dim -> must go to left subtree
+      subtree = BinaryTree::leftChildOf(subtree);
+      get_coord(bounds.upper,pivotDim) = pivotCoord;
+    } else if (gid > pivotPos) {
+      // point is to left of pivot -> must be bigger or equal to pivot
+      // in given dim -> must go to right subtree
+      subtree = BinaryTree::rightChildOf(subtree);
+      get_coord(bounds.lower,pivotDim) = pivotCoord;
+    } else
+      // point is _on_ the pivot position -> it's the root of that
+      // subtree, don't change it.
+      ;
+    if (gid != pivotPos)
+      node_traits::set_dim(d_nodes[gid],arg_max(bounds.size()));
+    tag[gid] = subtree;
+  }
+  
 
   template<typename node_t, typename node_traits>
   void buildTree(node_t *d_points,
@@ -416,58 +473,44 @@ namespace cukd {
     const int numLevels = BinaryTree::numLevelsFor(numPoints);
     const int deepestLevel = numLevels-1;
 
-#if KDTREE_BUILDER_LOGGING
-    cudaStreamSynchronize(stream);
-    print("init\n",-1,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
-#endif
-    
     using box_t = cukd::box_t<point_t>;
     box_t *worldBounds = 0;
     if (node_traits::has_explicit_dim) {
       cudaMallocAsync((void **)&worldBounds,sizeof(*worldBounds),stream);
-      // computeBounds<node_t,node_traits,0,stream>(worldBounds,d_points,numPoints);
       computeBounds<node_t,node_traits>(worldBounds,d_points,numPoints,stream);
-      // setDims<node_t,node_traits><<<1,32>>>(d_points,0,1,worldBounds);
+      cudaStreamSynchronize(stream);
+      
+      const int blockSize = 128;
+      chooseInitialDim<node_t,node_traits>
+        <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
+        (worldBounds,d_points,numPoints);
+      cudaStreamSynchronize(stream);
     }
-
+    
+    
     /* now build each level, one after another, cycling through the
        dimensoins */
     for (int level=0;level<deepestLevel;level++) {
-      if (node_traits::has_explicit_dim) {
-        const int blockSize = 32;
-        chooseDims<node_t,node_traits>
-          <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
-          (level,worldBounds,
-           thrust::raw_pointer_cast(tags.data()),d_points,numPoints);
-        // setDims<node_t,node_traits><<<1,32>>>(d_points,0,1,worldBounds);
-      }
       thrust::sort(thrust::device.on(stream),begin,end,
                    ZipCompare<node_t,node_traits>((level)%num_dims,d_points));
-
-#if KDTREE_BUILDER_LOGGING
-      cudaStreamSynchronize(stream);
-      print("step %i sort\n",level,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
-#endif
-      const int blockSize = 32;
-      // const int numSettled = FullBinaryTreeOf(level).numNodes();
-      updateTag<<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
-        (thrust::raw_pointer_cast(tags.data()),numPoints,level);
-
-#if KDTREE_BUILDER_LOGGING
-      cudaStreamSynchronize(stream);
-      print("step %i tags updated\n",level,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
-#endif
+      
+      const int blockSize = 128;
+      if (node_traits::has_explicit_dim) {
+        updateTagsAndSetDims<node_t,node_traits>
+          <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
+          (worldBounds,thrust::raw_pointer_cast(tags.data()),d_points,numPoints,level);
+      } else {
+        updateTag<<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
+          (thrust::raw_pointer_cast(tags.data()),numPoints,level);
+      }
     }
+    
     /* do one final sort, to put all elements in order - by now every
        element has its final (and unique) nodeID stored in the tag[]
        array, so the dimension we're sorting in really won't matter
        any more */
     thrust::sort(thrust::device.on(stream),begin,end,
                  ZipCompare<node_t,node_traits>((deepestLevel)%num_dims,d_points));
-#if KDTREE_BUILDER_LOGGING
-    cudaStreamSynchronize(stream);
-    print("final sort\n",-1,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
-#endif
     if (node_traits::has_explicit_dim) 
       cudaFreeAsync(worldBounds,stream);
   }
@@ -488,14 +531,15 @@ namespace cukd {
     const auto pnt_b = thrust::get<1>(b);
     int dim
       = node_traits::has_explicit_dim
-      ? node_traits::get_dim(this->nodes[tag_a])
+      // ? node_traits::get_dim(this->nodes[tag_a])
+      ? node_traits::get_dim(pnt_a)
       : this->dim;
-    const auto dim_a = node_traits::get_coord(pnt_a,dim);
-    const auto dim_b = node_traits::get_coord(pnt_b,dim);
+    const auto coord_a = node_traits::get_coord(pnt_a,dim);
+    const auto coord_b = node_traits::get_coord(pnt_b,dim);
     const bool less =
       (tag_a < tag_b)
       ||
-      ((tag_a == tag_b) && (dim_a < dim_b));
+      ((tag_a == tag_b) && (coord_a < coord_b));
 
     return less;
   }

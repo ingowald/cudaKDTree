@@ -31,6 +31,7 @@ else()
   set(CUKD_IS_SUBPROJECT OFF)
 endif()
 
+option(BUILD_ALL_TESTS "Build entire type/dimension/kernel test matrix?" OFF)
 # ------------------------------------------------------------------
 # general cmake project configs
 # ------------------------------------------------------------------
@@ -61,40 +62,31 @@ endif()
 set(CMAKE_CUDA_ARCHITECTURES 70)
 #set(CMAKE_CUDA_ARCHITECTURES 70 75 86)
 if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.17)
-  # nothing to do, setting CMAKE_CUDA_ARCHITECTURES is hte way to go
+  # nothing to do, setting CMAKE_CUDA_ARCHITECTURES is the way to go
 else()
   foreach (arch IN ITEMS ${CMAKE_CUDA_ARCHITECTURES})
-#    message("status adding arch=${arch}")
+    #    message("status adding arch=${arch}")
     set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${arch},code=sm_${arch}")
   endforeach()
 endif()
 
 
-
-#set(CMAKE_CUDA_ARCHITECTURES 70 75 80 86)
-#if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.17)
-  # nothing to do, setting CMAKE_CUDA_ARCHITECTURES is hte way to go
-#else()
-#  foreach (arch IN ITEMS ${CMAKE_CUDA_ARCHITECTURES})
-#    message("status adding arch=${arch}")
-#    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${arch},code=sm_${arch}")
-#  endforeach()
-#endif()
-
-
 foreach(stack_free ON OFF)
   foreach(improved ON OFF)
     if (${stack_free})
-      set(suffix "-sf")
+      if (${improved})
+	set(suffix "-sf-cct")
+      else()
+	set(suffix "-stack-free")
+      endif()
     else()
-      set(suffix "-sb")
+      if (${improved})
+	set(suffix "-cct")
+      else()
+	set(suffix "-default")
+      endif()
     endif()
     
-    if (${improved})
-      set(suffix "${suffix}-imp")
-    else()
-      set(suffix "${suffix}-reg")
-    endif()
 
     add_library(cudaKDTree${suffix} INTERFACE)
     target_sources(cudaKDTree${suffix} INTERFACE
@@ -104,7 +96,6 @@ foreach(stack_free ON OFF)
       cukd/knn.h
       )
     target_include_directories(cudaKDTree${suffix} INTERFACE
-      #target_link_libraries(cudaKDTree INTERFACE
       ${PROJECT_SOURCE_DIR}/
       )
     if (${improved})
@@ -119,7 +110,7 @@ foreach(stack_free ON OFF)
     
     # add_executable(cukd_float3-fcp${suffix} testing/float3-fcp.cu)
     # target_link_libraries(cukd_float3-fcp${suffix} cudaKDTree${suffix})
-        
+    
     # add_executable(cukd_float4-fcp${suffix} testing/float4-fcp.cu)
     # target_link_libraries(cukd_float4-fcp${suffix} cudaKDTree${suffix})
 
@@ -130,20 +121,30 @@ foreach(stack_free ON OFF)
     # target_link_libraries(cukd_float3-knn${suffix} cudaKDTree${suffix})
 
     
-    set(DIMS_TO_BUILD 2 3 4 8)
-    foreach (D IN ITEMS ${DIMS_TO_BUILD})
-      add_executable(cukd_float${D}-knn${suffix} testing/floatN-knn.cu)
-      target_link_libraries(cukd_float${D}-knn${suffix} cudaKDTree${suffix})
-      target_compile_definitions(cukd_float${D}-knn${suffix} PUBLIC -DD_FROM_CMAKE=${D})
+    if (BUILD_ALL_TESTS)
+      set(DIMS_TO_BUILD 2 3 4 8)
+      foreach (D IN ITEMS ${DIMS_TO_BUILD})
+	add_executable(cukd_float${D}-knn${suffix} testing/floatN-knn-and-fcp.cu)
+	target_link_libraries(cukd_float${D}-knn${suffix} cudaKDTree${suffix})
+	target_compile_definitions(cukd_float${D}-knn${suffix}
+	  PUBLIC -DD_FROM_CMAKE=${D} -DUSE_KNN=1)
 
-      add_executable(cukd_float${D}-fcp${suffix} testing/floatN-fcp.cu)
-      target_link_libraries(cukd_float${D}-fcp${suffix} cudaKDTree${suffix})
-      target_compile_definitions(cukd_float${D}-fcp${suffix} PUBLIC -DD_FROM_CMAKE=${D})
+	add_executable(cukd_float${D}-knn${suffix}-xd testing/floatN-knn-and-fcp.cu)
+	target_link_libraries(cukd_float${D}-knn${suffix}-xd cudaKDTree${suffix})
+	target_compile_definitions(cukd_float${D}-knn${suffix}-xd
+	  PUBLIC -DD_FROM_CMAKE=${D} -DEXPLICIT_DIM=1 -DUSE_KNN=1)
 
-      add_executable(cukd_float${D}-fcp${suffix}-ed testing/floatN-fcp.cu)
-      target_link_libraries(cukd_float${D}-fcp${suffix}-ed cudaKDTree${suffix})
-      target_compile_definitions(cukd_float${D}-fcp${suffix}-ed PUBLIC -DD_FROM_CMAKE=${D} -DEXPLICIT_DIM=1)
-    endforeach()
+	add_executable(cukd_float${D}-fcp${suffix} testing/floatN-knn-and-fcp.cu)
+	target_link_libraries(cukd_float${D}-fcp${suffix} cudaKDTree${suffix})
+	target_compile_definitions(cukd_float${D}-fcp${suffix}
+	  PUBLIC -DD_FROM_CMAKE=${D})
+
+	add_executable(cukd_float${D}-fcp${suffix}-xd testing/floatN-knn-and-fcp.cu)
+	target_link_libraries(cukd_float${D}-fcp${suffix}-xd cudaKDTree${suffix})
+	target_compile_definitions(cukd_float${D}-fcp${suffix}-xd
+	  PUBLIC -DD_FROM_CMAKE=${D} -DEXPLICIT_DIM=1)
+      endforeach()
+    endif()
 
   endforeach()
 endforeach()

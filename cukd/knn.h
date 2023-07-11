@@ -43,11 +43,11 @@ namespace cukd {
       return (uint64_t(__float_as_uint(f)) << 32) | uint32_t(i);
     }
     
-    inline __device__ FixedCandidateList(float maxQueryDist)
+    inline __device__ FixedCandidateList(float cutOffRadius)
     {
 #pragma unroll
       for (int i=0;i<k;i++)
-        entry[i] = encode(maxQueryDist*maxQueryDist,-1);
+        entry[i] = encode(cutOffRadius*cutOffRadius,-1);
     }
 
     inline __device__ void push(float dist, int pointID)
@@ -95,11 +95,11 @@ namespace cukd {
       return (uint64_t(__float_as_uint(f)) << 32) | uint32_t(i);
     }
     
-    inline __device__ HeapCandidateList(float maxRange)
+    inline __device__ HeapCandidateList(float cutOffRadius)
     {
 #pragma unroll
       for (int i=0;i<k;i++)
-        entry[i] = encode(maxRange*maxRange,-1);
+        entry[i] = encode(cutOffRadius*cutOffRadius,-1);
     }
 
     inline __device__ void push(float dist, int pointID)
