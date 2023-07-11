@@ -121,7 +121,8 @@ void d_knn(unsigned long long *d_stats,
   
   CandidateList result(cutOffRadius);
   float sqrDist
-    = cukd::knn(d_stats,result,d_queries[tid],
+    = cukd::knn<CandidateList,node_t,node_traits>
+    (d_stats,result,d_queries[tid],
 #if CUKD_IMPROVED_TRAVERSAL
                 *d_bounds,
 #endif
@@ -222,7 +223,7 @@ template<typename node_t, typename node_traits>
 void verifyKNN(int pointID,
                int k,
                float maxRadius,
-               floatN *points, int numPoints,
+               node_t *points, int numPoints,
                floatN queryPoint,
                float reportedResult)
 {
