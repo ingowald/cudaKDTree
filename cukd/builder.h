@@ -93,33 +93,28 @@ namespace cukd {
      the expected sort order described in the paper - this kernel will
      update each of these tags to either left or right child (or root
      node) of given subtree*/
-  __global__
-  void updateTag(/*! array of tags we need to update */
-                 tag_t *tag,
-                 /*! num elements in the tag[] array */
-                 int numPoints,
-                 /*! which step we're in             */
-                 int L)
-  {
-    const int gid = threadIdx.x+blockIdx.x*blockDim.x;
-    if (gid >= numPoints) return;
-
-    const int numSettled = FullBinaryTreeOf(L).numNodes();
-    if (gid < numSettled) return;
-
+  inline __host__ __device__ void updateTag(
+          /*! array of tags we need to update */
+         tag_t *tags,
+         /*! index of tag we need to update */
+         int tag_idx,
+         /*! num elements in the tag[] array */
+         int numPoints,
+         /*! which step we're in             */
+         int L) {
     // get the subtree that the given node is in - which is exactly
     // what the tag stores...
-    int subtree = tag[gid];
+    auto& subtree = tags[tag_idx];
 
     // computed the expected position of the pivot element for the
     // given subtree when using our specific array layout.
     const int pivotPos = ArrayLayoutInStep(L,numPoints).pivotPosOf(subtree);
 
-    if (gid < pivotPos)
+    if (tag_idx < pivotPos)
       // point is to left of pivot -> must be smaller or equal to
       // pivot in given dim -> must go to left subtree
       subtree = BinaryTree::leftChildOf(subtree);
-    else if (gid > pivotPos)
+    else if (tag_idx > pivotPos)
       // point is to left of pivot -> must be bigger or equal to pivot
       // in given dim -> must go to right subtree
       subtree = BinaryTree::rightChildOf(subtree);
@@ -127,7 +122,23 @@ namespace cukd {
       // point is _on_ the pivot position -> it's the root of that
       // subtree, don't change it.
       ;
-    tag[gid] = subtree;
+  }
+
+  __global__
+  void updateTags(/*! array of tags we need to update */
+                  tag_t *tags,
+                  /*! num elements in the tag[] array */
+                  int numPoints,
+                  /*! which step we're in             */
+                  int L)
+  {
+    const int tag_idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (tag_idx >= numPoints) return;
+
+    const int numSettled = FullBinaryTreeOf(L).numNodes();
+    if (tag_idx < numSettled) return;
+
+    updateTag(tags, tag_idx, numPoints, L);
   }
 
 
@@ -212,7 +223,7 @@ namespace cukd {
 #endif
       const int blockSize = 32;
       const int numSettled = FullBinaryTreeOf(level).numNodes();
-      updateTag<<<common::divRoundUp(numPoints,blockSize),blockSize,1,stream>>>
+      updateTags<<<common::divRoundUp(numPoints,blockSize),blockSize,1,stream>>>
         (thrust::raw_pointer_cast(tags.data()),numPoints,level);
 
 #if KDTREE_BUILDER_LOGGING
