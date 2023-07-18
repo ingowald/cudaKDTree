@@ -75,13 +75,13 @@ namespace cukd {
 
   template<typename point_traits_t>
   struct ZipCompare {
-    ZipCompare(const int dim) : dim(dim) {}
+    explicit ZipCompare(const int dim) : dim(dim) {}
 
     /*! the actual comparison operator; will perform a
       'zip'-comparison in that the first element is the major sort
       order, and the second the minor one (for those of same major
       sort key) */
-    inline __device__ bool operator()
+    inline __host__ __device__ bool operator()
     (const thrust::tuple<tag_t, typename point_traits_t::point_t> &a,
      const thrust::tuple<tag_t, typename point_traits_t::point_t> &b);
 
@@ -310,17 +310,17 @@ namespace cukd {
     order, and the second the minor one (for those of same major
     sort key) */
   template<typename point_traits_t>
-  inline __device__
+  inline __host__ __device__
   bool ZipCompare<point_traits_t>::operator()
     (const thrust::tuple<tag_t, typename point_traits_t::point_t> &a,
      const thrust::tuple<tag_t, typename point_traits_t::point_t> &b)
   {
-    const auto tag_a = thrust::get<0>(a);
-    const auto tag_b = thrust::get<0>(b);
-    const auto pnt_a = thrust::get<1>(a);
-    const auto pnt_b = thrust::get<1>(b);
-    const auto dim_a = point_traits_t::getCoord(pnt_a,dim);
-    const auto dim_b = point_traits_t::getCoord(pnt_b,dim);
+    const auto& tag_a = thrust::get<0>(a);
+    const auto& tag_b = thrust::get<0>(b);
+    const auto& pnt_a = thrust::get<1>(a);
+    const auto& pnt_b = thrust::get<1>(b);
+    const auto& dim_a = point_traits_t::getCoord(pnt_a,dim);
+    const auto& dim_b = point_traits_t::getCoord(pnt_b,dim);
     const bool less =
       (tag_a < tag_b)
       ||
