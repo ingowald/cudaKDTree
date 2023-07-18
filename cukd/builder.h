@@ -90,7 +90,7 @@ namespace cukd {
 
   /* performs the L-th step's tag update: each input tag refers to a
      subtree ID on level L, and - assuming all points and tags are in
-     the expected sort order described inthe paper - this kernel will
+     the expected sort order described in the paper - this kernel will
      update each of these tags to either left or right child (or root
      node) of given subtree*/
   __global__
@@ -111,8 +111,8 @@ namespace cukd {
     // what the tag stores...
     int subtree = tag[gid];
 
-    // computed the expected positoin of the pivot element for the
-    // given subtree when using our speific array layout.
+    // computed the expected position of the pivot element for the
+    // given subtree when using our specific array layout.
     const int pivotPos = ArrayLayoutInStep(L,numPoints).pivotPosOf(subtree);
 
     if (gid < pivotPos)
@@ -190,7 +190,7 @@ namespace cukd {
     tag_point_iterator end = thrust::make_zip_iterator
       (thrust::make_tuple(tags.end(),points_end));
 
-    /* compute number of levels in the tree, which dicates how many
+    /* compute number of levels in the tree, which dictates how many
        construction steps we need to run */
     const int numLevels = BinaryTree::numLevelsFor(numPoints);
     const int deepestLevel = numLevels-1;
@@ -201,7 +201,7 @@ namespace cukd {
 #endif
 
     /* now build each level, one after another, cycling through the
-       dimensoins */
+       dimensions */
     for (int level=0;level<deepestLevel;level++) {
       thrust::sort(thrust::device.on(stream),begin,end,
                    ZipCompare<data_point_traits_t>((level)%numDims));
