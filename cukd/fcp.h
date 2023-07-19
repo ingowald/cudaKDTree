@@ -129,7 +129,7 @@ namespace cukd {
   template<typename node_t,
            typename node_traits=default_node_traits<node_t>>
   inline __device__
-  int fcp(unsigned long long *d_stats,
+  int fcp(CUKD_STATS_ARG(unsigned long long *d_stats,)
           typename node_traits::point_t queryPoint,
           const box_t<typename node_traits::point_t> worldBounds,
           const node_t *d_nodes,
@@ -139,7 +139,7 @@ namespace cukd {
     FCPResult result;
     result.clear(sqr(params.cutOffRadius));
     traverse_sf_imp<FCPResult,node_t,node_traits>
-      (result,d_stats,queryPoint,worldBounds,d_nodes,N);
+      (result,CUKD_STATS_ARG(d_stats,)queryPoint,worldBounds,d_nodes,N);
     return result.returnValue();
   }
 } // :: cukd
@@ -151,7 +151,7 @@ namespace cukd {
   template<typename node_t,
            typename node_traits=default_node_traits<node_t>>
   inline __device__
-  int fcp(unsigned long long *d_stats,
+  int fcp(CUKD_STATS_ARG(unsigned long long *d_stats,)
           typename node_traits::point_t queryPoint,
           const box_t<typename node_traits::point_t> worldBounds,
           const node_t *d_nodes,
@@ -161,7 +161,7 @@ namespace cukd {
     FCPResult result;
     result.clear(sqr(params.cutOffRadius));
     traverse_cct<FCPResult,node_t,node_traits>
-      (result,d_stats,queryPoint,worldBounds,d_nodes,N);
+      (result,CUKD_STATS_ARG(d_stats,)queryPoint,worldBounds,d_nodes,N);
     return result.returnValue();
   }
 } // :: cukd
@@ -175,7 +175,7 @@ namespace cukd {
   template<typename node_t,
            typename node_traits=default_node_traits<node_t>>
   inline __device__
-  int fcp(unsigned long long *d_stats,
+  int fcp(CUKD_STATS_ARG(unsigned long long *d_stats,)
           typename node_traits::point_t queryPoint,
           const node_t *d_nodes,
           int N,
@@ -184,7 +184,7 @@ namespace cukd {
     FCPResult result;
     result.clear(sqr(params.cutOffRadius));
     traverse_stack_free<FCPResult,node_t,node_traits>
-      (result,d_stats,queryPoint,d_nodes,N);
+      (result,CUKD_STATS_ARG(d_stats,)queryPoint,d_nodes,N);
     return result.returnValue();
   }
 } // :: cukd
@@ -195,7 +195,7 @@ namespace cukd {
   template<typename node_t,
            typename node_traits=default_node_traits<node_t>>
   inline __device__
-  int fcp(unsigned long long *d_stats,
+  int fcp(CUKD_STATS_ARG(unsigned long long *d_stats,)
           typename node_traits::point_t queryPoint,
           const node_t *d_nodes,
           int N,
@@ -204,7 +204,7 @@ namespace cukd {
     FCPResult result;
     result.clear(sqr(params.cutOffRadius));
     traverse_default<FCPResult,node_t,node_traits>
-      (result,d_stats,queryPoint,d_nodes,N);
+      (result,CUKD_STATS_ARG(d_stats,)queryPoint,d_nodes,N);
     return result.returnValue();
   }
 } // :: cukd

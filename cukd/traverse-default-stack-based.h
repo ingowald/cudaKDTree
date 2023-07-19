@@ -26,7 +26,7 @@ namespace cukd {
            typename node_traits=default_node_traits<node_t>>
   inline __device__
   void traverse_default(result_t &result,
-                        unsigned long long *d_stats,
+                        CUKD_STATS_ARG(unsigned long long *d_stats,)
                         typename node_traits::point_t queryPoint,
                         const node_t *d_nodes,
                         int numPoints)
@@ -50,8 +50,8 @@ namespace cukd {
     
     while (true) {
       while (curr < numPoints) {
-        if (d_stats)
-          atomicAdd(d_stats,1ull);
+        CUKD_STATS(if (d_stats)
+                     atomicAdd(d_stats,1ull));
         const int  curr_dim
           = node_traits::has_explicit_dim
           ? node_traits::get_dim(d_nodes[curr])

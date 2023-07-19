@@ -23,7 +23,7 @@ namespace cukd {
            typename node_traits=default_node_traits<node_t>>
   inline __device__
   void traverse_stack_free(result_t &result,
-                           unsigned long long *d_stats,
+                           CUKD_STATS_ARG(unsigned long long *d_stats,)
                            typename node_traits::point_t queryPoint,
                            const node_t *d_nodes,
                            int N)
@@ -51,8 +51,8 @@ namespace cukd {
 
         continue;
       }
-      if (d_stats)
-        atomicAdd(d_stats,1ull);
+      CUKD_STATS(if (d_stats)
+                   atomicAdd(d_stats,1ull));
       const auto &curr_node = d_nodes[curr];
       const int  child = 2*curr+1;
       const bool from_child = (prev >= child);

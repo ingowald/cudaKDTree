@@ -26,7 +26,7 @@ namespace cukd {
            typename node_traits=default_node_traits<node_t>>
   inline __device__
   void traverse_cct(result_t &result,
-                    unsigned long long *d_stats,
+                    CUKD_STATS_ARG(unsigned long long *d_stats,)
                     typename node_traits::point_t queryPoint,
                     const box_t<typename node_traits::point_t> d_bounds,
                     const node_t *d_nodes,
@@ -65,8 +65,8 @@ namespace cukd {
           break;
         }
       }
-      if (d_stats)
-        atomicAdd(d_stats,1);
+      CUKD_STATS(if (d_stats)
+                   atomicAdd(d_stats,1));
       const auto &node  = d_nodes[nodeID];
       const point_t nodePoint = node_traits::get_point(node);
       {

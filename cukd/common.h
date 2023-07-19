@@ -70,25 +70,8 @@
 #  define CUKD_DLL_IMPORT
 #endif
 
-// #if 1
 # define CUKD_INTERFACE /* nothing - currently not building any special 'owl.dll' */
-// #else
-// //#if defined(CUKD_DLL_INTERFACE)
-// #  ifdef owl_EXPORTS
-// #    define CUKD_INTERFACE CUKD_DLL_EXPORT
-// #  else
-// #    define CUKD_INTERFACE CUKD_DLL_IMPORT
-// #  endif
-// //#else
-// //#  define CUKD_INTERFACE /*static lib*/
-// //#endif
-// #endif
-
-//#ifdef __WIN32__
-//#define  __PRETTY_FUNCTION__ __FUNCTION__
-//#endif
 #if defined(_MSC_VER)
-//&& !defined(__PRETTY_FUNCTION__)
 #  define __PRETTY_FUNCTION__ __FUNCTION__
 #endif
 
@@ -359,3 +342,14 @@ namespace cukd {
     }                                                                   \
   }
 
+
+/* is supplied externally (from cmake) this adds a "int *stats"
+   paramater to all query functions, and makes the traversal routines
+   do atomic counting of traversal steps */
+#if CUKD_ENABLE_STATS
+# define CUKD_STATS(a) a
+# define CUKD_STATS_ARG(a,b) a,
+#else
+# define CUKD_STATS(a) /* nothing */
+# define CUKD_STATS_ARG(a,b) /* nothing */
+#endif

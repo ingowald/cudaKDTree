@@ -88,7 +88,8 @@ void d_fcp(unsigned long long *d_stats,
   int closestID
     = cukd::fcp
     <node_t,node_traits>
-    (d_stats,queryPos,
+    (CUKD_STATS_ARG(d_stats,)
+     queryPos,
 #if CUKD_IMPROVED_TRAVERSAL
      *d_bounds,
 #endif
@@ -122,7 +123,8 @@ void d_knn(unsigned long long *d_stats,
   CandidateList result(cutOffRadius);
   float sqrDist
     = cukd::knn<CandidateList,node_t,node_traits>
-    (d_stats,result,d_queries[tid],
+    (CUKD_STATS_ARG(d_stats,)
+     result,d_queries[tid],
 #if CUKD_IMPROVED_TRAVERSAL
                 *d_bounds,
 #endif
@@ -202,8 +204,10 @@ void run_kernel(float  *d_results,
 #endif
   if (firstTime) {
     cudaDeviceSynchronize();
-    std::cout << "KDTREE_STATS " << *d_stats << std::endl;
-    std::cout << "NICE_STATS " << common::prettyNumber(*d_stats) << std::endl;
+    CUKD_STATS(
+               std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+               std::cout << "NICE_STATS " << common::prettyNumber(*d_stats) << std::endl;
+               );
     cudaFree(d_stats);
     firstTime = false;
   }
