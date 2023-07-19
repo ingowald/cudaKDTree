@@ -203,6 +203,7 @@ void run_kernel(float  *d_results,
   if (firstTime) {
     cudaDeviceSynchronize();
     std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+    std::cout << "NICE_STATS " << common::prettyNumber(*d_stats) << std::endl;
     cudaFree(d_stats);
     firstTime = false;
   }
@@ -286,7 +287,7 @@ void verifyFCP(int pointID,
   
   // check if the top 21-ish bits are the same; this will allow the
   // compiler to produce slightly different results on host and device
-  // (usually caused by it uses madd's on one and separate +/* on
+  // (usually caused by it using madd's on one and separate +/* on
   // t'other...
   bool closeEnough
     =  /* this catches result==inf:*/
@@ -356,6 +357,7 @@ int main(int ac, const char **av)
   cudaMalloc((void**)&d_bounds,sizeof(cukd::box_t<floatN>));
   cukd::computeBounds<node_t,node_traits>
     (d_bounds,d_points,numPoints);
+  CUKD_CUDA_SYNC_CHECK();
 #endif
   {
     double t0 = getCurrentTime();

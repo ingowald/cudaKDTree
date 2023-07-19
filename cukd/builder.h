@@ -503,6 +503,7 @@ namespace cukd {
         updateTag<<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
           (thrust::raw_pointer_cast(tags.data()),numPoints,level);
       }
+      cudaStreamSynchronize(stream);
     }
     
     /* do one final sort, to put all elements in order - by now every
