@@ -447,46 +447,73 @@ namespace cukd {
 
   template<typename scalar_t, int side>
   inline __device__ bool desiredOrder(scalar_t a, scalar_t b)
-  { return !(a < b); }
+  {
+    if (side) {
+      return !(b < a);
+    } else {
+      return !(a < b); 
+    }
+  }
 
-  // template<typename scalar_t>
-  // inline __device__ bool desiredOrder<scalar_t,0>(scalar_t a, scalar_t b)
-  template<typename scalar_t>
-  inline __device__ bool desiredOrder<scalar_t,1>(scalar_t a, scalar_t b)
-  { return !(b < a); }
-  
+  inline __device__
+  void print_node(int i, float2 *points)
+  {
+    printf("node[%i] = (%f,%f)\n",i,points[i].x,points[i].y);
+  }
   template<typename node_t, typename node_traits, int side>
   inline __device__
   void trickleDownHeap(int n, node_t *points, int numPoints, int dim)
   {
+    bool dbg = 0;//n == 3;
+    
     const int input_n = n;
     using point_t  = typename node_traits::point_t;
     using scalar_t = typename scalar_type_of<point_t>::type;
     node_t point_n = points[n];
     scalar_t s_n = node_traits::get_coord(point_n,dim);
+    if (dbg) printf("TRICKLING node %i, s_n = %f, dim = %i\n",n,s_n,dim);
     while (true) {
       int l = 2*n+1;
       if (l >= numPoints)
         break;
+      scalar_t s_l = node_traits::get_coord(points[l],dim);
 
+
+      
       int c = l;
-      scalar_t s_c = node_traits::get_coord(points[l],dim);
+      scalar_t s_c = s_l;
+      if (dbg) printf("l = %i, s_l = %f\n",l,s_l);
       
       int r = l+1;
-      if (r < l) {
+      if (r < numPoints) {
         scalar_t s_r = node_traits::get_coord(points[r],dim);
+        if (dbg) printf("r = %i, s_r = %f\n",r,s_r);
         if (!desiredOrder<scalar_t,side>(s_c,s_r)) {
           c = r;
           s_c = s_r;
         }
-        if (desiredOrder<scalar_t,side>(s_n,s_c))
-          break;
       }
+      if (dbg) printf("c = %i, s_c = %f\n",c,s_c);
+      if (desiredOrder<scalar_t,side>(s_n,s_c)) {
+        if (dbg) printf("in right order, done\n");
+        break;
+      }
+      if (dbg)
+        printf("not in right order, setting %i to %i, and stepping to node %i\n",
+               n,c,c);
+
       points[n] = points[c];
       n = c;
+
+      if (dbg) print_node(3,(float2*)points);
+      if (dbg) print_node(7,(float2*)points);
     }
-    if (n != input_n)
+    if (n != input_n) {
+      if (dbg) printf("final - setting %i to input point\n",n);
       points[n] = point_n;
+      if (dbg) print_node(3,(float2*)points);
+      if (dbg) print_node(7,(float2*)points);
+    }
   }
   
   template<typename node_t, typename node_traits>
@@ -501,11 +528,15 @@ namespace cukd {
       return;
 
     int n = firstNodeOnLevel(L_h)+tid;
+    // bool dbg = (n==3);
     /* _probably_ can never happen: */ if (n >= numPoints) return;
                                            
     int partner = partnerOf(n,L_h,L_b);
     /* _probably_ can never happen: */ if (partner >= numPoints) return;
 
+
+    // if (dbg) printf("buildheaps n = %i partner = %i\n",n,partner);
+    
     if (partner < n)
       // only one of the two can do the work, or they'll race each
       // other - let's always pick the lower one.
@@ -515,18 +546,46 @@ namespace cukd {
     enum { num_dims = num_dims_of<point_t>::value };
     int dim = L_b % num_dims;
     while (1) {
+      // if (dbg) printf("trickle 1...\n");
       trickleDownHeap<node_t,node_traits,0>(n,points,numPoints,dim);
       trickleDownHeap<node_t,node_traits,1>(partner,points,numPoints,dim);
       if (node_traits::get_coord(points[partner],dim)
           <
           node_traits::get_coord(points[n],dim)) {
+        // if (dbg) printf("SWAPPING parners %i %i\n",n,partner);
         swap(points[n],points[partner]);
         continue;
       } else
         break;
     }
   }
+
+
+  template<typename node_t, typename node_traits>
+  void printTree(node_t *points,int numPoints)
+  {
+    cudaDeviceSynchronize();
+    using point_t  = typename node_traits::point_t;
+    using scalar_t = typename scalar_type_of<point_t>::type;
+    enum { num_dims = num_dims_of<point_t>::value };
     
+    for (int L=0;true;L++) {
+      int begin = firstNodeOnLevel(L);
+      int end = std::min(numPoints,begin+numNodesOnLevel(L));
+      if (end <= begin) break;
+      printf("### level %i ###\n",L);
+      for (int i=begin;i<end;i++) 
+        printf("%5i.",i);
+      printf("\n");
+      
+      for (int d=0;d<num_dims;d++) {
+        for (int i=begin;i<end;i++) 
+          printf("%6i",int(node_traits::get_coord(points[i],d)));
+        printf("\n");
+      }
+    }
+  }
+  
   template<typename node_t, typename node_traits>
   void buildHeaps(/*! _heap_ root level */int L_h,
                   /*! _build_ root level */int L_b,
@@ -534,7 +593,8 @@ namespace cukd {
                   int numPoints,
                   cudaStream_t stream)
   {
-    std::cout << "---- building heaps on " << L_h << ", root level " << L_b << std::endl << std::flush;
+    // printTree<node_t,node_traits>(points,numPoints);
+    // std::cout << "---- building heaps on " << L_h << ", root level " << L_b << std::endl << std::flush;
     int numNodesOnL_h = numNodesOnLevel(L_h);
     int bs = 128;
     int nb = divRoundUp(numNodesOnL_h,bs);
@@ -585,7 +645,8 @@ namespace cukd {
                  int numPoints,
                  cudaStream_t stream)
   {
-    std::cout << "--- fixing pivots on " << L_b << std::endl << std::flush;
+    // printTree<node_t,node_traits>(points,numPoints);
+    // std::cout << "--- fixing pivots on " << L_b << std::endl << std::flush;
     int numNodesOnL_b = numNodesOnLevel(L_b);
     int bs = 128;
     int nb = divRoundUp(numNodesOnL_b,bs);
@@ -599,7 +660,8 @@ namespace cukd {
                   int numPoints,
                   cudaStream_t stream)
   {
-    std::cout << "==== building level " << L_b << std::endl << std::flush;
+    // printTree<node_t,node_traits>(d_points,numPoints);
+    // std::cout << "==== building level " << L_b << std::endl << std::flush;
     // TODO: select and set dims on L_b
     for (int L_h = numLevels-2; L_h > L_b; --L_h)
       buildHeaps<node_t,node_traits>(L_h,L_b,d_points,numPoints,stream);
@@ -607,13 +669,17 @@ namespace cukd {
   }
   
   template<typename node_t, typename node_traits>
-  void buildTree(node_t *d_points,
+  void buildTree(node_t *points,
                  int numPoints,
                  cudaStream_t stream)
   {
     int numLevels = BinaryTree::numLevelsFor(numPoints);
     for (int L_b = 0; L_b < numLevels-1; L_b++)
-      buildLevel<node_t,node_traits>(L_b,numLevels,d_points,numPoints,stream);
+      buildLevel<node_t,node_traits>(L_b,numLevels,points,numPoints,stream);
+
+
+    // std::cout << "### DONE" << std::endl;
+    // printTree<node_t,node_traits>(points,numPoints);
   }
   
   // template<typename node_t, typename node_traits>

@@ -68,7 +68,10 @@ using node_traits = default_node_traits<floatN>;
 
 floatN *generatePoints(int N)
 {
-  static std::random_device rd;  // Will be used to obtain a seed for the random number engine
+  static int g_seed = 100000;
+  std::seed_seq seq{g_seed++};
+  // std::random_device rd(seq());  // Will be used to obtain a seed for the random number engine
+  std::default_random_engine rd(seq);
   std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
   std::uniform_int_distribution<> dist(0,N);
   
