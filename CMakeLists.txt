@@ -104,22 +104,6 @@ foreach(stack_free ON OFF)
     if (${stack_free})
       target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_STACK_FREE=1)
     endif()
-
-    # add_executable(cukd_float2-fcp${suffix} testing/float2-fcp.cu)
-    # target_link_libraries(cukd_float2-fcp${suffix} cudaKDTree${suffix})
-    
-    # add_executable(cukd_float3-fcp${suffix} testing/float3-fcp.cu)
-    # target_link_libraries(cukd_float3-fcp${suffix} cudaKDTree${suffix})
-    
-    # add_executable(cukd_float4-fcp${suffix} testing/float4-fcp.cu)
-    # target_link_libraries(cukd_float4-fcp${suffix} cudaKDTree${suffix})
-
-    # add_executable(cukd_float2-knn${suffix} testing/float2-knn.cu)
-    # target_link_libraries(cukd_float2-knn${suffix} cudaKDTree${suffix})
-    
-    # add_executable(cukd_float3-knn${suffix} testing/float3-knn.cu)
-    # target_link_libraries(cukd_float3-knn${suffix} cudaKDTree${suffix})
-
     
     if (BUILD_ALL_TESTS)
       set(DIMS_TO_BUILD 2 3 4 8)

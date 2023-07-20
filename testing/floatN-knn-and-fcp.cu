@@ -20,6 +20,7 @@
 #include "cukd/knn.h"
 #include <queue>
 #include <iomanip>
+#include <random>
 
 #if D_FROM_CMAKE == 2
 using floatN = float2;
@@ -63,6 +64,23 @@ using node_traits = PointAndDim_traits;
 using node_t = floatN;
 using node_traits = default_node_traits<floatN>;
 #endif
+
+
+floatN *generatePoints(int N)
+{
+  static std::random_device rd;  // Will be used to obtain a seed for the random number engine
+  std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
+  std::uniform_int_distribution<> dist(0,N);
+  
+  floatN *d_points = 0;
+  cudaMallocManaged((char **)&d_points,N*sizeof(*d_points));
+  
+  enum { num_dims = num_dims_of<floatN>::value };
+  for (int i=0;i<N;i++)
+    for (int d=0;d<num_dims;d++)
+      ((float *)&d_points[i])[d] = (float)dist(gen);
+  return d_points;
+}
 
 
 
@@ -316,10 +334,10 @@ int main(int ac, const char **av)
 {
   using namespace cukd::common;
 
-  int    numPoints = 173;
+  int    numPoints = 0;
   bool   verify = false;
   int    nRepeats = 1;
-  size_t numQueries = 10000000;
+  size_t numQueries = 0;
   float  cutOffRadius = std::numeric_limits<float>::infinity();
 #if USE_KNN
   int    k = 50;
@@ -344,7 +362,10 @@ int main(int ac, const char **av)
       throw std::runtime_error("known cmdline arg "+arg);
   }
   
-  floatN *d_inputs = loadPoints<floatN>("data_points",numPoints);
+  floatN *d_inputs
+    = numPoints
+    ? generatePoints(numPoints)
+    : loadPoints<floatN>("data_points",numPoints);
 #if EXPLICIT_DIM
   PointAndDim *d_points;
   cudaMallocManaged((void**)&d_points,numPoints*sizeof(*d_points));
@@ -374,7 +395,10 @@ int main(int ac, const char **av)
               << prettyDouble(t1-t0) << "s" << std::endl;
   }
   
-  floatN *d_queries = loadPoints<floatN>("query_points",numQueries);
+  floatN *d_queries
+    = numQueries
+    ? generatePoints(numQueries)
+    : loadPoints<floatN>("query_points",numQueries);
   float  *d_results;
   CUKD_CUDA_CALL(MallocManaged((void**)&d_results,numQueries*sizeof(*d_results)));
   {
