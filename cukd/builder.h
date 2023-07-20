@@ -65,9 +65,9 @@ namespace cukd {
     // ------------------------------------------------------------------
 
     /*! the *logical* type used for mathematical things like distance
-        computations, specifiing the location of a data point,
-        etc. this defines number of dimensions, scalar type, etc, but
-        leaves the node to define its own data layout */
+      computations, specifiing the location of a data point,
+      etc. this defines number of dimensions, scalar type, etc, but
+      leaves the node to define its own data layout */
     using point_t = node_t;
 
     // ------------------------------------------------------------------
@@ -99,9 +99,9 @@ namespace cukd {
     enum { has_explicit_dim = false };
     
     /*! !{ just defining this for completeness, get/set_dim should never
-        get called for this type becaues we have set has_explicit_dim
-        set to false. note traversal should ONLY ever call this
-        function for node_t's that define has_explicit_dim to true */
+      get called for this type becaues we have set has_explicit_dim
+      set to false. note traversal should ONLY ever call this
+      function for node_t's that define has_explicit_dim to true */
     static inline __device__ int  get_dim(const node_t &) { return -1; }
     static inline __device__ void set_dim(node_t &, int) {}
     /*! @} */
@@ -431,90 +431,273 @@ namespace cukd {
       node_traits::set_dim(d_nodes[gid],arg_max(bounds.size()));
     tag[gid] = subtree;
   }
-  
 
+
+  inline __both__ int firstNodeOnLevel(int L) { return (1<<L) - 1; }
+  inline __both__ int numNodesOnLevel(int L) { return 1<<L; }
+  inline __both__ int partnerOf(int n, int L_r, int L_b)
+  {
+    return (((n+1) ^ (1<<(L_r-L_b-1))))-1;
+  }
+
+  template<typename T>
+  inline __both__ void swap(T &a, T &b)
+  { T c = a; a = b; b = c; }
+
+
+  template<typename scalar_t, int side>
+  inline __device__ bool desiredOrder(scalar_t a, scalar_t b)
+  { return !(a < b); }
+
+  // template<typename scalar_t>
+  // inline __device__ bool desiredOrder<scalar_t,0>(scalar_t a, scalar_t b)
+  template<typename scalar_t>
+  inline __device__ bool desiredOrder<scalar_t,1>(scalar_t a, scalar_t b)
+  { return !(b < a); }
+  
+  template<typename node_t, typename node_traits, int side>
+  inline __device__
+  void trickleDownHeap(int n, node_t *points, int numPoints, int dim)
+  {
+    const int input_n = n;
+    using point_t  = typename node_traits::point_t;
+    using scalar_t = typename scalar_type_of<point_t>::type;
+    node_t point_n = points[n];
+    scalar_t s_n = node_traits::get_coord(point_n,dim);
+    while (true) {
+      int l = 2*n+1;
+      if (l >= numPoints)
+        break;
+
+      int c = l;
+      scalar_t s_c = node_traits::get_coord(points[l],dim);
+      
+      int r = l+1;
+      if (r < l) {
+        scalar_t s_r = node_traits::get_coord(points[r],dim);
+        if (!desiredOrder<scalar_t,side>(s_c,s_r)) {
+          c = r;
+          s_c = s_r;
+        }
+        if (desiredOrder<scalar_t,side>(s_n,s_c))
+          break;
+      }
+      points[n] = points[c];
+      n = c;
+    }
+    if (n != input_n)
+      points[n] = point_n;
+  }
+  
+  template<typename node_t, typename node_traits>
+  __global__ void d_buildHeaps(/*! _heap_ root level */int L_h,
+                               /*! _build_ root level */int L_b,
+                               node_t *points,
+                               int numPoints)
+  {
+    int tid = threadIdx.x + blockIdx.x*blockDim.x;
+    int numNodesOnL_h = numNodesOnLevel(L_h);
+    if (tid >= numNodesOnL_h)
+      return;
+
+    int n = firstNodeOnLevel(L_h)+tid;
+    /* _probably_ can never happen: */ if (n >= numPoints) return;
+                                           
+    int partner = partnerOf(n,L_h,L_b);
+    /* _probably_ can never happen: */ if (partner >= numPoints) return;
+
+    if (partner < n)
+      // only one of the two can do the work, or they'll race each
+      // other - let's always pick the lower one.
+      return;
+
+    using point_t  = typename node_traits::point_t;
+    enum { num_dims = num_dims_of<point_t>::value };
+    int dim = L_b % num_dims;
+    while (1) {
+      trickleDownHeap<node_t,node_traits,0>(n,points,numPoints,dim);
+      trickleDownHeap<node_t,node_traits,1>(partner,points,numPoints,dim);
+      if (node_traits::get_coord(points[partner],dim)
+          <
+          node_traits::get_coord(points[n],dim)) {
+        swap(points[n],points[partner]);
+        continue;
+      } else
+        break;
+    }
+  }
+    
+  template<typename node_t, typename node_traits>
+  void buildHeaps(/*! _heap_ root level */int L_h,
+                  /*! _build_ root level */int L_b,
+                  node_t *points,
+                  int numPoints,
+                  cudaStream_t stream)
+  {
+    std::cout << "---- building heaps on " << L_h << ", root level " << L_b << std::endl << std::flush;
+    int numNodesOnL_h = numNodesOnLevel(L_h);
+    int bs = 128;
+    int nb = divRoundUp(numNodesOnL_h,bs);
+    d_buildHeaps<node_t,node_traits><<<nb,bs,0,stream>>>(L_h,L_b,points,numPoints);
+  }
+
+
+
+
+
+
+  template<typename node_t, typename node_traits>
+  __global__ void d_fixPivots(/*! _build_ root level */int L_b,
+                              node_t *points,
+                              int numPoints)
+  {
+    int tid = threadIdx.x + blockIdx.x*blockDim.x;
+    int numNodesOnL_b = numNodesOnLevel(L_b);
+    if (tid >= numNodesOnL_b)
+      return;
+
+    int n = firstNodeOnLevel(L_b)+tid;
+    /* _probably_ can never happen: */ if (n >= numPoints) return;
+                                           
+    int l = 2*n+1;
+    int r = l+1;
+
+    using point_t  = typename node_traits::point_t;
+    using scalar_t = typename scalar_type_of<point_t>::type;
+    enum { num_dims = num_dims_of<point_t>::value };
+    
+    int dim = L_b % num_dims;
+
+    scalar_t s_n = node_traits::get_coord(points[n],dim);
+    if (l < numPoints && s_n < node_traits::get_coord(points[l],dim)) {
+      swap(points[n],points[l]);
+      // todo: trckle?
+    } else if  (r < numPoints && node_traits::get_coord(points[r],dim) < s_n) {
+      swap(points[n],points[r]);
+      // todo: trckle?
+    }
+    // TODO: set_dim
+  }
+  
+  template<typename node_t, typename node_traits>
+  void fixPivots(/*! _build_ root level */int L_b,
+                 node_t *points,
+                 int numPoints,
+                 cudaStream_t stream)
+  {
+    std::cout << "--- fixing pivots on " << L_b << std::endl << std::flush;
+    int numNodesOnL_b = numNodesOnLevel(L_b);
+    int bs = 128;
+    int nb = divRoundUp(numNodesOnL_b,bs);
+    d_fixPivots<node_t,node_traits><<<nb,bs,0,stream>>>(L_b,points,numPoints);
+  }
+
+  template<typename node_t, typename node_traits>
+  void buildLevel(/*! level that we're ultimately _building_ */int L_b,
+                  int numLevels,
+                  node_t *d_points,
+                  int numPoints,
+                  cudaStream_t stream)
+  {
+    std::cout << "==== building level " << L_b << std::endl << std::flush;
+    // TODO: select and set dims on L_b
+    for (int L_h = numLevels-2; L_h > L_b; --L_h)
+      buildHeaps<node_t,node_traits>(L_h,L_b,d_points,numPoints,stream);
+    fixPivots<node_t,node_traits>(L_b,d_points,numPoints,stream);
+  }
+  
   template<typename node_t, typename node_traits>
   void buildTree(node_t *d_points,
                  int numPoints,
                  cudaStream_t stream)
   {
-    using point_t  = typename node_traits::point_t;
-    using scalar_t = typename scalar_type_of<point_t>::type;
-    enum { num_dims = num_dims_of<point_t>::value };
-    
-    /* thrust helper typedefs for the zip iterator, to make the code
-       below more readable */
-    typedef typename thrust::device_vector<tag_t>::iterator tag_iterator;
-    typedef typename thrust::device_vector<node_t>::iterator point_iterator;
-    typedef thrust::tuple<tag_iterator,point_iterator> iterator_tuple;
-    typedef thrust::zip_iterator<iterator_tuple> tag_point_iterator;
-
-    // check for invalid input, and return gracefully if so
-    if (numPoints < 1) return;
-
-    /* the helper array  we use to store each node's subtree ID in */
-    // TODO allocate in stream?
-    thrust::device_vector<tag_t> tags(numPoints);
-    /* to kick off the build, every element is in the only
-       level-0 subtree there is, namely subtree number 0... duh */
-    thrust::fill(thrust::device.on(stream),tags.begin(),tags.end(),0);
-
-    /* create the zip iterators we use for zip-sorting the tag and
-       points array */
-    thrust::device_ptr<node_t> points_begin(d_points);
-    thrust::device_ptr<node_t> points_end(d_points+numPoints);
-    tag_point_iterator begin = thrust::make_zip_iterator
-      (thrust::make_tuple(tags.begin(),points_begin));
-    tag_point_iterator end = thrust::make_zip_iterator
-      (thrust::make_tuple(tags.end(),points_end));
-
-    /* compute number of levels in the tree, which dicates how many
-       construction steps we need to run */
-    const int numLevels = BinaryTree::numLevelsFor(numPoints);
-    const int deepestLevel = numLevels-1;
-
-    using box_t = cukd::box_t<point_t>;
-    box_t *worldBounds = 0;
-    if (node_traits::has_explicit_dim) {
-      cudaMallocAsync((void **)&worldBounds,sizeof(*worldBounds),stream);
-      computeBounds<node_t,node_traits>(worldBounds,d_points,numPoints,stream);
-      cudaStreamSynchronize(stream);
-      
-      const int blockSize = 128;
-      chooseInitialDim<node_t,node_traits>
-        <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
-        (worldBounds,d_points,numPoints);
-      cudaStreamSynchronize(stream);
-    }
-    
-    
-    /* now build each level, one after another, cycling through the
-       dimensoins */
-    for (int level=0;level<deepestLevel;level++) {
-      thrust::sort(thrust::device.on(stream),begin,end,
-                   ZipCompare<node_t,node_traits>((level)%num_dims,d_points));
-      
-      const int blockSize = 128;
-      if (node_traits::has_explicit_dim) {
-        updateTagsAndSetDims<node_t,node_traits>
-          <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
-          (worldBounds,thrust::raw_pointer_cast(tags.data()),d_points,numPoints,level);
-      } else {
-        updateTag<<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
-          (thrust::raw_pointer_cast(tags.data()),numPoints,level);
-      }
-      cudaStreamSynchronize(stream);
-    }
-    
-    /* do one final sort, to put all elements in order - by now every
-       element has its final (and unique) nodeID stored in the tag[]
-       array, so the dimension we're sorting in really won't matter
-       any more */
-    thrust::sort(thrust::device.on(stream),begin,end,
-                 ZipCompare<node_t,node_traits>((deepestLevel)%num_dims,d_points));
-    if (node_traits::has_explicit_dim) 
-      cudaFreeAsync(worldBounds,stream);
+    int numLevels = BinaryTree::numLevelsFor(numPoints);
+    for (int L_b = 0; L_b < numLevels-1; L_b++)
+      buildLevel<node_t,node_traits>(L_b,numLevels,d_points,numPoints,stream);
   }
+  
+  // template<typename node_t, typename node_traits>
+  // void buildTree(node_t *d_points,
+  //                int numPoints,
+  //                cudaStream_t stream)
+  // {
+  //   using point_t  = typename node_traits::point_t;
+  //   using scalar_t = typename scalar_type_of<point_t>::type;
+  //   enum { num_dims = num_dims_of<point_t>::value };
+    
+  //   /* thrust helper typedefs for the zip iterator, to make the code
+  //      below more readable */
+  //   typedef typename thrust::device_vector<tag_t>::iterator tag_iterator;
+  //   typedef typename thrust::device_vector<node_t>::iterator point_iterator;
+  //   typedef thrust::tuple<tag_iterator,point_iterator> iterator_tuple;
+  //   typedef thrust::zip_iterator<iterator_tuple> tag_point_iterator;
+
+  //   // check for invalid input, and return gracefully if so
+  //   if (numPoints < 1) return;
+
+  //   /* the helper array  we use to store each node's subtree ID in */
+  //   // TODO allocate in stream?
+  //   thrust::device_vector<tag_t> tags(numPoints);
+  //   /* to kick off the build, every element is in the only
+  //      level-0 subtree there is, namely subtree number 0... duh */
+  //   thrust::fill(thrust::device.on(stream),tags.begin(),tags.end(),0);
+
+  //   /* create the zip iterators we use for zip-sorting the tag and
+  //      points array */
+  //   thrust::device_ptr<node_t> points_begin(d_points);
+  //   thrust::device_ptr<node_t> points_end(d_points+numPoints);
+  //   tag_point_iterator begin = thrust::make_zip_iterator
+  //     (thrust::make_tuple(tags.begin(),points_begin));
+  //   tag_point_iterator end = thrust::make_zip_iterator
+  //     (thrust::make_tuple(tags.end(),points_end));
+
+  //   /* compute number of levels in the tree, which dicates how many
+  //      construction steps we need to run */
+  //   const int numLevels = BinaryTree::numLevelsFor(numPoints);
+  //   const int deepestLevel = numLevels-1;
+
+  //   using box_t = cukd::box_t<point_t>;
+  //   box_t *worldBounds = 0;
+  //   if (node_traits::has_explicit_dim) {
+  //     cudaMallocAsync((void **)&worldBounds,sizeof(*worldBounds),stream);
+  //     computeBounds<node_t,node_traits>(worldBounds,d_points,numPoints,stream);
+  //     cudaStreamSynchronize(stream);
+      
+  //     const int blockSize = 128;
+  //     chooseInitialDim<node_t,node_traits>
+  //       <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
+  //       (worldBounds,d_points,numPoints);
+  //     cudaStreamSynchronize(stream);
+  //   }
+    
+    
+  //   /* now build each level, one after another, cycling through the
+  //      dimensoins */
+  //   for (int level=0;level<deepestLevel;level++) {
+  //     thrust::sort(thrust::device.on(stream),begin,end,
+  //                  ZipCompare<node_t,node_traits>((level)%num_dims,d_points));
+      
+  //     const int blockSize = 128;
+  //     if (node_traits::has_explicit_dim) {
+  //       updateTagsAndSetDims<node_t,node_traits>
+  //         <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
+  //         (worldBounds,thrust::raw_pointer_cast(tags.data()),d_points,numPoints,level);
+  //     } else {
+  //       updateTag<<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
+  //         (thrust::raw_pointer_cast(tags.data()),numPoints,level);
+  //     }
+  //     cudaStreamSynchronize(stream);
+  //   }
+    
+  //   /* do one final sort, to put all elements in order - by now every
+  //      element has its final (and unique) nodeID stored in the tag[]
+  //      array, so the dimension we're sorting in really won't matter
+  //      any more */
+  //   thrust::sort(thrust::device.on(stream),begin,end,
+  //                ZipCompare<node_t,node_traits>((deepestLevel)%num_dims,d_points));
+  //   if (node_traits::has_explicit_dim) 
+  //     cudaFreeAsync(worldBounds,stream);
+  // }
 
   /*! the actual comparison operator; will perform a
     'zip'-comparison in that the first element is the major sort
