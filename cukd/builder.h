@@ -677,6 +677,7 @@ namespace cukd {
     for (int L_b = 0; L_b < numLevels-1; L_b++)
       buildLevel<node_t,node_traits>(L_b,numLevels,points,numPoints,stream);
 
+    cudaStreamSynchronize(stream);
 
     // std::cout << "### DONE" << std::endl;
     // printTree<node_t,node_traits>(points,numPoints);
