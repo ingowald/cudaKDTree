@@ -74,14 +74,18 @@ floatN *generatePoints(int N)
   std::default_random_engine rd(seq);
   std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
   std::uniform_int_distribution<> dist(0,N);
-  
+
+  std::cout << "generating " << N << " uniform random points" << std::endl;
   floatN *d_points = 0;
   cudaMallocManaged((char **)&d_points,N*sizeof(*d_points));
+  if (!d_points)
+    throw std::runtime_error("could not allocate points mem...");
   
   enum { num_dims = num_dims_of<floatN>::value };
   for (int i=0;i<N;i++)
-    for (int d=0;d<num_dims;d++)
+    for (int d=0;d<num_dims;d++) {
       ((float *)&d_points[i])[d] = (float)dist(gen);
+    }
   return d_points;
 }
 
@@ -420,12 +424,19 @@ int main(int ac, const char **av)
   using node_t = floatN;
 #endif
   
-#if CUKD_IMPROVED_TRAVERSAL
+#if CUKD_IMPROVED_TRAVERSAL || EXPLICIT_DIM
+  // we need the world sapce bounding box either if we use
+  // explicit-dim style trees (then we need it during the build),
+  // and/or if we used the improved traversal (then we need it during
+  // traversal time). If we pass memory for the bounds to the builder
+  // it _will_ fill that in even if we don't have an
+  // node_traits::explicit_dim field
   cukd::box_t<floatN> *d_bounds;
-  cudaMalloc((void**)&d_bounds,sizeof(cukd::box_t<floatN>));
-  cukd::computeBounds<node_t,node_traits>
-    (d_bounds,d_points,numPoints);
-  CUKD_CUDA_SYNC_CHECK();
+  cudaMallocManaged((void**)&d_bounds,sizeof(cukd::box_t<floatN>));
+  // cukd::computeBounds<node_t,node_traits>
+  //   (d_bounds,d_points,numPoints);
+  // CUKD_CUDA_SYNC_CHECK();
+  std::cout << "allocated memory for the world space bounding box ..." << std::endl;
 #endif
   {
     std::vector<node_t> saved_points;
@@ -436,7 +447,11 @@ int main(int ac, const char **av)
     std::cout << "calling builder..." << std::endl;
     double t0 = getCurrentTime();
     cukd::buildTree<node_t,node_traits>
-      (d_points,numPoints);
+      (d_points,numPoints
+#if CUKD_IMPROVED_TRAVERSAL || EXPLICIT_DIM
+       ,d_bounds
+#endif
+       );
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
     std::cout << "done building tree, took "

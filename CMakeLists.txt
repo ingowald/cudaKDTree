@@ -104,7 +104,12 @@ foreach(stack_free ON OFF)
     if (${stack_free})
       target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_STACK_FREE=1)
     endif()
-    
+
+    option(CUKD_TRACK_STATS "Track and print traversal stats" OFF)
+    if (CUKD_TRACK_STATS)
+      target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_ENABLE_STATS=1)
+    endif()
+	
     if (BUILD_ALL_TESTS)
       set(DIMS_TO_BUILD 2 3 4 8)
       foreach (D IN ITEMS ${DIMS_TO_BUILD})

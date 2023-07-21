@@ -32,7 +32,7 @@
 
 namespace cukd {
   
-  typedef uint32_t tag_t;
+  // typedef uint32_t tag_t;
 
   /*! defines an abstract interface to what a 'node' in a k-d tree
     is. This needs to define the follwing:
@@ -149,12 +149,31 @@ namespace cukd {
 
     buildKDTree<float4>(...);
   */
-  template<typename node_t, typename node_traits=default_node_traits<node_t>>
+  template<typename node_t,
+           typename node_traits=default_node_traits<node_t>>
   void buildTree(node_t *d_points,
                  int numPoints,
                  cudaStream_t stream = 0);
 
-  template<typename node_t, typename node_traits=default_node_traits<node_t>>
+  /*! build a k-d over given set of points, but can build both
+      round-robin-style and "generalized" k-d trees where the split
+      dimension for each subtree is chosen based on the dimension
+      where that subtree's domain is widest. If the
+      node_traits::has_explicit_dim field is true, the latter type of
+      k-d tree is build; if it is false, this function build a regular
+      round-robin k-d tree instead
+ */
+  template<typename node_t,
+           typename node_traits=default_node_traits<node_t>>
+  void buildTree(node_t      *points,
+                 int          numPoints,
+                 box_t<typename node_traits::point_t> *worldBounds,
+                 cudaStream_t stream = 0);
+
+  /*! helper function that computes the bounding box of a given set of
+      points */
+  template<typename node_t, 
+  typename node_traits=default_node_traits<node_t>>
   void computeBounds(cukd::box_t<typename node_traits::point_t> *d_bounds,
                      const node_t *d_points,
                      int numPoints,
@@ -280,42 +299,42 @@ namespace cukd {
      the expected sort order described inthe paper - this kernel will
      update each of these tags to either left or right child (or root
      node) of given subtree*/
-  __global__
-  void updateTag(/*! array of tags we need to update */
-                 tag_t *tag,
-                 /*! num elements in the tag[] array */
-                 int numPoints,
-                 /*! which step we're in             */
-                 int L)
-  {
-    const int gid = threadIdx.x+blockIdx.x*blockDim.x;
-    if (gid >= numPoints) return;
+  // __global__
+  // void updateTag(/*! array of tags we need to update */
+  //                tag_t *tag,
+  //                /*! num elements in the tag[] array */
+  //                int numPoints,
+  //                /*! which step we're in             */
+  //                int L)
+  // {
+  //   const int gid = threadIdx.x+blockIdx.x*blockDim.x;
+  //   if (gid >= numPoints) return;
 
-    const int numSettled = FullBinaryTreeOf(L).numNodes();
-    if (gid < numSettled) return;
+  //   const int numSettled = FullBinaryTreeOf(L).numNodes();
+  //   if (gid < numSettled) return;
 
-    // get the subtree that the given node is in - which is exactly
-    // what the tag stores...
-    int subtree = tag[gid];
+  //   // get the subtree that the given node is in - which is exactly
+  //   // what the tag stores...
+  //   int subtree = tag[gid];
 
-    // computed the expected positoin of the pivot element for the
-    // given subtree when using our speific array layout.
-    const int pivotPos = ArrayLayoutInStep(L,numPoints).pivotPosOf(subtree);
+  //   // computed the expected positoin of the pivot element for the
+  //   // given subtree when using our speific array layout.
+  //   const int pivotPos = ArrayLayoutInStep(L,numPoints).pivotPosOf(subtree);
 
-    if (gid < pivotPos)
-      // point is to left of pivot -> must be smaller or equal to
-      // pivot in given dim -> must go to left subtree
-      subtree = BinaryTree::leftChildOf(subtree);
-    else if (gid > pivotPos)
-      // point is to left of pivot -> must be bigger or equal to pivot
-      // in given dim -> must go to right subtree
-      subtree = BinaryTree::rightChildOf(subtree);
-    else
-      // point is _on_ the pivot position -> it's the root of that
-      // subtree, don't change it.
-      ;
-    tag[gid] = subtree;
-  }
+  //   if (gid < pivotPos)
+  //     // point is to left of pivot -> must be smaller or equal to
+  //     // pivot in given dim -> must go to left subtree
+  //     subtree = BinaryTree::leftChildOf(subtree);
+  //   else if (gid > pivotPos)
+  //     // point is to left of pivot -> must be bigger or equal to pivot
+  //     // in given dim -> must go to right subtree
+  //     subtree = BinaryTree::rightChildOf(subtree);
+  //   else
+  //     // point is _on_ the pivot position -> it's the root of that
+  //     // subtree, don't change it.
+  //     ;
+  //   tag[gid] = subtree;
+  // }
 
 
   template<typename T> struct is_float2 { enum { value = false }; };
@@ -379,58 +398,58 @@ namespace cukd {
   }
   
 
-  /* performs the L-th step's tag update: each input tag refers to a
-     subtree ID on level L, and - assuming all points and tags are in
-     the expected sort order described inthe paper - this kernel will
-     update each of these tags to either left or right child (or root
-     node) of given subtree*/
-  template<typename node_t, typename node_traits>
-  __global__
-  void updateTagsAndSetDims(/*! array of tags we need to update */
-                            const box_t<typename node_traits::point_t> *d_bounds,
-                            tag_t  *tag,
-                            node_t *d_nodes,
-                            /*! num elements in the tag[] array */
-                            int numPoints,
-                            /*! which step we're in             */
-                            int L)
-  {
-    const int gid = threadIdx.x+blockIdx.x*blockDim.x;
-    if (gid >= numPoints) return;
+  // /* performs the L-th step's tag update: each input tag refers to a
+  //    subtree ID on level L, and - assuming all points and tags are in
+  //    the expected sort order described inthe paper - this kernel will
+  //    update each of these tags to either left or right child (or root
+  //    node) of given subtree*/
+  // template<typename node_t, typename node_traits>
+  // __global__
+  // void updateTagsAndSetDims(/*! array of tags we need to update */
+  //                           const box_t<typename node_traits::point_t> *d_bounds,
+  //                           tag_t  *tag,
+  //                           node_t *d_nodes,
+  //                           /*! num elements in the tag[] array */
+  //                           int numPoints,
+  //                           /*! which step we're in             */
+  //                           int L)
+  // {
+  //   const int gid = threadIdx.x+blockIdx.x*blockDim.x;
+  //   if (gid >= numPoints) return;
 
-    const int numSettled = FullBinaryTreeOf(L).numNodes();
-    if (gid < numSettled) return;
+  //   const int numSettled = FullBinaryTreeOf(L).numNodes();
+  //   if (gid < numSettled) return;
 
-    // get the subtree that the given node is in - which is exactly
-    // what the tag stores...
-    int subtree = tag[gid];
-    box_t<typename node_traits::point_t> bounds
-      = findBounds<node_t,node_traits>(subtree,d_bounds,d_nodes);
-    // computed the expected positoin of the pivot element for the
-    // given subtree when using our speific array layout.
-    const int pivotPos = ArrayLayoutInStep(L,numPoints).pivotPosOf(subtree);
+  //   // get the subtree that the given node is in - which is exactly
+  //   // what the tag stores...
+  //   int subtree = tag[gid];
+  //   box_t<typename node_traits::point_t> bounds
+  //     = findBounds<node_t,node_traits>(subtree,d_bounds,d_nodes);
+  //   // computed the expected positoin of the pivot element for the
+  //   // given subtree when using our speific array layout.
+  //   const int pivotPos = ArrayLayoutInStep(L,numPoints).pivotPosOf(subtree);
 
-    const int   pivotDim   = node_traits::get_dim(d_nodes[pivotPos]);
-    const float pivotCoord = node_traits::get_coord(d_nodes[pivotPos],pivotDim);
+  //   const int   pivotDim   = node_traits::get_dim(d_nodes[pivotPos]);
+  //   const float pivotCoord = node_traits::get_coord(d_nodes[pivotPos],pivotDim);
     
-    if (gid < pivotPos) {
-      // point is to left of pivot -> must be smaller or equal to
-      // pivot in given dim -> must go to left subtree
-      subtree = BinaryTree::leftChildOf(subtree);
-      get_coord(bounds.upper,pivotDim) = pivotCoord;
-    } else if (gid > pivotPos) {
-      // point is to left of pivot -> must be bigger or equal to pivot
-      // in given dim -> must go to right subtree
-      subtree = BinaryTree::rightChildOf(subtree);
-      get_coord(bounds.lower,pivotDim) = pivotCoord;
-    } else
-      // point is _on_ the pivot position -> it's the root of that
-      // subtree, don't change it.
-      ;
-    if (gid != pivotPos)
-      node_traits::set_dim(d_nodes[gid],arg_max(bounds.size()));
-    tag[gid] = subtree;
-  }
+  //   if (gid < pivotPos) {
+  //     // point is to left of pivot -> must be smaller or equal to
+  //     // pivot in given dim -> must go to left subtree
+  //     subtree = BinaryTree::leftChildOf(subtree);
+  //     get_coord(bounds.upper,pivotDim) = pivotCoord;
+  //   } else if (gid > pivotPos) {
+  //     // point is to left of pivot -> must be bigger or equal to pivot
+  //     // in given dim -> must go to right subtree
+  //     subtree = BinaryTree::rightChildOf(subtree);
+  //     get_coord(bounds.lower,pivotDim) = pivotCoord;
+  //   } else
+  //     // point is _on_ the pivot position -> it's the root of that
+  //     // subtree, don't change it.
+  //     ;
+  //   if (gid != pivotPos)
+  //     node_traits::set_dim(d_nodes[gid],arg_max(bounds.size()));
+  //   tag[gid] = subtree;
+  // }
 
 
   inline __both__ int firstNodeOnLevel(int L) { return (1<<L) - 1; }
@@ -625,9 +644,13 @@ namespace cukd {
     using point_t  = typename node_traits::point_t;
     enum { num_dims = num_dims_of<point_t>::value };
 
-    box_t<typename node_traits::point_t> bounds
-      = findBounds<node_t,node_traits>(n,worldBounds,points);
-    node_traits::set_dim(points[n],arg_max(bounds.size()));
+    if (worldBounds) {
+      box_t<typename node_traits::point_t> bounds
+        = findBounds<node_t,node_traits>(n,worldBounds,points);
+      node_traits::set_dim(points[n],arg_max(bounds.size()));
+    } else {
+      node_traits::set_dim(points[n],BinaryTree::levelOf(n) % num_dims);
+    }
   }
 
   template<typename node_t, typename node_traits>
@@ -637,6 +660,7 @@ namespace cukd {
                          box_t<typename node_traits::point_t> *worldBounds,
                          cudaStream_t stream)
   {
+    // std::cout << "selecting dims ..." << std::endl << std::flush;
     int numNodesOnL_b = numNodesOnLevel(L_b);
     int bs = 128;
     int nb = divRoundUp(numNodesOnL_b,bs);
@@ -711,7 +735,7 @@ namespace cukd {
     // printTree<node_t,node_traits>(d_points,numPoints);
     // std::cout << "==== building level " << L_b << std::endl << std::flush;
     // TODO: select and set dims on L_b
-    if (node_traits::has_explicit_dim && worldBounds)
+    if (node_traits::has_explicit_dim)
       selectDimsOnLevel<node_t,node_traits>(L_b,d_points,numPoints,worldBounds,stream);
     for (int L_h = numLevels-1; L_h > L_b; --L_h)
       buildHeaps<node_t,node_traits>(L_h,L_b,d_points,numPoints,stream);
