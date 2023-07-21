@@ -30,6 +30,8 @@
 // #include <thrust/random/linear_congruential_engine.h>
 // #include <thrust/random/uniform_real_distribution.h>
 
+// #define CUKD_DBG_BUILD 1
+
 namespace cukd {
   
   // typedef uint32_t tag_t;
@@ -277,22 +279,22 @@ namespace cukd {
   //   const node_t *nodes;
   // };
 
-  template<typename node_t,typename node_traits>
-  __global__
-  void chooseInitialDim(const box_t<typename node_traits::point_t> *d_bounds,
-                        node_t *d_nodes,
-                        int numPoints)
-  {
-    using point_t  = typename node_traits::point_t;
-    using scalar_t = typename scalar_type_of<point_t>::type;
-    enum { num_dims = num_dims_of<point_t>::value };
+  // template<typename node_t,typename node_traits>
+  // __global__
+  // void chooseInitialDim(const box_t<typename node_traits::point_t> *d_bounds,
+  //                       node_t *d_nodes,
+  //                       int numPoints)
+  // {
+  //   using point_t  = typename node_traits::point_t;
+  //   using scalar_t = typename scalar_type_of<point_t>::type;
+  //   enum { num_dims = num_dims_of<point_t>::value };
     
-    const int tid = threadIdx.x+blockIdx.x*blockDim.x;
-    if (tid >= numPoints) return;
+  //   const int tid = threadIdx.x+blockIdx.x*blockDim.x;
+  //   if (tid >= numPoints) return;
 
-    int dim = arg_max(d_bounds->size());
-    node_traits::set_dim(d_nodes[tid],dim);
-  }
+  //   int dim = arg_max(d_bounds->size());
+  //   node_traits::set_dim(d_nodes[tid],dim);
+  // }
   
   /* performs the L-th step's tag update: each input tag refers to a
      subtree ID on level L, and - assuming all points and tags are in
@@ -564,7 +566,15 @@ namespace cukd {
 
     using point_t  = typename node_traits::point_t;
     enum { num_dims = num_dims_of<point_t>::value };
-    int dim = L_b % num_dims;
+
+    const int     dim
+      = node_traits::has_explicit_dim
+      ? node_traits::get_dim(points[((n+1)>>(L_h-L_b))-1])
+      : (L_b % num_dims);
+    // int dim = L_b % num_dims;
+
+    // xxx
+      
     while (1) {
       // if (dbg) printf("trickle 1...\n");
       trickleDownHeap<node_t,node_traits,0>(n,points,numPoints,dim);
@@ -649,7 +659,7 @@ namespace cukd {
         = findBounds<node_t,node_traits>(n,worldBounds,points);
       node_traits::set_dim(points[n],arg_max(bounds.size()));
     } else {
-      node_traits::set_dim(points[n],BinaryTree::levelOf(n) % num_dims);
+      node_traits::set_dim(points[n],L_b % num_dims);
     }
   }
 
@@ -715,8 +725,10 @@ namespace cukd {
                  int numPoints,
                  cudaStream_t stream)
   {
-    // printTree<node_t,node_traits>(points,numPoints);
-    // std::cout << "--- fixing pivots on " << L_b << std::endl << std::flush;
+#ifdef CUKD_DBG_BUILD
+    printTree<node_t,node_traits>(points,numPoints);
+    std::cout << "--- fixing pivots on " << L_b << std::endl << std::flush;
+#endif
     int numNodesOnL_b = numNodesOnLevel(L_b);
     int bs = 128;
     int nb = divRoundUp(numNodesOnL_b,bs);
@@ -732,9 +744,11 @@ namespace cukd {
                   box_t<typename node_traits::point_t> *worldBounds,
                   cudaStream_t stream)
   {
-    // printTree<node_t,node_traits>(d_points,numPoints);
-    // std::cout << "==== building level " << L_b << std::endl << std::flush;
-    // TODO: select and set dims on L_b
+#ifdef CUKD_DBG_BUILD
+    printTree<node_t,node_traits>(d_points,numPoints);
+    std::cout << "==== building level " << L_b << std::endl << std::flush;
+     // TODO: select and set dims on L_b
+#endif
     if (node_traits::has_explicit_dim)
       selectDimsOnLevel<node_t,node_traits>(L_b,d_points,numPoints,worldBounds,stream);
     for (int L_h = numLevels-1; L_h > L_b; --L_h)
@@ -756,9 +770,10 @@ namespace cukd {
       buildLevel<node_t,node_traits>(L_b,numLevels,points,numPoints,worldBounds,stream);
     
     cudaStreamSynchronize(stream);
-    
-    // std::cout << "### DONE" << std::endl;
-    // printTree<node_t,node_traits>(points,numPoints);
+#ifdef CUKD_DBG_BUILD
+    std::cout << "### DONE" << std::endl;
+    printTree<node_t,node_traits>(points,numPoints);
+#endif
   }
   
   /*! non-generalized direction tree build */
