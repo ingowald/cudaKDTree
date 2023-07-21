@@ -57,18 +57,24 @@ if (NOT CUKD_IS_SUBPROJECT)
   SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   SET(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+  set(CMAKE_CUDA_ARCHITECTURES "70" CACHE STRING "Specific CUDA Arch(s) to build against")
+  #set(CMAKE_CUDA_ARCHITECTURES 70 75 86)
+  if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.17)
+    # nothing to do, setting CMAKE_CUDA_ARCHITECTURES is the way to go
+  else()
+    foreach (arch IN ITEMS ${CMAKE_CUDA_ARCHITECTURES})
+      #    message("status adding arch=${arch}")
+      set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${arch},code=sm_${arch}")
+    endforeach()
+  endif()
+
+else()
+  if (NOT CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 70 75 80 86)
+  endif()
 endif()
 
-set(CMAKE_CUDA_ARCHITECTURES 70)
-#set(CMAKE_CUDA_ARCHITECTURES 70 75 86)
-if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.17)
-  # nothing to do, setting CMAKE_CUDA_ARCHITECTURES is the way to go
-else()
-  foreach (arch IN ITEMS ${CMAKE_CUDA_ARCHITECTURES})
-    #    message("status adding arch=${arch}")
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${arch},code=sm_${arch}")
-  endforeach()
-endif()
 
 
 foreach(stack_free ON OFF)
