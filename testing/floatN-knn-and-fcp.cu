@@ -290,6 +290,46 @@ void verifyKNN(int pointID,
   }
 }
 
+template<typename node_t, typename node_traits>
+void checkRec(node_t *nodes, int numNodes,
+              const cukd::box_t<typename node_traits::point_t> &bounds,
+              int curr)
+{
+  using point_t  = typename node_traits::point_t;
+  using scalar_t = typename scalar_type_of<point_t>::type;
+  enum { num_dims = num_dims_of<point_t>::value };
+    
+  if (curr >= numNodes) return;
+
+  point_t point = node_traits::get_point(nodes[curr]);
+  if (!bounds.contains(point))
+    throw std::runtime_error
+      ("invalid k-d tree - node "+std::to_string(curr)+" not in parent bounds");
+  
+  const int  curr_dim
+    = node_traits::has_explicit_dim
+    ? node_traits::get_dim(nodes[curr])
+    : (BinaryTree::levelOf(curr) % num_dims);
+
+  const scalar_t curr_s = node_traits::get_coord(nodes[curr],curr_dim);
+  
+  cukd::box_t<point_t> lBounds = bounds;
+  get_coord(lBounds.upper,curr_dim) = curr_s;
+  cukd::box_t<point_t> rBounds = bounds;
+  get_coord(rBounds.lower,curr_dim) = curr_s;
+
+  checkRec<node_t,node_traits>(nodes,numNodes,lBounds,2*curr+1);
+  checkRec<node_t,node_traits>(nodes,numNodes,rBounds,2*curr+2);
+}
+
+template<typename node_t, typename node_traits>
+void checkTree(node_t *nodes, int numNodes, std::vector<node_t> &savedNodes)
+{
+  cukd::box_t<floatN> bounds;
+  bounds.setInfinite();
+  checkRec<node_t,node_traits>(nodes,numNodes,bounds,0);
+  std::cout << "** verify: tree checked, and valid k-d tree" << std::endl;
+}
 
 template<typename node_t, typename node_traits>
 void verifyFCP(int pointID,
@@ -388,14 +428,22 @@ int main(int ac, const char **av)
   CUKD_CUDA_SYNC_CHECK();
 #endif
   {
-    double t0 = getCurrentTime();
+    std::vector<node_t> saved_points;
+    if (verify) {
+      saved_points.resize(numPoints);
+      std::copy(d_points,d_points+numPoints,saved_points.data());
+    }
     std::cout << "calling builder..." << std::endl;
+    double t0 = getCurrentTime();
     cukd::buildTree<node_t,node_traits>
       (d_points,numPoints);
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
     std::cout << "done building tree, took "
               << prettyDouble(t1-t0) << "s" << std::endl;
+
+    if (verify)
+      checkTree<node_t,node_traits>(d_points,numPoints,saved_points);
   }
   
   floatN *d_queries

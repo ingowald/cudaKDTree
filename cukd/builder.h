@@ -19,16 +19,16 @@
 #include "cukd/helpers.h"
 #include "cukd/box.h"
 
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-#include <thrust/execution_policy.h>
-#include <thrust/fill.h>
-#include <thrust/sort.h>
+// #include <thrust/host_vector.h>
+// #include <thrust/device_vector.h>
+// #include <thrust/execution_policy.h>
+// #include <thrust/fill.h>
+// #include <thrust/sort.h>
 #include <cuda.h>
-#include <thrust/binary_search.h>
+// #include <thrust/binary_search.h>
 #include <device_launch_parameters.h>
-#include <thrust/random/linear_congruential_engine.h>
-#include <thrust/random/uniform_real_distribution.h>
+// #include <thrust/random/linear_congruential_engine.h>
+// #include <thrust/random/uniform_real_distribution.h>
 
 namespace cukd {
   
@@ -242,21 +242,21 @@ namespace cukd {
   }
 
 
-  template<typename node_t, typename node_traits>
-  struct ZipCompare {
-    ZipCompare(const int dim, const node_t *nodes) : dim(dim), nodes(nodes) {}
+  // template<typename node_t, typename node_traits>
+  // struct ZipCompare {
+  //   ZipCompare(const int dim, const node_t *nodes) : dim(dim), nodes(nodes) {}
 
-    /*! the actual comparison operator; will perform a
-      'zip'-comparison in that the first element is the major sort
-      order, and the second the minor one (for those of same major
-      sort key) */
-    inline __device__ bool operator()
-    (const thrust::tuple<tag_t, node_t> &a,
-     const thrust::tuple<tag_t, node_t> &b);
+  //   /*! the actual comparison operator; will perform a
+  //     'zip'-comparison in that the first element is the major sort
+  //     order, and the second the minor one (for those of same major
+  //     sort key) */
+  //   inline __device__ bool operator()
+  //   (const thrust::tuple<tag_t, node_t> &a,
+  //    const thrust::tuple<tag_t, node_t> &b);
 
-    const int dim;
-    const node_t *nodes;
-  };
+  //   const int dim;
+  //   const node_t *nodes;
+  // };
 
   template<typename node_t,typename node_traits>
   __global__
@@ -460,6 +460,7 @@ namespace cukd {
   {
     printf("node[%i] = (%f,%f)\n",i,points[i].x,points[i].y);
   }
+
   template<typename node_t, typename node_traits, int side>
   inline __device__
   void trickleDownHeap(int n, node_t *points, int numPoints, int dim)
@@ -580,17 +581,20 @@ namespace cukd {
       
       for (int d=0;d<num_dims;d++) {
         for (int i=begin;i<end;i++) 
-          printf("%6i",int(node_traits::get_coord(points[i],d)));
+          printf("%5.3f ",(node_traits::get_coord(points[i],d)));
+        // printf("%6i",int(node_traits::get_coord(points[i],d)));
         printf("\n");
       }
     }
   }
   
   template<typename node_t, typename node_traits>
-  void buildHeaps(/*! _heap_ root level */int L_h,
-                  /*! _build_ root level */int L_b,
-                  node_t *points,
-                  int numPoints,
+  void buildHeaps(/*! _heap_ root level */
+                  int          L_h,
+                  /*! _build_ root level */
+                  int          L_b,
+                  node_t      *points,
+                  int          numPoints,
                   cudaStream_t stream)
   {
     // printTree<node_t,node_traits>(points,numPoints);
@@ -603,13 +607,12 @@ namespace cukd {
 
 
 
-
-
-
   template<typename node_t, typename node_traits>
-  __global__ void d_fixPivots(/*! _build_ root level */int L_b,
-                              node_t *points,
-                              int numPoints)
+  __global__
+  void d_selectDimsOnLevel(int     L_b,
+                           node_t *points,
+                           int     numPoints,
+                           box_t<typename node_traits::point_t> *worldBounds)
   {
     int tid = threadIdx.x + blockIdx.x*blockDim.x;
     int numNodesOnL_b = numNodesOnLevel(L_b);
@@ -617,7 +620,46 @@ namespace cukd {
       return;
 
     int n = firstNodeOnLevel(L_b)+tid;
-    /* _probably_ can never happen: */ if (n >= numPoints) return;
+    if (n >= numPoints) return;
+                                           
+    using point_t  = typename node_traits::point_t;
+    enum { num_dims = num_dims_of<point_t>::value };
+
+    box_t<typename node_traits::point_t> bounds
+      = findBounds<node_t,node_traits>(n,worldBounds,points);
+    node_traits::set_dim(points[n],arg_max(bounds.size()));
+  }
+
+  template<typename node_t, typename node_traits>
+  void selectDimsOnLevel(int          L_b,
+                         node_t      *points,
+                         int          numPoints,
+                         box_t<typename node_traits::point_t> *worldBounds,
+                         cudaStream_t stream)
+  {
+    int numNodesOnL_b = numNodesOnLevel(L_b);
+    int bs = 128;
+    int nb = divRoundUp(numNodesOnL_b,bs);
+    d_selectDimsOnLevel<node_t,node_traits><<<nb,bs,0,stream>>>
+      (L_b,points,numPoints,worldBounds);
+  }
+  
+
+
+  template<typename node_t, typename node_traits>
+  __global__
+  void d_fixPivots(/*! _build_ root level */
+                   int     L_b,
+                   node_t *points,
+                   int     numPoints)
+  {
+    int tid = threadIdx.x + blockIdx.x*blockDim.x;
+    int numNodesOnL_b = numNodesOnLevel(L_b);
+    if (tid >= numNodesOnL_b)
+      return;
+
+    int n = firstNodeOnLevel(L_b)+tid;
+    if (n >= numPoints) return;
                                            
     int l = 2*n+1;
     int r = l+1;
@@ -626,8 +668,11 @@ namespace cukd {
     using scalar_t = typename scalar_type_of<point_t>::type;
     enum { num_dims = num_dims_of<point_t>::value };
     
-    int dim = L_b % num_dims;
-
+    const int  dim
+      = node_traits::has_explicit_dim
+      ? node_traits::get_dim(points[n])
+      : (L_b % num_dims);
+    
     scalar_t s_n = node_traits::get_coord(points[n],dim);
     if (l < numPoints && s_n < node_traits::get_coord(points[l],dim)) {
       swap(points[n],points[l]);
@@ -636,7 +681,8 @@ namespace cukd {
       swap(points[n],points[r]);
       // todo: trckle?
     }
-    // TODO: set_dim
+    if (node_traits::has_explicit_dim) 
+      node_traits::set_dim(points[n],dim);
   }
   
   template<typename node_t, typename node_traits>
@@ -654,33 +700,50 @@ namespace cukd {
   }
 
   template<typename node_t, typename node_traits>
-  void buildLevel(/*! level that we're ultimately _building_ */int L_b,
-                  int numLevels,
-                  node_t *d_points,
-                  int numPoints,
+  void buildLevel(/*! level that we're ultimately _building_ */
+                  int          L_b,
+                  int          numLevels,
+                  node_t      *d_points,
+                  int          numPoints,
+                  box_t<typename node_traits::point_t> *worldBounds,
                   cudaStream_t stream)
   {
     // printTree<node_t,node_traits>(d_points,numPoints);
     // std::cout << "==== building level " << L_b << std::endl << std::flush;
     // TODO: select and set dims on L_b
-    for (int L_h = numLevels-2; L_h > L_b; --L_h)
+    if (node_traits::has_explicit_dim && worldBounds)
+      selectDimsOnLevel<node_t,node_traits>(L_b,d_points,numPoints,worldBounds,stream);
+    for (int L_h = numLevels-1; L_h > L_b; --L_h)
       buildHeaps<node_t,node_traits>(L_h,L_b,d_points,numPoints,stream);
     fixPivots<node_t,node_traits>(L_b,d_points,numPoints,stream);
   }
   
   template<typename node_t, typename node_traits>
+  void buildTree(node_t      *points,
+                 int          numPoints,
+                 box_t<typename node_traits::point_t> *worldBounds,
+                 cudaStream_t stream)
+  {
+    if (worldBounds) 
+      computeBounds<node_t,node_traits>(worldBounds,points,numPoints,stream);
+    
+    int numLevels = BinaryTree::numLevelsFor(numPoints);
+    for (int L_b = 0; L_b < numLevels; L_b++)
+      buildLevel<node_t,node_traits>(L_b,numLevels,points,numPoints,worldBounds,stream);
+    
+    cudaStreamSynchronize(stream);
+    
+    // std::cout << "### DONE" << std::endl;
+    // printTree<node_t,node_traits>(points,numPoints);
+  }
+  
+  /*! non-generalized direction tree build */
+  template<typename node_t, typename node_traits>
   void buildTree(node_t *points,
                  int numPoints,
                  cudaStream_t stream)
   {
-    int numLevels = BinaryTree::numLevelsFor(numPoints);
-    for (int L_b = 0; L_b < numLevels-1; L_b++)
-      buildLevel<node_t,node_traits>(L_b,numLevels,points,numPoints,stream);
-
-    cudaStreamSynchronize(stream);
-
-    // std::cout << "### DONE" << std::endl;
-    // printTree<node_t,node_traits>(points,numPoints);
+    buildTree<node_t,node_traits>(points,numPoints,nullptr,stream);
   }
   
   // template<typename node_t, typename node_traits>
@@ -770,29 +833,29 @@ namespace cukd {
     'zip'-comparison in that the first element is the major sort
     order, and the second the minor one (for those of same major
     sort key) */
-  template<typename node_t, typename node_traits>
-  inline __device__
-  bool ZipCompare<node_t,node_traits>::operator()
-    (const thrust::tuple<tag_t, node_t> &a,
-     const thrust::tuple<tag_t, node_t> &b)
-  {
-    const auto tag_a = thrust::get<0>(a);
-    const auto tag_b = thrust::get<0>(b);
-    const auto pnt_a = thrust::get<1>(a);
-    const auto pnt_b = thrust::get<1>(b);
-    int dim
-      = node_traits::has_explicit_dim
-      // ? node_traits::get_dim(this->nodes[tag_a])
-      ? node_traits::get_dim(pnt_a)
-      : this->dim;
-    const auto coord_a = node_traits::get_coord(pnt_a,dim);
-    const auto coord_b = node_traits::get_coord(pnt_b,dim);
-    const bool less =
-      (tag_a < tag_b)
-      ||
-      ((tag_a == tag_b) && (coord_a < coord_b));
+  // template<typename node_t, typename node_traits>
+  // inline __device__
+  // bool ZipCompare<node_t,node_traits>::operator()
+  //   (const thrust::tuple<tag_t, node_t> &a,
+  //    const thrust::tuple<tag_t, node_t> &b)
+  // {
+  //   const auto tag_a = thrust::get<0>(a);
+  //   const auto tag_b = thrust::get<0>(b);
+  //   const auto pnt_a = thrust::get<1>(a);
+  //   const auto pnt_b = thrust::get<1>(b);
+  //   int dim
+  //     = node_traits::has_explicit_dim
+  //     // ? node_traits::get_dim(this->nodes[tag_a])
+  //     ? node_traits::get_dim(pnt_a)
+  //     : this->dim;
+  //   const auto coord_a = node_traits::get_coord(pnt_a,dim);
+  //   const auto coord_b = node_traits::get_coord(pnt_b,dim);
+  //   const bool less =
+  //     (tag_a < tag_b)
+  //     ||
+  //     ((tag_a == tag_b) && (coord_a < coord_b));
 
-    return less;
-  }
+  //   return less;
+  // }
 
 }
