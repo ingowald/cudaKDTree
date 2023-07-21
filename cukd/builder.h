@@ -339,8 +339,8 @@ namespace cukd {
   // }
 
 
-  template<typename T> struct is_float2 { enum { value = false }; };
-  template<> struct is_float2<float2> { enum { value = true }; };
+  // template<typename T> struct is_float2 { enum { value = false }; };
+  // template<> struct is_float2<float2> { enum { value = true }; };
     
 
   template<typename node_t,typename node_traits>
@@ -356,7 +356,7 @@ namespace cukd {
     
     box_t<point_t> bounds = *d_bounds;
     int curr = subtree;
-    const bool dbg = false;
+    // const bool dbg = false;
     while (curr > 0) {
       const int     parent = (curr+1)/2-1;
       const node_t &parent_node = d_nodes[parent];
@@ -367,16 +367,16 @@ namespace cukd {
       const scalar_t parent_split_pos
         = node_traits::get_coord(parent_node,parent_dim);
       
-      if (dbg) printf("# curr %i parent %i parent_dim %i parent_split %f\n",
-                      curr,parent,parent_dim,parent_split_pos);
+      // if (dbg) printf("# curr %i parent %i parent_dim %i parent_split %f\n",
+      //                 curr,parent,parent_dim,parent_split_pos);
 
  
-      if (dbg)
-        printf("  > in  (%f %f)(%f %f)\n",
-               ((float2&)bounds.lower).x,
-               ((float2&)bounds.lower).y,
-               ((float2&)bounds.upper).x,
-               ((float2&)bounds.upper).y);
+      // if (dbg)
+      //   printf("  > in  (%f %f)(%f %f)\n",
+      //          ((float2&)bounds.lower).x,
+      //          ((float2&)bounds.lower).y,
+      //          ((float2&)bounds.upper).x,
+      //          ((float2&)bounds.upper).y);
       if (curr & 1) {
         // curr is left child, set upper
         get_coord(bounds.upper,parent_dim)
@@ -388,11 +388,11 @@ namespace cukd {
           = max(parent_split_pos,
                 get_coord(bounds.lower,parent_dim));
       }
-      if (dbg) printf("  > out (%f %f)(%f %f)\n",
-                      ((float2&)bounds.lower).x,
-                      ((float2&)bounds.lower).y,
-                      ((float2&)bounds.upper).x,
-                      ((float2&)bounds.upper).y);
+      // if (dbg) printf("  > out (%f %f)(%f %f)\n",
+      //                 ((float2&)bounds.lower).x,
+      //                 ((float2&)bounds.lower).y,
+      //                 ((float2&)bounds.upper).x,
+      //                 ((float2&)bounds.upper).y);
       curr = parent;
     }
     
@@ -476,65 +476,63 @@ namespace cukd {
     }
   }
 
-  inline __device__
-  void print_node(int i, float2 *points)
-  {
-    printf("node[%i] = (%f,%f)\n",i,points[i].x,points[i].y);
-  }
+  // inline __device__
+  // void print_node(int i, float2 *points)
+  // {
+  //   printf("node[%i] = (%f,%f)\n",i,points[i].x,points[i].y);
+  // }
 
   template<typename node_t, typename node_traits, int side>
   inline __device__
   void trickleDownHeap(int n, node_t *points, int numPoints, int dim)
   {
-    bool dbg = 0;//n == 3;
+    // bool dbg = 0;//n == 3;
     
     const int input_n = n;
     using point_t  = typename node_traits::point_t;
     using scalar_t = typename scalar_type_of<point_t>::type;
     node_t point_n = points[n];
     scalar_t s_n = node_traits::get_coord(point_n,dim);
-    if (dbg) printf("TRICKLING node %i, s_n = %f, dim = %i\n",n,s_n,dim);
+    // if (dbg) printf("TRICKLING node %i, s_n = %f, dim = %i\n",n,s_n,dim);
     while (true) {
       int l = 2*n+1;
       if (l >= numPoints)
         break;
       scalar_t s_l = node_traits::get_coord(points[l],dim);
 
-
-      
       int c = l;
       scalar_t s_c = s_l;
-      if (dbg) printf("l = %i, s_l = %f\n",l,s_l);
+      // if (dbg) printf("l = %i, s_l = %f\n",l,s_l);
       
       int r = l+1;
       if (r < numPoints) {
         scalar_t s_r = node_traits::get_coord(points[r],dim);
-        if (dbg) printf("r = %i, s_r = %f\n",r,s_r);
+        // if (dbg) printf("r = %i, s_r = %f\n",r,s_r);
         if (!desiredOrder<scalar_t,side>(s_c,s_r)) {
           c = r;
           s_c = s_r;
         }
       }
-      if (dbg) printf("c = %i, s_c = %f\n",c,s_c);
+      // if (dbg) printf("c = %i, s_c = %f\n",c,s_c);
       if (desiredOrder<scalar_t,side>(s_n,s_c)) {
-        if (dbg) printf("in right order, done\n");
+        // if (dbg) printf("in right order, done\n");
         break;
       }
-      if (dbg)
-        printf("not in right order, setting %i to %i, and stepping to node %i\n",
-               n,c,c);
+      // if (dbg)
+      //   printf("not in right order, setting %i to %i, and stepping to node %i\n",
+      //          n,c,c);
 
       points[n] = points[c];
       n = c;
 
-      if (dbg) print_node(3,(float2*)points);
-      if (dbg) print_node(7,(float2*)points);
+      // if (dbg) print_node(3,(float2*)points);
+      // if (dbg) print_node(7,(float2*)points);
     }
     if (n != input_n) {
-      if (dbg) printf("final - setting %i to input point\n",n);
+      // if (dbg) printf("final - setting %i to input point\n",n);
       points[n] = point_n;
-      if (dbg) print_node(3,(float2*)points);
-      if (dbg) print_node(7,(float2*)points);
+      // if (dbg) print_node(3,(float2*)points);
+      // if (dbg) print_node(7,(float2*)points);
     }
   }
   
@@ -551,14 +549,11 @@ namespace cukd {
 
     int n = firstNodeOnLevel(L_h)+tid;
     // bool dbg = (n==3);
-    /* _probably_ can never happen: */ if (n >= numPoints) return;
+    if (n >= numPoints) return;
                                            
     int partner = partnerOf(n,L_h,L_b);
-    /* _probably_ can never happen: */ if (partner >= numPoints) return;
+    if (partner >= numPoints) return;
 
-
-    // if (dbg) printf("buildheaps n = %i partner = %i\n",n,partner);
-    
     if (partner < n)
       // only one of the two can do the work, or they'll race each
       // other - let's always pick the lower one.
@@ -571,18 +566,13 @@ namespace cukd {
       = node_traits::has_explicit_dim
       ? node_traits::get_dim(points[((n+1)>>(L_h-L_b))-1])
       : (L_b % num_dims);
-    // int dim = L_b % num_dims;
 
-    // xxx
-      
     while (1) {
-      // if (dbg) printf("trickle 1...\n");
       trickleDownHeap<node_t,node_traits,0>(n,points,numPoints,dim);
       trickleDownHeap<node_t,node_traits,1>(partner,points,numPoints,dim);
       if (node_traits::get_coord(points[partner],dim)
           <
           node_traits::get_coord(points[n],dim)) {
-        // if (dbg) printf("SWAPPING parners %i %i\n",n,partner);
         swap(points[n],points[partner]);
         continue;
       } else
@@ -629,7 +619,7 @@ namespace cukd {
     // printTree<node_t,node_traits>(points,numPoints);
     // std::cout << "---- building heaps on " << L_h << ", root level " << L_b << std::endl << std::flush;
     int numNodesOnL_h = numNodesOnLevel(L_h);
-    int bs = 128;
+    int bs = 1024;
     int nb = divRoundUp(numNodesOnL_h,bs);
     d_buildHeaps<node_t,node_traits><<<nb,bs,0,stream>>>(L_h,L_b,points,numPoints);
   }
@@ -672,7 +662,7 @@ namespace cukd {
   {
     // std::cout << "selecting dims ..." << std::endl << std::flush;
     int numNodesOnL_b = numNodesOnLevel(L_b);
-    int bs = 128;
+    int bs = 1024;
     int nb = divRoundUp(numNodesOnL_b,bs);
     d_selectDimsOnLevel<node_t,node_traits><<<nb,bs,0,stream>>>
       (L_b,points,numPoints,worldBounds);
@@ -730,7 +720,7 @@ namespace cukd {
     std::cout << "--- fixing pivots on " << L_b << std::endl << std::flush;
 #endif
     int numNodesOnL_b = numNodesOnLevel(L_b);
-    int bs = 128;
+    int bs = 1024;
     int nb = divRoundUp(numNodesOnL_b,bs);
     d_fixPivots<node_t,node_traits><<<nb,bs,0,stream>>>(L_b,points,numPoints);
   }

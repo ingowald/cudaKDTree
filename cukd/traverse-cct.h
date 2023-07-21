@@ -21,14 +21,14 @@
 #pragma once
 
 namespace cukd {
-  template<int numBytes>
-  struct auto_align {
-    enum { value
-           = ((numBytes % 16) == 0) ? 16
-           : (((numBytes % 8) == 0) ? 8 : 4) };
-  };
+//   template<int numBytes>
+//   struct auto_align {
+//     enum { value
+//            = ((numBytes % 16) == 0) ? 16
+//            : (((numBytes % 8) == 0) ? 8 : 4) };
+//   };
 
-#define _MAX(a,b) ((a) > (b) ? (a) : (b))
+// #define _MAX(a,b) ((a) > (b) ? (a) : (b))
   
   template<typename result_t,
            typename node_t,
@@ -47,7 +47,8 @@ namespace cukd {
     
     scalar_t cullDist = result.initialCullDist2();
 
-    struct __align__(_MAX(alignof(point_t),auto_align<sizeof(int)+sizeof(point_t)>::value)) StackEntry {
+    struct// __align__(_MAX(alignof(point_t),auto_align<sizeof(int)+sizeof(point_t)>::value))
+      StackEntry {
       int     nodeID;
       point_t closestCorner;
     };
@@ -76,7 +77,7 @@ namespace cukd {
       }
       CUKD_STATS(if (d_stats)
                    atomicAdd(d_stats,1));
-      const auto node  = d_nodes[nodeID];
+      const auto &node  = d_nodes[nodeID];
       const point_t nodePoint = node_traits::get_point(node);
       {
         const auto sqrDist = sqrDistance(nodePoint,queryPoint);
