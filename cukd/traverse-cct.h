@@ -67,7 +67,7 @@ namespace cukd {
       }
       CUKD_STATS(if (d_stats)
                    atomicAdd(d_stats,1));
-      const auto &node  = d_nodes[nodeID];
+      const auto node  = d_nodes[nodeID];
       const point_t nodePoint = node_traits::get_point(node);
       {
         const auto sqrDist = sqrDistance(nodePoint,queryPoint);
