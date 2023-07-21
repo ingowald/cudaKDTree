@@ -619,7 +619,7 @@ namespace cukd {
     // printTree<node_t,node_traits>(points,numPoints);
     // std::cout << "---- building heaps on " << L_h << ", root level " << L_b << std::endl << std::flush;
     int numNodesOnL_h = numNodesOnLevel(L_h);
-    int bs = 1024;
+    int bs = 64;
     int nb = divRoundUp(numNodesOnL_h,bs);
     d_buildHeaps<node_t,node_traits><<<nb,bs,0,stream>>>(L_h,L_b,points,numPoints);
   }
@@ -662,7 +662,7 @@ namespace cukd {
   {
     // std::cout << "selecting dims ..." << std::endl << std::flush;
     int numNodesOnL_b = numNodesOnLevel(L_b);
-    int bs = 1024;
+    int bs = 64;
     int nb = divRoundUp(numNodesOnL_b,bs);
     d_selectDimsOnLevel<node_t,node_traits><<<nb,bs,0,stream>>>
       (L_b,points,numPoints,worldBounds);
@@ -720,7 +720,7 @@ namespace cukd {
     std::cout << "--- fixing pivots on " << L_b << std::endl << std::flush;
 #endif
     int numNodesOnL_b = numNodesOnLevel(L_b);
-    int bs = 1024;
+    int bs = 64;
     int nb = divRoundUp(numNodesOnL_b,bs);
     d_fixPivots<node_t,node_traits><<<nb,bs,0,stream>>>(L_b,points,numPoints);
   }
