@@ -34,7 +34,6 @@ requires zero additional memory during building, but for large arrays
 (> 1M points) will be about an order of magnitude slower: 
 
 ```
-
   Builder variants "cheat sheet"
 
   builder_thrust:

@@ -20,7 +20,6 @@
 #include "cukd/box.h"
 #include <cuda.h>
 
-
 /*
 
   Builder variants "cheat sheet"
