@@ -6,8 +6,7 @@ namespace cukd {
            typename node_traits=default_node_traits<node_t>>
   inline __device__
   box_t<typename node_traits::point_t>
-  recomputeBounds(CUKD_STATS_ARG(unsigned long long *d_stats,)
-                  int curr,
+  recomputeBounds(int curr,
                   box_t<typename node_traits::point_t> bounds,
                   const node_t *d_nodes
                   )
@@ -20,8 +19,6 @@ namespace cukd {
       if (curr == 0) break;
       const int parent = (curr+1)/2-1;
 
-      CUKD_STATS(if (d_stats)
-                   atomicAdd(d_stats,1ull));
       const auto &parent_node = d_nodes[parent];
       const int   parent_dim
         = node_traits::has_explicit_dim
@@ -51,7 +48,6 @@ namespace cukd {
            typename node_traits=default_node_traits<node_t>>
   inline __device__
   void traverse_sf_imp(result_t &result,
-                       CUKD_STATS_ARG(unsigned long long *d_stats,)
                        typename node_traits::point_t queryPoint,
                        const box_t<typename node_traits::point_t> worldBounds,
                        const node_t *d_nodes,
@@ -77,7 +73,7 @@ namespace cukd {
         return;// closest_found_so_far;
 
       bounds = recomputeBounds<node_t,node_traits>
-        (CUKD_STATS_ARG(d_stats,)curr,worldBounds,d_nodes);
+        (curr,worldBounds,d_nodes);
       const int parent = (curr+1)/2-1;
       
       point_t closestPointOnSubtreeBounds = project(bounds,queryPoint);
@@ -100,8 +96,6 @@ namespace cukd {
 
         continue;
       }
-      CUKD_STATS(if (d_stats)
-                   atomicAdd(d_stats,1ull));
       const auto &curr_node = d_nodes[curr];
       const int  child = 2*curr+1;
       const bool from_child = (prev >= child);

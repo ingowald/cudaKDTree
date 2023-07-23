@@ -161,15 +161,14 @@ namespace cukd {
            typename node_t,
            typename node_traits=default_node_traits<node_t>>
   inline __device__
-  float knn(CUKD_STATS_ARG(unsigned long long *d_stats,)
-            CandidateList &result,
+  float knn(CandidateList &result,
             typename node_traits::point_t queryPoint,
             const box_t<typename node_traits::point_t> worldBounds,
             const node_t *d_nodes,
             int N)
   {
     traverse_sf_imp<CandidateList,node_t,node_traits>
-      (result,CUKD_STATS_ARG(d_stats,)queryPoint,worldBounds,d_nodes,N);
+      (result,queryPoint,worldBounds,d_nodes,N);
     return result.returnValue();
   }
 } // :: cukd
@@ -182,15 +181,14 @@ namespace cukd {
            typename node_t,
            typename node_traits=default_node_traits<node_t>>
   inline __device__
-  float knn(CUKD_STATS_ARG(unsigned long long *d_stats,)
-            CandidateList &result,
+  float knn(CandidateList &result,
             typename node_traits::point_t queryPoint,
             const box_t<typename node_traits::point_t> worldBounds,
             const node_t *d_nodes,
             int N)
   {
     traverse_cct<CandidateList,node_t,node_traits>
-      (result,CUKD_STATS_ARG(d_stats,)queryPoint,worldBounds,d_nodes,N);
+      (result,queryPoint,worldBounds,d_nodes,N);
     return result.returnValue();
   }
 } // :: cukd
@@ -205,14 +203,13 @@ namespace cukd {
            typename node_t,
            typename node_traits=default_node_traits<node_t>>
   inline __device__
-  float knn(CUKD_STATS_ARG(unsigned long long *d_stats,)
-            CandidateList &result,
+  float knn(CandidateList &result,
             typename node_traits::point_t queryPoint,
             const node_t *d_nodes,
             int N)
   {
     traverse_stack_free<CandidateList,node_t,node_traits>
-      (result,CUKD_STATS_ARG(d_stats,)queryPoint,d_nodes,N);
+      (result,queryPoint,d_nodes,N);
     return result.returnValue();
   }
 } // :: cukd
@@ -224,14 +221,13 @@ namespace cukd {
            typename node_t,
            typename node_traits=default_node_traits<node_t>>
   inline __device__
-  float knn(CUKD_STATS_ARG(unsigned long long *d_stats,)
-            CandidateList &result,
+  float knn(CandidateList &result,
             typename node_traits::point_t queryPoint,
             const node_t *d_nodes,
             int N)
   {
     traverse_default<CandidateList,node_t,node_traits>
-      (result,CUKD_STATS_ARG(d_stats,)queryPoint,d_nodes,N);
+      (result,queryPoint,d_nodes,N);
     return result.returnValue();
   }
   
