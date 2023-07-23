@@ -21,21 +21,12 @@
 #pragma once
 
 namespace cukd {
-//   template<int numBytes>
-//   struct auto_align {
-//     enum { value
-//            = ((numBytes % 16) == 0) ? 16
-//            : (((numBytes % 8) == 0) ? 8 : 4) };
-//   };
-
-// #define _MAX(a,b) ((a) > (b) ? (a) : (b))
   
   template<typename result_t,
            typename node_t,
            typename node_traits=default_node_traits<node_t>>
   inline __device__
   void traverse_cct(result_t &result,
-                    CUKD_STATS_ARG(unsigned long long *d_stats,)
                     typename node_traits::point_t queryPoint,
                     const box_t<typename node_traits::point_t> d_bounds,
                     const node_t *d_nodes,
@@ -75,8 +66,6 @@ namespace cukd {
           break;
         }
       }
-      CUKD_STATS(if (d_stats)
-                   atomicAdd(d_stats,1));
       const auto &node  = d_nodes[nodeID];
       const point_t nodePoint = node_traits::get_point(node);
       {

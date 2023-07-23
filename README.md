@@ -11,21 +11,52 @@ trees, and *querying* them.
 
 ## Building Left-balanced KD-Trees
 
-The main builder provide dy this repo is one for those that are
-left-balanced, and where the split dimension in each level of the tree
-is chosen in a round-robin manner; i.e., for a builder over float3
-data, the root would split in x coordinate, the next level in y, then
-z, then the fourth level is back to x, etc. I also have a builder
-where the split dimension gets chosen based on the widest extent of
-the given subtree, but that one isn't included yet - let me know if
-you need it.
+This repo contains three different methods for building left-balanced
+and complete k-d trees. All three variants are templated over the data
+type contained in the tree; often this is simply a vector/point type
+like cuda `float3`, `int4`, etc; but the templating mechanism used
+also allow for specify more complex data types such as points carrying
+a certain payload (e.g., `struct { int3 position, int pointID };`), or
+even data points that allow for specifying a split dimensoin (to build
+what Samet calls 'generalized' k-d trees, and what Bentley originally
+called 'optimized' k-dtrees - those where each node can choose which
+dimension it wants to split in).
 
-To allow tihs library to build k-d trees over many different types of
-input data types, formats, etc, the entire builder - and most of the
-traversal examples - are templated in a way that allows for expressing
-different dimensionality of the input data (ie, float2 vs float3
-points), different unerlying scalar types (ie, float3 vs int3 point),
-whether or not there is additional payload with each data point, etc.
+The three builders all offer exactly the same caller interface, and
+will all build *exactly* the same trees, but they offer differnt
+trade-offs regarding build speed vs temporary memory used during
+building. `cubit/builder_thrust` is the fastest, but relies on
+`thrust`, and requires up to 3x as much memory during building as the
+input data itself. `cubit/builder_bitonic` doesn't need thrust, runs
+better in a stream, and in terms of temp mem during building needs
+only exactly one int per input point. Finally, `cubit/builder_inplace`
+requires zero additional memory during building, but for large arrays
+(> 1M points) will be about an order of magnitude slower: 
+
+```
+  Builder variants "cheat sheet"
+
+  builder_thrust:
+  - temporary memory overhead for N points: N ints + order 2N points 
+    (ie, total mem order 3x that of input data!)
+  - perf 100K float3s (4090) :   ~4ms
+  - perf   1M float3s (4090) :  ~20ms
+  - perf  10M float3s (4090) : ~200ms
+  
+  builder_bitonic:
+  - temporary memory overhead for N points: N ints 
+    (ie, ca 30% mem overhead for float3)
+  - perf 100K float3s (4090) :  ~10ms
+  - perf   1M float3s (4090) :  ~27ms
+  - perf  10M float3s (4090) : ~390ms
+
+  builder_inplace:
+  - temporary memory overhead for N points: nada, nil, zilch.
+  - perf 100K float3s (4090) :  ~10ms
+  - perf   1M float3s (4090) : ~220ms
+  - perf  10M float3s (4090) : ~4.3ms
+
+```
 
 ### Building over `float3` and similar built-in CUDA types
 

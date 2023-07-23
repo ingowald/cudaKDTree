@@ -19,16 +19,9 @@
 #include "cukd/helpers.h"
 #include "cukd/box.h"
 
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-#include <thrust/execution_policy.h>
-#include <thrust/fill.h>
-#include <thrust/sort.h>
 #include <cuda.h>
-#include <thrust/binary_search.h>
-#include <device_launch_parameters.h>
-#include <thrust/random/linear_congruential_engine.h>
-#include <thrust/random/uniform_real_distribution.h>
+
+#include "cukd/cubit/cubit_zip.h"
 
 namespace cukd {
   
@@ -65,9 +58,9 @@ namespace cukd {
     // ------------------------------------------------------------------
 
     /*! the *logical* type used for mathematical things like distance
-        computations, specifiing the location of a data point,
-        etc. this defines number of dimensions, scalar type, etc, but
-        leaves the node to define its own data layout */
+      computations, specifiing the location of a data point,
+      etc. this defines number of dimensions, scalar type, etc, but
+      leaves the node to define its own data layout */
     using point_t = node_t;
 
     // ------------------------------------------------------------------
@@ -99,9 +92,9 @@ namespace cukd {
     enum { has_explicit_dim = false };
     
     /*! !{ just defining this for completeness, get/set_dim should never
-        get called for this type becaues we have set has_explicit_dim
-        set to false. note traversal should ONLY ever call this
-        function for node_t's that define has_explicit_dim to true */
+      get called for this type becaues we have set has_explicit_dim
+      set to false. note traversal should ONLY ever call this
+      function for node_t's that define has_explicit_dim to true */
     static inline __device__ int  get_dim(const node_t &) { return -1; }
     static inline __device__ void set_dim(node_t &, int) {}
     /*! @} */
@@ -149,18 +142,29 @@ namespace cukd {
 
     buildKDTree<float4>(...);
   */
-  template<typename node_t, typename node_traits=default_node_traits<node_t>>
+  template<typename node_t,
+           typename node_traits=default_node_traits<node_t>>
   void buildTree(node_t *d_points,
                  int numPoints,
                  cudaStream_t stream = 0);
 
-  template<typename node_t, typename node_traits=default_node_traits<node_t>>
-  void buildTree(node_t *d_points,
-                 int numPoints,
+  /*! build a k-d over given set of points, but can build both
+      round-robin-style and "generalized" k-d trees where the split
+      dimension for each subtree is chosen based on the dimension
+      where that subtree's domain is widest. If the
+      node_traits::has_explicit_dim field is true, the latter type of
+      k-d tree is build; if it is false, this function build a regular
+      round-robin k-d tree instead
+ */
+  template<typename node_t,
+           typename node_traits=default_node_traits<node_t>>
+  void buildTree(node_t      *points,
+                 int          numPoints,
                  box_t<typename node_traits::point_t> *worldBounds,
                  cudaStream_t stream = 0);
-  
-  template<typename node_t, typename node_traits=default_node_traits<node_t>>
+
+  template<typename node_t,
+           typename node_traits=default_node_traits<node_t>>
   void computeBounds(cukd::box_t<typename node_traits::point_t> *d_bounds,
                      const node_t *d_points,
                      int numPoints,
@@ -247,22 +251,44 @@ namespace cukd {
       (d_bounds,d_points,numPoints);
   }
 
-
   template<typename node_t, typename node_traits>
-  struct ZipCompare {
-    ZipCompare(const int dim, const node_t *nodes) : dim(dim), nodes(nodes) {}
-
-    /*! the actual comparison operator; will perform a
-      'zip'-comparison in that the first element is the major sort
-      order, and the second the minor one (for those of same major
-      sort key) */
-    inline __device__ bool operator()
-    (const thrust::tuple<tag_t, node_t> &a,
-     const thrust::tuple<tag_t, node_t> &b);
-
-    const int dim;
-    const node_t *nodes;
+  struct ZipLess {
+    inline __device__
+    bool operator()(const cubit::tuple<tag_t, node_t> &a,
+                    const cubit::tuple<tag_t, node_t> &b) const;
+    int dim;
+    // tag_t  *const __restrict__ tags;
+    // node_t *const __restrict__ nodes;
+    // tuple<tag_t,node_t> get(int where) const
+    // { return { tags[where], nodes[where] }; }
+    // void set(int where, const tuple<tag_t,node_t> &what) const
+    // { tags[where] = what.u; nodes[where] = what.v; }
   };
+  
+  // template<typename node_t, typename node_traits>
+  // struct ZipCompare {
+  //   inline __device__ bool operator()
+  //   (const thrust::tuple<tag_t, node_t> &a,
+  //    const thrust::tuple<tag_t, node_t> &b);
+  //   int dim;
+  // };
+
+  // template<typename node_t, typename node_traits>
+  // struct ZipCompare {
+  //   ZipCompare(const int dim, const node_t *nodes) : dim(dim), nodes(nodes) {}
+
+  //   /*! the actual comparison operator; will perform a
+  //     'zip'-comparison in that the first element is the major sort
+  //     order, and the second the minor one (for those of same major
+  //     sort key) */
+  //   inline __device__ bool operator()
+  //   (const thrust::tuple<tag_t, node_t> &a,
+  //    const thrust::tuple<tag_t, node_t> &b);
+
+    
+  //   const int     dim;
+  //   const node_t *nodes;
+  // };
 
   template<typename node_t,typename node_traits>
   __global__
@@ -273,10 +299,10 @@ namespace cukd {
     using point_t  = typename node_traits::point_t;
     using scalar_t = typename scalar_type_of<point_t>::type;
     enum { num_dims = num_dims_of<point_t>::value };
-    
+
     const int tid = threadIdx.x+blockIdx.x*blockDim.x;
     if (tid >= numPoints) return;
-
+    
     int dim = arg_max(d_bounds->size());
     node_traits::set_dim(d_nodes[tid],dim);
   }
@@ -442,93 +468,6 @@ namespace cukd {
   template<typename node_t, typename node_traits>
   void buildTree(node_t *d_points,
                  int numPoints,
-                 cudaStream_t stream)
-  {
-    using point_t  = typename node_traits::point_t;
-    using scalar_t = typename scalar_type_of<point_t>::type;
-    enum { num_dims = num_dims_of<point_t>::value };
-    
-    /* thrust helper typedefs for the zip iterator, to make the code
-       below more readable */
-    typedef typename thrust::device_vector<tag_t>::iterator tag_iterator;
-    typedef typename thrust::device_vector<node_t>::iterator point_iterator;
-    typedef thrust::tuple<tag_iterator,point_iterator> iterator_tuple;
-    typedef thrust::zip_iterator<iterator_tuple> tag_point_iterator;
-
-    // check for invalid input, and return gracefully if so
-    if (numPoints < 1) return;
-
-    /* the helper array  we use to store each node's subtree ID in */
-    // TODO allocate in stream?
-    thrust::device_vector<tag_t> tags(numPoints);
-    /* to kick off the build, every element is in the only
-       level-0 subtree there is, namely subtree number 0... duh */
-    thrust::fill(thrust::device.on(stream),tags.begin(),tags.end(),0);
-
-    /* create the zip iterators we use for zip-sorting the tag and
-       points array */
-    thrust::device_ptr<node_t> points_begin(d_points);
-    thrust::device_ptr<node_t> points_end(d_points+numPoints);
-    tag_point_iterator begin = thrust::make_zip_iterator
-      (thrust::make_tuple(tags.begin(),points_begin));
-    tag_point_iterator end = thrust::make_zip_iterator
-      (thrust::make_tuple(tags.end(),points_end));
-
-    /* compute number of levels in the tree, which dicates how many
-       construction steps we need to run */
-    const int numLevels = BinaryTree::numLevelsFor(numPoints);
-    const int deepestLevel = numLevels-1;
-
-    using box_t = cukd::box_t<point_t>;
-    box_t *worldBounds = 0;
-    if (node_traits::has_explicit_dim) {
-      cudaMallocAsync((void **)&worldBounds,sizeof(*worldBounds),stream);
-      computeBounds<node_t,node_traits>(worldBounds,d_points,numPoints,stream);
-      cudaStreamSynchronize(stream);
-      
-      const int blockSize = 128;
-      chooseInitialDim<node_t,node_traits>
-        <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
-        (worldBounds,d_points,numPoints);
-      cudaStreamSynchronize(stream);
-    }
-    
-    
-    /* now build each level, one after another, cycling through the
-       dimensoins */
-    for (int level=0;level<deepestLevel;level++) {
-      thrust::sort(thrust::device.on(stream),begin,end,
-                   ZipCompare<node_t,node_traits>((level)%num_dims,d_points));
-      
-      const int blockSize = 128;
-      if (node_traits::has_explicit_dim) {
-        updateTagsAndSetDims<node_t,node_traits>
-          <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
-          (worldBounds,thrust::raw_pointer_cast(tags.data()),d_points,numPoints,level);
-      } else {
-        updateTag<<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
-          (thrust::raw_pointer_cast(tags.data()),numPoints,level);
-      }
-      cudaStreamSynchronize(stream);
-    }
-    
-    /* do one final sort, to put all elements in order - by now every
-       element has its final (and unique) nodeID stored in the tag[]
-       array, so the dimension we're sorting in really won't matter
-       any more */
-    thrust::sort(thrust::device.on(stream),begin,end,
-                 ZipCompare<node_t,node_traits>((deepestLevel)%num_dims,d_points));
-    if (node_traits::has_explicit_dim) 
-      cudaFreeAsync(worldBounds,stream);
-  }
-
-
-
-
-
-  template<typename node_t, typename node_traits>
-  void buildTree(node_t *d_points,
-                 int numPoints,
                  box_t<typename node_traits::point_t> *worldBounds,
                  cudaStream_t stream)
   {
@@ -538,44 +477,104 @@ namespace cukd {
     
     /* thrust helper typedefs for the zip iterator, to make the code
        below more readable */
-    typedef typename thrust::device_vector<tag_t>::iterator tag_iterator;
-    typedef typename thrust::device_vector<node_t>::iterator point_iterator;
-    typedef thrust::tuple<tag_iterator,point_iterator> iterator_tuple;
-    typedef thrust::zip_iterator<iterator_tuple> tag_point_iterator;
+    // typedef typename thrust::device_vector<tag_t>::iterator tag_iterator;
+    // typedef typename thrust::device_vector<node_t>::iterator point_iterator;
+    // typedef thrust::tuple<tag_iterator,point_iterator> iterator_tuple;
+    // typedef thrust::zip_iterator<iterator_tuple> tag_point_iterator;
 
     // check for invalid input, and return gracefully if so
     if (numPoints < 1) return;
 
     /* the helper array  we use to store each node's subtree ID in */
     // TODO allocate in stream?
-    thrust::device_vector<tag_t> tags(numPoints);
-    /* to kick off the build, every element is in the only
-       level-0 subtree there is, namely subtree number 0... duh */
-    thrust::fill(thrust::device.on(stream),tags.begin(),tags.end(),0);
-
-    /* create the zip iterators we use for zip-sorting the tag and
-       points array */
-    thrust::device_ptr<node_t> points_begin(d_points);
-    thrust::device_ptr<node_t> points_end(d_points+numPoints);
-    tag_point_iterator begin = thrust::make_zip_iterator
-      (thrust::make_tuple(tags.begin(),points_begin));
-    tag_point_iterator end = thrust::make_zip_iterator
-      (thrust::make_tuple(tags.end(),points_end));
-
+    tag_t *tags = 0;
+    CUKD_CUDA_CALL(MallocAsync((void**)&tags,numPoints*sizeof(tag_t),stream));
+    CUKD_CUDA_CALL(MemsetAsync(tags,0,numPoints*sizeof(tag_t),stream));
+    
     /* compute number of levels in the tree, which dicates how many
        construction steps we need to run */
     const int numLevels = BinaryTree::numLevelsFor(numPoints);
     const int deepestLevel = numLevels-1;
 
-    using box_t = cukd::box_t<point_t>;
-    if (worldBounds) {
+    if (worldBounds) 
       computeBounds<node_t,node_traits>(worldBounds,d_points,numPoints,stream);
-    }
+    
+    const int blockSize = 128;
     if (node_traits::has_explicit_dim) {
       if (!worldBounds)
         throw std::runtime_error
-          ("cukd::builder_thrust: asked to build k-d tree over nodes"
-           " with explciit dims, but no memory for world bounds provided");
+          ("cukd::builder_atomic: asked to build k-d tree over "
+           "nodes with explciit dims, but no memory for world bounds provided");
+      chooseInitialDim<node_t,node_traits>
+        <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
+        (worldBounds,d_points,numPoints);
+      // CUKD_CUDA_CALL(StreamSynchronize(stream));
+    }
+    
+    
+    enum { zip_block_size = ((sizeof(node_t)>16)?256:1024) };
+    /* now build each level, one after another, cycling through the
+       dimensions */
+    for (int level=0;level<deepestLevel;level++) {
+      cubit::zip_sort<tag_t,node_t,ZipLess<node_t,node_traits>,zip_block_size>
+        (tags,d_points,numPoints,ZipLess<node_t,node_traits>{level%num_dims});
+      const int blockSize = 128;
+      if (node_traits::has_explicit_dim) {
+        updateTagsAndSetDims<node_t,node_traits>
+          <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
+          (worldBounds,tags,d_points,numPoints,level);
+      } else {
+        updateTag<<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
+          (tags,numPoints,level);
+      }
+      // CUKD_CUDA_CALL(StreamSynchronize(stream));
+    }
+    
+    /* do one final sort, to put all elements in order - by now every
+       element has its final (and unique) nodeID stored in the tag[]
+       array, so the dimension we're sorting in really won't matter
+       any more */
+    cubit::zip_sort<tag_t,node_t,ZipLess<node_t,node_traits>,zip_block_size>
+      (tags,d_points,numPoints,ZipLess<node_t,node_traits>{deepestLevel%num_dims});
+    
+    // if (sizeof(node_t) >= 16) {
+    //   cubit::zip_sort<tag_t,node_t,ZipLess<node_t,node_traits>,256>
+    //     (tags,d_points,numPoints,ZipLess<node_t,node_traits>{deepestLevel%num_dims});
+    // } else {
+    //   cubit::zip_sort<tag_t,node_t,ZipLess<node_t,node_traits>,1024>
+    //     (tags,d_points,numPoints,ZipLess<node_t,node_traits>{deepestLevel%num_dims});
+    // }
+    // thrust::sort(thrust::device.on(stream),begin,end,
+    //              ZipLess<node_t,node_traits>((deepestLevel)%num_dims,d_points));
+    // if (node_traits::has_explicit_dim) 
+    //   cudaFreeAsync(worldBounds,stream);
+
+    // CUKD_CUDA_CALL(StreamSynchronize(stream));
+    cudaFreeAsync(tags,stream);
+  }
+
+
+
+
+
+
+
+  template<typename node_t, typename node_traits>
+  void buildTree(node_t *d_points,
+                 int numPoints,
+                 cudaStream_t stream)
+  {
+    using point_t  = typename node_traits::point_t;
+    using scalar_t = typename scalar_type_of<point_t>::type;
+    enum { num_dims = num_dims_of<point_t>::value };
+    
+    if (numPoints < 1) return;
+
+    using box_t = cukd::box_t<point_t>;
+    box_t *worldBounds = 0;
+    if (node_traits::has_explicit_dim) {
+      cudaMallocAsync((void **)&worldBounds,sizeof(*worldBounds),stream);
+      computeBounds<node_t,node_traits>(worldBounds,d_points,numPoints,stream);
       
       const int blockSize = 128;
       chooseInitialDim<node_t,node_traits>
@@ -583,38 +582,12 @@ namespace cukd {
         (worldBounds,d_points,numPoints);
       cudaStreamSynchronize(stream);
     }
-    
-    
-    /* now build each level, one after another, cycling through the
-       dimensoins */
-    for (int level=0;level<deepestLevel;level++) {
-      thrust::sort(thrust::device.on(stream),begin,end,
-                   ZipCompare<node_t,node_traits>((level)%num_dims,d_points));
-      
-      const int blockSize = 128;
-      if (node_traits::has_explicit_dim) {
-        updateTagsAndSetDims<node_t,node_traits>
-          <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
-          (worldBounds,thrust::raw_pointer_cast(tags.data()),d_points,numPoints,level);
-      } else {
-        updateTag<<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
-          (thrust::raw_pointer_cast(tags.data()),numPoints,level);
-      }
-      cudaStreamSynchronize(stream);
-    }
-    
-    /* do one final sort, to put all elements in order - by now every
-       element has its final (and unique) nodeID stored in the tag[]
-       array, so the dimension we're sorting in really won't matter
-       any more */
-    thrust::sort(thrust::device.on(stream),begin,end,
-                 ZipCompare<node_t,node_traits>((deepestLevel)%num_dims,d_points));
+    buildTree<node_t,node_traits>(d_points,numPoints,worldBounds,stream);
     if (node_traits::has_explicit_dim) 
       cudaFreeAsync(worldBounds,stream);
   }
 
-
-
+  
 
   /*! the actual comparison operator; will perform a
     'zip'-comparison in that the first element is the major sort
@@ -622,14 +595,18 @@ namespace cukd {
     sort key) */
   template<typename node_t, typename node_traits>
   inline __device__
-  bool ZipCompare<node_t,node_traits>::operator()
-    (const thrust::tuple<tag_t, node_t> &a,
-     const thrust::tuple<tag_t, node_t> &b)
+  bool ZipLess<node_t,node_traits>::operator()
+    (const cubit::tuple<tag_t, node_t> &a,
+     const cubit::tuple<tag_t, node_t> &b) const
   {
-    const auto tag_a = thrust::get<0>(a);
-    const auto tag_b = thrust::get<0>(b);
-    const auto pnt_a = thrust::get<1>(a);
-    const auto pnt_b = thrust::get<1>(b);
+    const auto tag_a = a.u;//thrust::get<0>(a);
+    const auto tag_b = b.u;//thrust::get<0>(b);
+
+    if (tag_a < tag_b) return true;
+    if (tag_a > tag_b) return false;
+    
+    const auto &pnt_a = a.v;//thrust::get<1>(a);
+    const auto &pnt_b = b.v;//thrust::get<1>(b);
     int dim
       = node_traits::has_explicit_dim
       // ? node_traits::get_dim(this->nodes[tag_a])
@@ -637,12 +614,13 @@ namespace cukd {
       : this->dim;
     const auto coord_a = node_traits::get_coord(pnt_a,dim);
     const auto coord_b = node_traits::get_coord(pnt_b,dim);
-    const bool less =
-      (tag_a < tag_b)
-      ||
-      ((tag_a == tag_b) && (coord_a < coord_b));
+    return coord_a < coord_b;
+    // const bool less =
+    //   (tag_a < tag_b)
+    //   ||
+    //   ((tag_a == tag_b) && (coord_a < coord_b));
 
-    return less;
+    // return less;
   }
 
 }
