@@ -20,9 +20,9 @@
 #include "cukd/box.h"
 #include <cuda.h>
 
-#if 1
+#if 0
 # include "cukd/builder_bitonic.h"
-#elif 0
+#elif 1
 # include "cukd/builder_inplace.h"
 #else
 # include "cukd/builder_thrust.h"

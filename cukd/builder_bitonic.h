@@ -488,8 +488,8 @@ namespace cukd {
     /* the helper array  we use to store each node's subtree ID in */
     // TODO allocate in stream?
     tag_t *tags = 0;
-    cudaMallocAsync((void**)&tags,numPoints*sizeof(tag_t),stream);
-    cudaMemsetAsync((void**)&tags,0,numPoints*sizeof(tag_t),stream);
+    CUKD_CUDA_CALL(MallocAsync((void**)&tags,numPoints*sizeof(tag_t),stream));
+    CUKD_CUDA_CALL(MemsetAsync(tags,0,numPoints*sizeof(tag_t),stream));
     
     /* compute number of levels in the tree, which dicates how many
        construction steps we need to run */
@@ -502,17 +502,19 @@ namespace cukd {
     const int blockSize = 128;
     if (node_traits::has_explicit_dim) {
       if (!worldBounds)
-        throw std::runtime_error("cukd::builder_aotmic: asked to build k-d tree over nodes with explciit dims, but no memory for world bounds provided");
+        throw std::runtime_error
+          ("cukd::builder_atomic: asked to build k-d tree over "
+           "nodes with explciit dims, but no memory for world bounds provided");
       chooseInitialDim<node_t,node_traits>
         <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
         (worldBounds,d_points,numPoints);
-      cudaStreamSynchronize(stream);
+      // CUKD_CUDA_CALL(StreamSynchronize(stream));
     }
     
     
     enum { zip_block_size = ((sizeof(node_t)>16)?256:1024) };
     /* now build each level, one after another, cycling through the
-       dimensoins */
+       dimensions */
     for (int level=0;level<deepestLevel;level++) {
       cubit::zip_sort<tag_t,node_t,ZipLess<node_t,node_traits>,zip_block_size>
         (tags,d_points,numPoints,ZipLess<node_t,node_traits>{level%num_dims});
@@ -525,7 +527,7 @@ namespace cukd {
         updateTag<<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
           (tags,numPoints,level);
       }
-      cudaStreamSynchronize(stream);
+      // CUKD_CUDA_CALL(StreamSynchronize(stream));
     }
     
     /* do one final sort, to put all elements in order - by now every
@@ -547,6 +549,7 @@ namespace cukd {
     // if (node_traits::has_explicit_dim) 
     //   cudaFreeAsync(worldBounds,stream);
 
+    // CUKD_CUDA_CALL(StreamSynchronize(stream));
     cudaFreeAsync(tags,stream);
   }
 
@@ -598,8 +601,12 @@ namespace cukd {
   {
     const auto tag_a = a.u;//thrust::get<0>(a);
     const auto tag_b = b.u;//thrust::get<0>(b);
-    const auto pnt_a = a.v;//thrust::get<1>(a);
-    const auto pnt_b = b.v;//thrust::get<1>(b);
+
+    if (tag_a < tag_b) return true;
+    if (tag_a > tag_b) return false;
+    
+    const auto &pnt_a = a.v;//thrust::get<1>(a);
+    const auto &pnt_b = b.v;//thrust::get<1>(b);
     int dim
       = node_traits::has_explicit_dim
       // ? node_traits::get_dim(this->nodes[tag_a])
@@ -607,12 +614,13 @@ namespace cukd {
       : this->dim;
     const auto coord_a = node_traits::get_coord(pnt_a,dim);
     const auto coord_b = node_traits::get_coord(pnt_b,dim);
-    const bool less =
-      (tag_a < tag_b)
-      ||
-      ((tag_a == tag_b) && (coord_a < coord_b));
+    return coord_a < coord_b;
+    // const bool less =
+    //   (tag_a < tag_b)
+    //   ||
+    //   ((tag_a == tag_b) && (coord_a < coord_b));
 
-    return less;
+    // return less;
   }
 
 }
