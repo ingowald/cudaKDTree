@@ -32,6 +32,10 @@ else()
 endif()
 
 option(BUILD_ALL_TESTS "Build entire type/dimension/kernel test matrix?" OFF)
+
+
+add_subdirectory(../bitonic ext_bitonic)
+
 # ------------------------------------------------------------------
 # general cmake project configs
 # ------------------------------------------------------------------

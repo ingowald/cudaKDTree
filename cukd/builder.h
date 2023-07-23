@@ -21,7 +21,9 @@
 #include <cuda.h>
 
 #if 1
-#include "cukd/builder_inplace.h"
+# include "cukd/builder_bitonic.h"
+#elif 0
+# include "cukd/builder_inplace.h"
 #else
-#include "cukd/builder_thrust.h"
+# include "cukd/builder_thrust.h"
 #endif
