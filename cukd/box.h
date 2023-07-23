@@ -22,9 +22,45 @@
 
 namespace cukd {
   
+  template<typename T> inline __both__ T empty_box_lower();
+  template<typename T> inline __both__ T empty_box_upper();
+
+  template<> inline __both__ float empty_box_lower<float>() { return +INFINITY; }
+  template<> inline __both__ float empty_box_upper<float>() { return -INFINITY; }
+  
+
   template<typename point_t> struct box_t {
     inline __both__ point_t size() const { return upper - lower; }
     
+    inline __both__ bool contains(point_t p) const
+    {
+      enum { num_dims = num_dims_of<point_t>::value };
+      for (int d=0;d<num_dims;d++) {
+        if (get_coord(p,d) < get_coord(lower,d)) return false;
+        if (get_coord(p,d) > get_coord(upper,d)) return false;
+      }
+      return true;
+    }
+
+    inline __both__ void setEmpty()
+    {
+      enum { num_dims = num_dims_of<point_t>::value };
+      for (int d=0;d<num_dims;d++) {
+        get_coord(lower,d) = empty_box_lower<typename scalar_type_of<point_t>::type>();
+        get_coord(upper,d) = empty_box_upper<typename scalar_type_of<point_t>::type>();
+      }
+    }
+
+    /*! set to an infinitely _open_ box */
+    inline __both__ void setInfinite()
+    {
+      enum { num_dims = num_dims_of<point_t>::value };
+      for (int d=0;d<num_dims;d++) {
+        get_coord(lower,d) = empty_box_upper<typename scalar_type_of<point_t>::type>();
+        get_coord(upper,d) = empty_box_lower<typename scalar_type_of<point_t>::type>();
+      }
+    }
+
     point_t lower, upper;
   };
   
@@ -40,6 +76,7 @@ namespace cukd {
     return min(max(point,box.lower),box.upper);
   }
 
+  // ------------------------------------------------------------------
   template<typename point_t>
   inline __device__
   auto sqrDistance(const box_t<point_t> &box, const point_t &point)

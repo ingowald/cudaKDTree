@@ -68,17 +68,24 @@ using node_traits = default_node_traits<floatN>;
 
 floatN *generatePoints(int N)
 {
-  static std::random_device rd;  // Will be used to obtain a seed for the random number engine
+  static int g_seed = 100000;
+  std::seed_seq seq{g_seed++};
+  // std::random_device rd(seq());  // Will be used to obtain a seed for the random number engine
+  std::default_random_engine rd(seq);
   std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
   std::uniform_int_distribution<> dist(0,N);
-  
+
+  std::cout << "generating " << N << " uniform random points" << std::endl;
   floatN *d_points = 0;
   cudaMallocManaged((char **)&d_points,N*sizeof(*d_points));
+  if (!d_points)
+    throw std::runtime_error("could not allocate points mem...");
   
   enum { num_dims = num_dims_of<floatN>::value };
   for (int i=0;i<N;i++)
-    for (int d=0;d<num_dims;d++)
+    for (int d=0;d<num_dims;d++) {
       ((float *)&d_points[i])[d] = (float)dist(gen);
+    }
   return d_points;
 }
 
@@ -287,6 +294,46 @@ void verifyKNN(int pointID,
   }
 }
 
+template<typename node_t, typename node_traits>
+void checkRec(node_t *nodes, int numNodes,
+              const cukd::box_t<typename node_traits::point_t> &bounds,
+              int curr)
+{
+  using point_t  = typename node_traits::point_t;
+  using scalar_t = typename scalar_type_of<point_t>::type;
+  enum { num_dims = num_dims_of<point_t>::value };
+    
+  if (curr >= numNodes) return;
+
+  point_t point = node_traits::get_point(nodes[curr]);
+  if (!bounds.contains(point))
+    throw std::runtime_error
+      ("invalid k-d tree - node "+std::to_string(curr)+" not in parent bounds");
+  
+  const int  curr_dim
+    = node_traits::has_explicit_dim
+    ? node_traits::get_dim(nodes[curr])
+    : (BinaryTree::levelOf(curr) % num_dims);
+
+  const scalar_t curr_s = node_traits::get_coord(nodes[curr],curr_dim);
+  
+  cukd::box_t<point_t> lBounds = bounds;
+  get_coord(lBounds.upper,curr_dim) = curr_s;
+  cukd::box_t<point_t> rBounds = bounds;
+  get_coord(rBounds.lower,curr_dim) = curr_s;
+
+  checkRec<node_t,node_traits>(nodes,numNodes,lBounds,2*curr+1);
+  checkRec<node_t,node_traits>(nodes,numNodes,rBounds,2*curr+2);
+}
+
+template<typename node_t, typename node_traits>
+void checkTree(node_t *nodes, int numNodes, std::vector<node_t> &savedNodes)
+{
+  cukd::box_t<floatN> bounds;
+  bounds.setInfinite();
+  checkRec<node_t,node_traits>(nodes,numNodes,bounds,0);
+  std::cout << "** verify: tree checked, and valid k-d tree" << std::endl;
+}
 
 template<typename node_t, typename node_traits>
 void verifyFCP(int pointID,
@@ -377,22 +424,41 @@ int main(int ac, const char **av)
   using node_t = floatN;
 #endif
   
-#if CUKD_IMPROVED_TRAVERSAL
+#if CUKD_IMPROVED_TRAVERSAL || EXPLICIT_DIM
+  // we need the world sapce bounding box either if we use
+  // explicit-dim style trees (then we need it during the build),
+  // and/or if we used the improved traversal (then we need it during
+  // traversal time). If we pass memory for the bounds to the builder
+  // it _will_ fill that in even if we don't have an
+  // node_traits::explicit_dim field
   cukd::box_t<floatN> *d_bounds;
-  cudaMalloc((void**)&d_bounds,sizeof(cukd::box_t<floatN>));
-  cukd::computeBounds<node_t,node_traits>
-    (d_bounds,d_points,numPoints);
-  CUKD_CUDA_SYNC_CHECK();
+  cudaMallocManaged((void**)&d_bounds,sizeof(cukd::box_t<floatN>));
+  // cukd::computeBounds<node_t,node_traits>
+  //   (d_bounds,d_points,numPoints);
+  // CUKD_CUDA_SYNC_CHECK();
+  std::cout << "allocated memory for the world space bounding box ..." << std::endl;
 #endif
   {
-    double t0 = getCurrentTime();
+    std::vector<node_t> saved_points;
+    if (verify) {
+      saved_points.resize(numPoints);
+      std::copy(d_points,d_points+numPoints,saved_points.data());
+    }
     std::cout << "calling builder..." << std::endl;
+    double t0 = getCurrentTime();
     cukd::buildTree<node_t,node_traits>
-      (d_points,numPoints);
+      (d_points,numPoints
+#if CUKD_IMPROVED_TRAVERSAL || EXPLICIT_DIM
+       ,d_bounds
+#endif
+       );
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
     std::cout << "done building tree, took "
               << prettyDouble(t1-t0) << "s" << std::endl;
+
+    if (verify)
+      checkTree<node_t,node_traits>(d_points,numPoints,saved_points);
   }
   
   floatN *d_queries
