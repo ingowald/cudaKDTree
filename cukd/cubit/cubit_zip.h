@@ -93,11 +93,11 @@ namespace cubit {
       V vb = vs[b];
       
       if (less({ub,vb},{ua,va})) { //key_b < key_a) {
-        us[a] = ua;
-        us[b] = ub;
+        us[a] = ub;
+        us[b] = ua;
         
-        vs[a] = va;
-        vs[b] = vb;
+        vs[a] = vb;
+        vs[b] = va;
       }
     }
   

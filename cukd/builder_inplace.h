@@ -535,7 +535,57 @@ namespace cukd {
       // if (dbg) print_node(7,(float2*)points);
     }
   }
+
+
+  template<typename node_t, typename node_traits>
+  __global__ void d_quickSwap(/*! _build_ root level */int L_b,
+                              node_t *points,
+                              int numPoints)
+  {
+    int n = threadIdx.x + blockIdx.x*blockDim.x;
+    if (n >= numPoints) return;
+    
+    int L_n = BinaryTree::levelOf(n);
+    if (L_n <= L_b) return;
+    
+    int partner = partnerOf(n,L_n,L_b);
+    if (partner >= numPoints) return;
+
+    if (partner < n)
+      // only one of the two can do the work, or they'll race each
+      // other - let's always pick the lower one.
+      return;
+
+    using point_t  = typename node_traits::point_t;
+    enum { num_dims = num_dims_of<point_t>::value };
+
+    const int     dim
+      = node_traits::has_explicit_dim
+      ? node_traits::get_dim(points[((n+1)>>(L_n-L_b))-1])
+      : (L_b % num_dims);
+    
+    if (node_traits::get_coord(points[partner],dim)
+        <
+        node_traits::get_coord(points[n],dim)) {
+      swap(points[n],points[partner]);
+    } 
+  }
   
+  template<typename node_t, typename node_traits>
+  void quickSwap(/*! _build_ root level */
+                 int          L_b,
+                 node_t      *points,
+                 int          numPoints,
+                 cudaStream_t stream)
+  {
+    // printTree<node_t,node_traits>(points,numPoints);
+    // std::cout << "---- building heaps on " << L_h << ", root level " << L_b << std::endl << std::flush;
+    int bs = 1024;
+    int nb = divRoundUp(numPoints,bs);
+    d_quickSwap<node_t,node_traits><<<nb,bs,0,stream>>>(L_b,points,numPoints);
+  }
+
+
   template<typename node_t, typename node_traits>
   __global__ void d_buildHeaps(/*! _heap_ root level */int L_h,
                                /*! _build_ root level */int L_b,
@@ -567,6 +617,11 @@ namespace cukd {
       ? node_traits::get_dim(points[((n+1)>>(L_h-L_b))-1])
       : (L_b % num_dims);
 
+    if (node_traits::get_coord(points[partner],dim)
+        <
+        node_traits::get_coord(points[n],dim)) {
+      swap(points[n],points[partner]);
+    } 
     while (1) {
       trickleDownHeap<node_t,node_traits,0>(n,points,numPoints,dim);
       trickleDownHeap<node_t,node_traits,1>(partner,points,numPoints,dim);
@@ -741,6 +796,9 @@ namespace cukd {
 #endif
     if (node_traits::has_explicit_dim)
       selectDimsOnLevel<node_t,node_traits>(L_b,d_points,numPoints,worldBounds,stream);
+
+    quickSwap<node_t,node_traits>(L_b,d_points,numPoints,stream);
+    
     for (int L_h = numLevels-1; L_h > L_b; --L_h)
       buildHeaps<node_t,node_traits>(L_h,L_b,d_points,numPoints,stream);
     fixPivots<node_t,node_traits>(L_b,d_points,numPoints,stream);
