@@ -51,8 +51,8 @@ namespace cubit {
 
   template<typename U, typename V>
   struct tuple {
-    U u;
-    V v;
+    const U &u;
+    const V &v;
   };
   
   namespace zip {
@@ -60,12 +60,13 @@ namespace cubit {
     // enum { block_size = 1024 };
 
     template<typename U, typename V, typename Less>
-    inline static __device__ void shm_sort(bool  *const __restrict__ valid,
-                                           U *const __restrict__ us,
-                                           V *const __restrict__ vs,
-                                           uint32_t a,
-                                           uint32_t b,
-                                           Less less)
+    inline __device__
+    void shm_sort(bool *const __restrict__ valid,
+                  U    *const __restrict__ us,
+                  V    *const __restrict__ vs,
+                  uint32_t a,
+                  uint32_t b,
+                  Less     less)
     {
       U ua = us[a];
       U ub = us[b];
@@ -80,12 +81,32 @@ namespace cubit {
     }
 
     template<typename U, typename V, typename Less>
-    inline static __device__ void gmem_sort(U *const us,
-                                            V *const vs,
-                                            uint32_t a,
-                                            uint32_t b,
-                                            Less less)
+    inline __device__
+    void gmem_sort(U *const us,
+                   V *const vs,
+                   uint32_t a,
+                   uint32_t b,
+                   Less less)
     {
+#if 1
+      const U &ua = us[a];
+      const U &ub = us[b];
+      
+      const V &va = vs[a];
+      const V &vb = vs[b];
+      
+      if (less({ub,vb},{ua,va})) { //key_b < key_a) {
+        const U _ua = ua;
+        const U _ub = ub;
+        const V _va = va;
+        const V _vb = vb;
+        us[a] = _ub;
+        us[b] = _ua;
+        
+        vs[a] = _vb;
+        vs[b] = _va;
+      }
+#else
       U ua = us[a];
       U ub = us[b];
       
@@ -99,6 +120,7 @@ namespace cubit {
         vs[a] = vb;
         vs[b] = va;
       }
+#endif
     }
   
 

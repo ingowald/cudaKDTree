@@ -53,7 +53,7 @@
     stream, and will, in parituclar, have to allocate (quite a bit
     of!) temporary memory during sorting */
 # include "cukd/builder_thrust.h"
-#elif 1
+#elif 0
 /* this builder uses our tag-update algorithm, but uses bitonic sort
    instead of thrust for soring. it doesn't require thrust, and
    doesn't require additional memory other than 1 int for the tag, but

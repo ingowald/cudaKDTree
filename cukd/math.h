@@ -102,7 +102,6 @@ namespace cukd {
   inline __both__ float4 max(float4 a, float4 b)
   { return make_float4(max(a.x,b.x),max(a.y,b.y),max(a.z,b.z),max(a.w,b.w)); }
 
-#if 1
   inline __both__ float get_coord(const float2 &v, int d) { return d?v.y:v.x; }
   inline __both__ float get_coord(const float3 &v, int d) { return (d==2)?v.z:(d?v.y:v.x); }
   inline __both__ float get_coord(const float4 &v, int d) { return (d>=2)?(d>2?v.w:v.z):(d?v.y:v.x); }
@@ -110,18 +109,6 @@ namespace cukd {
   inline __both__ float &get_coord(float2 &v, int d) { return d?v.y:v.x; }
   inline __both__ float &get_coord(float3 &v, int d) { return (d==2)?v.z:(d?v.y:v.x); }
   inline __both__ float &get_coord(float4 &v, int d) { return (d>=2)?(d>2?v.w:v.z):(d?v.y:v.x); }
-  // inline __both__ float &get_coord(float2 &v, int d) { return (&v.x)[d]; }
-  // inline __both__ float &get_coord(float3 &v, int d) { return (&v.x)[d]; }
-  // inline __both__ float &get_coord(float4 &v, int d) { return (&v.x)[d]; }
-#else
-  inline __both__ float get_coord(const float2 &v, int d) { return (&v.x)[d]; }
-  inline __both__ float get_coord(const float3 &v, int d) { return (&v.x)[d]; }
-  inline __both__ float get_coord(const float4 &v, int d) { return (&v.x)[d]; }
-  
-  inline __both__ float &get_coord(float2 &v, int d) { return (&v.x)[d]; }
-  inline __both__ float &get_coord(float3 &v, int d) { return (&v.x)[d]; }
-  inline __both__ float &get_coord(float4 &v, int d) { return (&v.x)[d]; }
-#endif
   
       
   // ==================================================================

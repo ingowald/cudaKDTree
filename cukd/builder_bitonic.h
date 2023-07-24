@@ -537,19 +537,6 @@ namespace cukd {
     cubit::zip_sort<tag_t,node_t,ZipLess<node_t,node_traits>,zip_block_size>
       (tags,d_points,numPoints,ZipLess<node_t,node_traits>{deepestLevel%num_dims});
     
-    // if (sizeof(node_t) >= 16) {
-    //   cubit::zip_sort<tag_t,node_t,ZipLess<node_t,node_traits>,256>
-    //     (tags,d_points,numPoints,ZipLess<node_t,node_traits>{deepestLevel%num_dims});
-    // } else {
-    //   cubit::zip_sort<tag_t,node_t,ZipLess<node_t,node_traits>,1024>
-    //     (tags,d_points,numPoints,ZipLess<node_t,node_traits>{deepestLevel%num_dims});
-    // }
-    // thrust::sort(thrust::device.on(stream),begin,end,
-    //              ZipLess<node_t,node_traits>((deepestLevel)%num_dims,d_points));
-    // if (node_traits::has_explicit_dim) 
-    //   cudaFreeAsync(worldBounds,stream);
-
-    // CUKD_CUDA_CALL(StreamSynchronize(stream));
     cudaFreeAsync(tags,stream);
   }
 
@@ -599,28 +586,21 @@ namespace cukd {
     (const cubit::tuple<tag_t, node_t> &a,
      const cubit::tuple<tag_t, node_t> &b) const
   {
-    const auto tag_a = a.u;//thrust::get<0>(a);
-    const auto tag_b = b.u;//thrust::get<0>(b);
+    const auto tag_a = a.u;
+    const auto tag_b = b.u;
 
     if (tag_a < tag_b) return true;
     if (tag_a > tag_b) return false;
     
-    const auto &pnt_a = a.v;//thrust::get<1>(a);
-    const auto &pnt_b = b.v;//thrust::get<1>(b);
+    const auto &pnt_a = a.v;
+    const auto &pnt_b = b.v;
     int dim
       = node_traits::has_explicit_dim
-      // ? node_traits::get_dim(this->nodes[tag_a])
       ? node_traits::get_dim(pnt_a)
       : this->dim;
     const auto coord_a = node_traits::get_coord(pnt_a,dim);
     const auto coord_b = node_traits::get_coord(pnt_b,dim);
     return coord_a < coord_b;
-    // const bool less =
-    //   (tag_a < tag_b)
-    //   ||
-    //   ((tag_a == tag_b) && (coord_a < coord_b));
-
-    // return less;
   }
 
 }
