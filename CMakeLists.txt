@@ -180,7 +180,7 @@ if (BUILD_ALL_TESTS)
       target_compile_definitions(cukd_float${D}-fcp-${method}-xd
 	PUBLIC -DD_FROM_CMAKE=${D} -DEXPLICIT_DIM=1)
     endforeach()
-  endif()
-endforeach()
+  endforeach()
+endif()
 
 
