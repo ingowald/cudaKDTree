@@ -381,10 +381,10 @@ int main(int ac, const char **av)
 {
   using namespace cukd::common;
 
-  int    numPoints = 0;
+  int    numPoints = 1000000;
   bool   verify = false;
   int    nRepeats = 1;
-  size_t numQueries = 0;
+  size_t numQueries = 1000000;
   float  cutOffRadius = std::numeric_limits<float>::infinity();
 #if USE_KNN
   int    k = 50;
@@ -401,6 +401,8 @@ int main(int ac, const char **av)
       nRepeats = atoi(av[++i]);
     else if (arg == "-r")
       cutOffRadius = std::stof(av[++i]);
+    else if (arg == "--load-dumped-files")
+      { numPoints = numQueries = 0; }
 #if USE_KNN
     else if (arg == "-k")
       k = std::stoi(av[++i]);
