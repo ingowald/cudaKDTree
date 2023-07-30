@@ -39,6 +39,7 @@ add_subdirectory(../bitonic ext_bitonic EXCLUDE_FROM_ALL)
 # general cmake project configs
 # ------------------------------------------------------------------
 if (NOT CUKD_IS_SUBPROJECT)
+  option(CUKD_ENABLE_STATS "Enable Stats tracking?" ON)
   if(NOT SET_UP_CONFIGURATIONS_DONE)
     set(SET_UP_CONFIGURATIONS_DONE 1)
 
@@ -117,6 +118,9 @@ foreach(improved ON OFF)
     ${PROJECT_SOURCE_DIR}/
     )
   target_compile_definitions(cudaKDTree${suffix} INTERFACE -DSPATIAL=1)
+  if (CUKD_ENABLE_STATS)
+    target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_ENABLE_STATS=1)
+  endif()
   if (${improved})
     target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_IMPROVED_TRAVERSAL=1)
   endif()
@@ -150,6 +154,10 @@ foreach(improved ON OFF)
     if (${improved})
       target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_IMPROVED_TRAVERSAL=1)
     endif()
+    if (CUKD_ENABLE_STATS)
+      target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_ENABLE_STATS=1)
+    endif()
+    
     if (${stack_free})
       target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_STACK_FREE=1)
     endif()

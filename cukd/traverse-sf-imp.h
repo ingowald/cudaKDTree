@@ -20,6 +20,7 @@ namespace cukd {
       const int parent = (curr+1)/2-1;
 
       const auto &parent_node = d_nodes[parent];
+      CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
       const int   parent_dim
         = node_traits::has_explicit_dim
         ? node_traits::get_dim(parent_node)
@@ -96,6 +97,7 @@ namespace cukd {
 
         continue;
       }
+      CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
       const auto &curr_node = d_nodes[curr];
       const int  child = 2*curr+1;
       const bool from_child = (prev >= child);

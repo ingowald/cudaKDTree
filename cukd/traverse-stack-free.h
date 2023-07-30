@@ -50,6 +50,7 @@ namespace cukd {
 
         continue;
       }
+      CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
       const auto &curr_node = d_nodes[curr];
       const int  child = 2*curr+1;
       const bool from_child = (prev >= child);

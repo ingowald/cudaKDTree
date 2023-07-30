@@ -53,6 +53,7 @@ namespace cukd {
           = node_traits::has_explicit_dim
           ? node_traits::get_dim(d_nodes[curr])
           : (BinaryTree::levelOf(curr) % num_dims);
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
         const node_t &curr_node  = d_nodes[curr];
         const auto sqrDist = sqrDistance(node_traits::get_point(curr_node),queryPoint);
         

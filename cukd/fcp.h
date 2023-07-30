@@ -251,6 +251,7 @@ namespace cukd {
     node_t node;
     while (true) {
       while (true) {
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
         node = tree.nodes[nodeID];
         if (node.count)
           // this is a leaf...
@@ -276,6 +277,7 @@ namespace cukd {
 
       for (int i=0;i<node.count;i++) {
         int primID = tree.primIDs[node.offset+i];
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
         const auto sqrDist = sqrDistance(node_traits::get_point(tree.data[primID]),queryPoint);
         cullDist = result.processCandidate(primID,sqrDist);
       }
@@ -326,6 +328,7 @@ namespace cukd {
     node_t node;
     while (true) {
       while (true) {
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
         node = tree.nodes[nodeID];
         if (node.count)
           // this is a leaf...
@@ -350,6 +353,7 @@ namespace cukd {
       for (int i=0;i<node.count;i++) {
         int primID = tree.primIDs[node.offset+i];
         const auto sqrDist = sqrDistance(node_traits::get_point(tree.data[primID]),queryPoint);
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
         cullDist = result.processCandidate(primID,sqrDist);
       }
       

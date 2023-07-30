@@ -93,8 +93,7 @@ floatN *generatePoints(int N)
 
 
 __global__
-void d_fcp(unsigned long long *d_stats,
-           float   *d_results,
+void d_fcp(float   *d_results,
 #if SPATIAL
            SpatialKDTree<node_t,node_traits> tree,
 #endif
@@ -118,14 +117,12 @@ void d_fcp(unsigned long long *d_stats,
   int closestID
     = cukd::fcp
     <node_t,node_traits>
-    (CUKD_STATS_ARG(d_stats,)
-     tree,queryPos,params);
+    (tree,queryPos,params);
 #else
   int closestID
     = cukd::fcp
     <node_t,node_traits>
-    (CUKD_STATS_ARG(d_stats,)
-     queryPos,
+    (queryPos,
 # if CUKD_IMPROVED_TRAVERSAL
      *d_bounds,
 # endif
@@ -143,8 +140,7 @@ void d_fcp(unsigned long long *d_stats,
 
 template<typename CandidateList>
 __global__
-void d_knn(unsigned long long *d_stats,
-           float   *d_results,
+void d_knn(float   *d_results,
 #if SPATIAL
            SpatialKDTree<node_t,node_traits> tree,
 #endif
@@ -164,15 +160,13 @@ void d_knn(unsigned long long *d_stats,
 #if SPATIAL
   float sqrDist
     = cukd::knn<CandidateList,node_t,node_traits>
-    (CUKD_STATS_ARG(d_stats,)
-     result,
+    (result,
      tree,
      d_queries[tid]);
 #else
   float sqrDist
     = cukd::knn<CandidateList,node_t,node_traits>
-    (CUKD_STATS_ARG(d_stats,)
-     result,
+    (result,
      d_queries[tid],
 # if CUKD_IMPROVED_TRAVERSAL
      *d_bounds,
@@ -208,11 +202,15 @@ void run_kernel(float  *d_results,
   if (firstTime) {
     cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
     *d_stats = 0;
+    void *symAddr = 0;
+    cudaGetSymbolAddress(&symAddr,cukd::g_traversalStats);
+    PRINT(symAddr);
+    CUKD_STATS(cudaMemcpy(symAddr,&d_stats,sizeof(d_stats),cudaMemcpyHostToDevice));
   }
 #if USE_KNN
   if (k == 4)
     d_knn<FixedCandidateList<4>><<<nb,bs>>>
-      (d_stats,d_results,
+      (d_results,
 #if SPATIAL
        tree,
 #endif
@@ -223,7 +221,7 @@ void run_kernel(float  *d_results,
        d_nodes,numNodes,cutOffRadius);
   else if (k == 8)
     d_knn<FixedCandidateList<8>><<<nb,bs>>>
-      (d_stats,d_results,
+      (d_results,
 #if SPATIAL
        tree,
 #endif
@@ -234,7 +232,7 @@ void run_kernel(float  *d_results,
        d_nodes,numNodes,cutOffRadius);
   else if (k == 64)
     d_knn<HeapCandidateList<64>><<<nb,bs>>>
-      (d_stats,d_results,
+      (d_results,
 #if SPATIAL
        tree,
 #endif
@@ -245,7 +243,7 @@ void run_kernel(float  *d_results,
        d_nodes,numNodes,cutOffRadius);
   else if (k == 20)
     d_knn<HeapCandidateList<20>><<<nb,bs>>>
-      (d_stats,d_results,
+      (d_results,
 #if SPATIAL
        tree,
 #endif
@@ -256,7 +254,7 @@ void run_kernel(float  *d_results,
        d_nodes,numNodes,cutOffRadius);
   else if (k == 50)
     d_knn<HeapCandidateList<50>><<<nb,bs>>>
-      (d_stats,d_results,
+      (d_results,
 #if SPATIAL
        tree,
 #endif
@@ -269,8 +267,7 @@ void run_kernel(float  *d_results,
     throw std::runtime_error("unsupported k for knn queries");
 #else
   d_fcp<<<nb,bs>>>
-    (d_stats,
-     d_results,
+    (d_results,
 #if SPATIAL
      tree,
 #endif
