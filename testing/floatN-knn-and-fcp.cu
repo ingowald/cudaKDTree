@@ -15,6 +15,7 @@
 // ======================================================================== //
 
 #include "cukd/builder.h"
+#include "cukd/spatial-kdtree.h"
 // fcp = "find closest point" query
 #include "cukd/fcp.h"
 #include "cukd/knn.h"
@@ -94,6 +95,9 @@ floatN *generatePoints(int N)
 __global__
 void d_fcp(unsigned long long *d_stats,
            float   *d_results,
+#if SPATIAL
+           SpatialKDTree<node_t,node_traits> tree,
+#endif
            floatN  *d_queries,
            int      numQueries,
 #if CUKD_IMPROVED_TRAVERSAL
@@ -110,15 +114,23 @@ void d_fcp(unsigned long long *d_stats,
   point_t queryPos = d_queries[tid];
   FcpSearchParams params;
   params.cutOffRadius = cutOffRadius;
+#if SPATIAL
+  int closestID
+    = cukd::fcp
+    <node_t,node_traits>
+    (CUKD_STATS_ARG(d_stats,)
+     tree,queryPos,params);
+#else
   int closestID
     = cukd::fcp
     <node_t,node_traits>
     (CUKD_STATS_ARG(d_stats,)
      queryPos,
-#if CUKD_IMPROVED_TRAVERSAL
+# if CUKD_IMPROVED_TRAVERSAL
      *d_bounds,
-#endif
+# endif
      d_nodes,numNodes,params);
+#endif
   
   d_results[tid]
     = (closestID < 0)
@@ -133,6 +145,9 @@ template<typename CandidateList>
 __global__
 void d_knn(unsigned long long *d_stats,
            float   *d_results,
+#if SPATIAL
+           SpatialKDTree<node_t,node_traits> tree,
+#endif
            floatN  *d_queries,
            int      numQueries,
 #if CUKD_IMPROVED_TRAVERSAL
@@ -146,14 +161,24 @@ void d_knn(unsigned long long *d_stats,
   if (tid >= numQueries) return;
   
   CandidateList result(cutOffRadius);
+#if SPATIAL
   float sqrDist
     = cukd::knn<CandidateList,node_t,node_traits>
     (CUKD_STATS_ARG(d_stats,)
-     result,d_queries[tid],
-#if CUKD_IMPROVED_TRAVERSAL
-                *d_bounds,
+     result,
+     tree,
+     d_queries[tid]);
+#else
+  float sqrDist
+    = cukd::knn<CandidateList,node_t,node_traits>
+    (CUKD_STATS_ARG(d_stats,)
+     result,
+     d_queries[tid],
+# if CUKD_IMPROVED_TRAVERSAL
+     *d_bounds,
+# endif
+     d_nodes,numNodes);
 #endif
-                d_nodes,numNodes);
   d_results[tid] = sqrtf(sqrDist);
 }
 
@@ -162,6 +187,9 @@ void d_knn(unsigned long long *d_stats,
 void run_kernel(float  *d_results,
                 floatN *d_queries,
                 int     numQueries,
+#if SPATIAL
+                SpatialKDTree<floatN> &tree,
+#endif
 #if CUKD_IMPROVED_TRAVERSAL
                 const cukd::box_t<floatN> *d_bounds,
 #endif
@@ -184,35 +212,55 @@ void run_kernel(float  *d_results,
 #if USE_KNN
   if (k == 4)
     d_knn<FixedCandidateList<4>><<<nb,bs>>>
-      (d_stats,d_results,d_queries,numQueries,
+      (d_stats,d_results,
+#if SPATIAL
+       tree,
+#endif
+       d_queries,numQueries,
 # if CUKD_IMPROVED_TRAVERSAL
        d_bounds,
 # endif
        d_nodes,numNodes,cutOffRadius);
   else if (k == 8)
     d_knn<FixedCandidateList<8>><<<nb,bs>>>
-      (d_stats,d_results,d_queries,numQueries,
+      (d_stats,d_results,
+#if SPATIAL
+       tree,
+#endif
+       d_queries,numQueries,
 # if CUKD_IMPROVED_TRAVERSAL
        d_bounds,
 # endif
        d_nodes,numNodes,cutOffRadius);
   else if (k == 64)
     d_knn<HeapCandidateList<64>><<<nb,bs>>>
-      (d_stats,d_results,d_queries,numQueries,
+      (d_stats,d_results,
+#if SPATIAL
+       tree,
+#endif
+       d_queries,numQueries,
 # if CUKD_IMPROVED_TRAVERSAL
        d_bounds,
 # endif
        d_nodes,numNodes,cutOffRadius);
   else if (k == 20)
     d_knn<HeapCandidateList<20>><<<nb,bs>>>
-      (d_stats,d_results,d_queries,numQueries,
+      (d_stats,d_results,
+#if SPATIAL
+       tree,
+#endif
+       d_queries,numQueries,
 # if CUKD_IMPROVED_TRAVERSAL
        d_bounds,
 # endif
        d_nodes,numNodes,cutOffRadius);
   else if (k == 50)
     d_knn<HeapCandidateList<50>><<<nb,bs>>>
-      (d_stats,d_results,d_queries,numQueries,
+      (d_stats,d_results,
+#if SPATIAL
+       tree,
+#endif
+       d_queries,numQueries,
 # if CUKD_IMPROVED_TRAVERSAL
        d_bounds,
 # endif
@@ -221,7 +269,12 @@ void run_kernel(float  *d_results,
     throw std::runtime_error("unsupported k for knn queries");
 #else
   d_fcp<<<nb,bs>>>
-    (d_stats,d_results,d_queries,numQueries,
+    (d_stats,
+     d_results,
+#if SPATIAL
+     tree,
+#endif
+     d_queries,numQueries,
 # if CUKD_IMPROVED_TRAVERSAL
      d_bounds,
 # endif
@@ -335,6 +388,49 @@ void checkTree(node_t *nodes, int numNodes, std::vector<node_t> &savedNodes)
   std::cout << "** verify: tree checked, and valid k-d tree" << std::endl;
 }
 
+
+
+
+template<typename data_t, typename node_traits>
+void checkRec(SpatialKDTree<data_t,node_traits> &tree,
+              const cukd::box_t<typename node_traits::point_t> &bounds,
+              int nodeID)
+{
+  using point_t  = typename node_traits::point_t;
+  using scalar_t = typename scalar_type_of<point_t>::type;
+  enum { num_dims = num_dims_of<point_t>::value };
+
+  auto &node = tree.nodes[nodeID];
+  if (node.count > 0) {
+    for (int i=0;i<node.count;i++) {
+      int primID = tree.primIDs[node.offset+i];
+      point_t point = node_traits::get_point(tree.data[primID]);
+      if (!bounds.contains(point))
+        throw std::runtime_error
+          ("invalid k-d tree - prim "+std::to_string(primID)+" not in parent bounds");
+    }
+    return;
+  }
+  
+  const scalar_t curr_s = node.pos;
+  
+  cukd::box_t<point_t> lBounds = bounds;
+  get_coord(lBounds.upper,node.dim) = curr_s;
+  cukd::box_t<point_t> rBounds = bounds;
+  get_coord(rBounds.lower,node.dim) = curr_s;
+
+  checkRec<node_t,node_traits>(tree,lBounds,node.offset+0);
+  checkRec<node_t,node_traits>(tree,rBounds,node.offset+1);
+}
+
+template<typename data_t, typename node_traits>
+void checkTree(SpatialKDTree<data_t,node_traits> &tree)
+{
+  cukd::box_t<floatN> bounds = tree.bounds;
+  checkRec<node_t,node_traits>(tree,bounds,0);
+  std::cout << "** verify: tree checked, and valid spatial-k-d tree" << std::endl;
+}
+
 template<typename node_t, typename node_traits>
 void verifyFCP(int pointID,
                float cutOffRadius,
@@ -424,7 +520,7 @@ int main(int ac, const char **av)
   using node_t = floatN;
 #endif
   
-#if CUKD_IMPROVED_TRAVERSAL || EXPLICIT_DIM
+// #if CUKD_IMPROVED_TRAVERSAL || EXPLICIT_DIM
   // we need the world sapce bounding box either if we use
   // explicit-dim style trees (then we need it during the build),
   // and/or if we used the improved traversal (then we need it during
@@ -437,6 +533,9 @@ int main(int ac, const char **av)
   //   (d_bounds,d_points,numPoints);
   // CUKD_CUDA_SYNC_CHECK();
   std::cout << "allocated memory for the world space bounding box ..." << std::endl;
+// #endif
+#if SPATIAL
+  SpatialKDTree<node_t,node_traits> tree;
 #endif
   {
     std::vector<node_t> saved_points;
@@ -446,19 +545,29 @@ int main(int ac, const char **av)
     }
     std::cout << "calling builder..." << std::endl;
     double t0 = getCurrentTime();
+#if SPATIAL 
+    cukd::buildTree<node_t,node_traits>
+      (tree,d_points,numPoints);
+#else
     cukd::buildTree<node_t,node_traits>
       (d_points,numPoints
-#if CUKD_IMPROVED_TRAVERSAL || EXPLICIT_DIM
+# if CUKD_IMPROVED_TRAVERSAL || EXPLICIT_DIM
        ,d_bounds
-#endif
+# endif
        );
+#endif
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
     std::cout << "done building tree, took "
               << prettyDouble(t1-t0) << "s" << std::endl;
 
+#if SPATIAL
+    if (verify)
+      checkTree<node_t,node_traits>(tree);
+#else
     if (verify)
       checkTree<node_t,node_traits>(d_points,numPoints,saved_points);
+#endif
   }
   
   floatN *d_queries
@@ -472,6 +581,9 @@ int main(int ac, const char **av)
     for (int i=0;i<nRepeats;i++) {
       run_kernel
         (d_results,d_queries,numQueries,
+#if SPATIAL
+         tree,
+#endif
 #if CUKD_IMPROVED_TRAVERSAL
          d_bounds,
 #endif
@@ -504,7 +616,7 @@ int main(int ac, const char **av)
         (i,cutOffRadius,d_points,numPoints,qp,reportedResult);
 #endif          
     }
+    std::cout << "verification succeeded... done." << std::endl;
   }
-  std::cout << "verification succeeded... done." << std::endl;
 }
   

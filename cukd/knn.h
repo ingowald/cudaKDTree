@@ -236,3 +236,25 @@ namespace cukd {
 # endif
 #endif
 
+
+
+namespace cukd {
+  template<typename CandidateList,
+           typename node_t,
+           typename node_traits=default_node_traits<node_t>>
+  inline __device__
+  float knn(CandidateList &result,
+            const SpatialKDTree<node_t,node_traits> &tree,
+            typename node_traits::point_t queryPoint,
+            FcpSearchParams params = FcpSearchParams{})
+  {
+    printf("not implemented\n"); return 0;
+  }
+  // {
+  //   FCPResult result;
+  //   result.clear(sqr(params.cutOffRadius));
+  //   traverse_default<FCPResult,node_t,node_traits>
+  //     (result,queryPoint,d_nodes,N);
+  //   return result.returnValue();
+  // }
+} // :: cukd
