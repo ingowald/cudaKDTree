@@ -33,7 +33,7 @@ endif()
 
 option(BUILD_ALL_TESTS "Build entire type/dimension/kernel test matrix?" OFF)
 
-add_subdirectory(../bitonic ext_bitonic)
+add_subdirectory(../bitonic ext_bitonic EXCLUDE_FROM_ALL)
 
 # ------------------------------------------------------------------
 # general cmake project configs
@@ -100,8 +100,28 @@ endif()
 # as well as to pass aht pointer to the query method.
 #
 # ==================================================================
-foreach(stack_free ON OFF)
-  foreach(improved ON OFF)
+foreach(improved ON OFF)
+  if (${improved})
+    set(suffix "-spatial-cct")
+  else()
+    set(suffix "-spatial-default")
+  endif()
+  add_library(cudaKDTree${suffix} INTERFACE)
+  target_sources(cudaKDTree${suffix} INTERFACE
+    cukd/common.h
+    cukd/builder.h
+    cukd/fcp.h
+    cukd/knn.h
+    )
+  target_include_directories(cudaKDTree${suffix} INTERFACE
+    ${PROJECT_SOURCE_DIR}/
+    )
+  target_compile_definitions(cudaKDTree${suffix} INTERFACE -DSPATIAL=1)
+  if (${improved})
+    target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_IMPROVED_TRAVERSAL=1)
+  endif()
+  
+  foreach(stack_free ON OFF)
     if (${stack_free})
       if (${improved})
 	set(suffix "-sf-cct")
@@ -116,7 +136,7 @@ foreach(stack_free ON OFF)
       endif()
     endif()
     
-
+    
     add_library(cudaKDTree${suffix} INTERFACE)
     target_sources(cudaKDTree${suffix} INTERFACE
       cukd/common.h
@@ -149,13 +169,13 @@ endif()
 # traversal_method x num_dims x {fcp,knn}
 # ==================================================================
 if (BUILD_ALL_TESTS)
-  # test all four possible traversal methosds
-  foreach(method stack-free cct sf-cct default)
-    # test 2, 3, 4, and 8-dimensoinal data; the latter should - if it
-    # works for N=8, work for any other N>4
-    set(DIMS_TO_BUILD 2 3 4 8)
-    foreach (D IN ITEMS ${DIMS_TO_BUILD})
-
+  # test 2, 3, 4, and 8-dimensoinal data; the latter should - if it
+  # works for N=8, work for any other N>4
+  set(DIMS_TO_BUILD 3)
+#  set(DIMS_TO_BUILD 2 3 4 8)
+  foreach (D IN ITEMS ${DIMS_TO_BUILD})
+    # test all four possible traversal methosds
+    foreach(method stack-free cct sf-cct default)
       # test knn queries, on regular trees (no explicit dimension per node)
       add_executable(cukd_float${D}-knn-${method} testing/floatN-knn-and-fcp.cu)
       target_link_libraries(cukd_float${D}-knn-${method} cudaKDTree-${method})
@@ -179,6 +199,23 @@ if (BUILD_ALL_TESTS)
       target_link_libraries(cukd_float${D}-fcp-${method}-xd cudaKDTree-${method})
       target_compile_definitions(cukd_float${D}-fcp-${method}-xd
 	PUBLIC -DD_FROM_CMAKE=${D} -DEXPLICIT_DIM=1)
+
+    endforeach()
+
+
+    foreach(method spatial-default spatial-cct)
+      # test knn queries, on regular trees (no explicit dimension per node)
+      add_executable(cukd_float${D}-knn-${method} testing/floatN-knn-and-fcp.cu)
+      target_link_libraries(cukd_float${D}-knn-${method} cudaKDTree-${method})
+      target_compile_definitions(cukd_float${D}-knn-${method}
+	PUBLIC -DD_FROM_CMAKE=${D} -DUSE_KNN=1)
+
+      # test fcp queries, on regular trees
+      add_executable(cukd_float${D}-fcp-${method} testing/floatN-knn-and-fcp.cu)
+      target_link_libraries(cukd_float${D}-fcp-${method} cudaKDTree-${method})
+      target_compile_definitions(cukd_float${D}-fcp-${method}
+	PUBLIC -DD_FROM_CMAKE=${D})
+
     endforeach()
   endforeach()
 endif()
