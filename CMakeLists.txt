@@ -179,8 +179,8 @@ endif()
 if (BUILD_ALL_TESTS)
   # test 2, 3, 4, and 8-dimensoinal data; the latter should - if it
   # works for N=8, work for any other N>4
-  set(DIMS_TO_BUILD 3)
-#  set(DIMS_TO_BUILD 2 3 4 8)
+#  set(DIMS_TO_BUILD 3)
+  set(DIMS_TO_BUILD 2 3 4 8)
   foreach (D IN ITEMS ${DIMS_TO_BUILD})
     # test all four possible traversal methosds
     foreach(method stack-free cct sf-cct default)

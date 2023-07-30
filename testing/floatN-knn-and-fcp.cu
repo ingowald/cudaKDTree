@@ -602,11 +602,10 @@ int main(int ac, const char **av)
               << " queries/s" << std::endl;
   }
 
-  double digest = 0.;
+  double checkSum = 0.;
   for (int i=0;i<numQueries;i++)
-    digest += d_results[i];
-  digest /= numQueries;
-  std::cout << "RESULTS_DIGEST " << digest << std::endl;
+    checkSum += d_results[i];
+  std::cout << "CHECKSUM " << checkSum << std::endl;
   
   if (verify) {
     std::cout << "verifying ..." << std::endl;
