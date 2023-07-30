@@ -479,6 +479,9 @@ int main(int ac, const char **av)
   int    nRepeats = 1;
   size_t numQueries = 1000000;
   float  cutOffRadius = std::numeric_limits<float>::infinity();
+#if SPATIAL
+  cukd::BuildConfig buildConfig = {};
+#endif
 #if USE_KNN
   int    k = 50;
 #endif
@@ -492,6 +495,10 @@ int main(int ac, const char **av)
       numQueries = atoi(av[++i]);
     else if (arg == "-nr")
       nRepeats = atoi(av[++i]);
+#if SPATIAL
+    else if (arg == "-lt")
+      buildConfig.makeLeafThreshold = std::stoi(av[++i]);
+#endif
     else if (arg == "-r")
       cutOffRadius = std::stof(av[++i]);
     else if (arg == "--load-dumped-files")
@@ -546,7 +553,7 @@ int main(int ac, const char **av)
     double t0 = getCurrentTime();
 #if SPATIAL 
     cukd::buildTree<node_t,node_traits>
-      (tree,d_points,numPoints);
+      (tree,d_points,numPoints,buildConfig);
 #else
     cukd::buildTree<node_t,node_traits>
       (d_points,numPoints
