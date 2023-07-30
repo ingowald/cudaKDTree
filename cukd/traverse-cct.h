@@ -67,6 +67,7 @@ namespace cukd {
         }
       }
       const auto &node  = d_nodes[nodeID];
+      CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
       const point_t nodePoint = node_traits::get_point(node);
       {
         const auto sqrDist = sqrDistance(nodePoint,queryPoint);

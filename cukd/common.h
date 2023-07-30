@@ -353,3 +353,11 @@ namespace cukd {
 # define CUKD_STATS(a) /* nothing */
 # define CUKD_STATS_ARG(a,b) /* nothing */
 #endif
+
+#if CUKD_ENABLE_STATS
+namespace cukd {
+  __constant__ __device__ int *g_traversalStats;
+}
+#endif
+  
+

@@ -39,6 +39,7 @@ add_subdirectory(../bitonic ext_bitonic EXCLUDE_FROM_ALL)
 # general cmake project configs
 # ------------------------------------------------------------------
 if (NOT CUKD_IS_SUBPROJECT)
+  option(CUKD_ENABLE_STATS "Enable Stats tracking?" ON)
   if(NOT SET_UP_CONFIGURATIONS_DONE)
     set(SET_UP_CONFIGURATIONS_DONE 1)
 
@@ -117,6 +118,9 @@ foreach(improved ON OFF)
     ${PROJECT_SOURCE_DIR}/
     )
   target_compile_definitions(cudaKDTree${suffix} INTERFACE -DSPATIAL=1)
+  if (CUKD_ENABLE_STATS)
+    target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_ENABLE_STATS=1)
+  endif()
   if (${improved})
     target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_IMPROVED_TRAVERSAL=1)
   endif()
@@ -150,6 +154,10 @@ foreach(improved ON OFF)
     if (${improved})
       target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_IMPROVED_TRAVERSAL=1)
     endif()
+    if (CUKD_ENABLE_STATS)
+      target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_ENABLE_STATS=1)
+    endif()
+    
     if (${stack_free})
       target_compile_definitions(cudaKDTree${suffix} INTERFACE -DCUKD_STACK_FREE=1)
     endif()
@@ -171,8 +179,8 @@ endif()
 if (BUILD_ALL_TESTS)
   # test 2, 3, 4, and 8-dimensoinal data; the latter should - if it
   # works for N=8, work for any other N>4
-  set(DIMS_TO_BUILD 3)
-#  set(DIMS_TO_BUILD 2 3 4 8)
+#  set(DIMS_TO_BUILD 3)
+  set(DIMS_TO_BUILD 2 3 4 8)
   foreach (D IN ITEMS ${DIMS_TO_BUILD})
     # test all four possible traversal methosds
     foreach(method stack-free cct sf-cct default)
