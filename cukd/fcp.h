@@ -256,6 +256,9 @@ namespace cukd {
         if (node.count)
           // this is a leaf...
           break;
+
+        if (node.dim < 0)
+          printf("INVALID NODE\n");
         const auto query_coord = get_coord(queryPoint,node.dim);
         const bool leftIsClose = query_coord < node.pos;
         const int  lChild = node.offset+0;
@@ -265,6 +268,7 @@ namespace cukd {
         const int farChild   = leftIsClose?rChild:lChild;
 
         auto farSideCorner = closestPointOnSubtreeBounds;
+          
         get_coord(farSideCorner,node.dim) = node.pos;
         
         if (sqrDistance(farSideCorner,queryPoint) < cullDist) {

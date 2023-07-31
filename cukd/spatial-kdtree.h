@@ -318,6 +318,11 @@ namespace cukd {
             widestDim = -1;
         }
         open.dim = widestDim;
+        if (open.dim < 0) {
+          open.pos = in.centBounds.get_lower(0);
+        }
+        // if (open.dim == -1)
+        //   printf("WARNING - ZERO-SPLITS NOT SUPPORTED FOR KD-TREE BUILDER\n");
         
         // this will be epensive - could make this faster by block-reducing
         open.offset = atomicAdd(&buildState->numNodes,2);
@@ -428,6 +433,9 @@ namespace cukd {
       finalNodes[nodeID].count  = tempNodes[nodeID].doneNode.count;
       finalNodes[nodeID].dim    = tempNodes[nodeID].doneNode.dim;
       finalNodes[nodeID].pos    = tempNodes[nodeID].doneNode.pos;
+      if (finalNodes[nodeID].dim == -1) {
+        finalNodes[nodeID].dim = 0;
+      }
     }
     
     template<typename data_t,
