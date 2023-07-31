@@ -222,9 +222,6 @@ namespace cukd {
           typename node_traits::point_t queryPoint,
           FcpSearchParams params = FcpSearchParams{})
   {
-    // int tid = threadIdx.x+blockIdx.x*blockDim.x;
-    // if (tid != 7) return 0;
-    
     FCPResult result;
     result.clear(sqr(params.cutOffRadius));
 
@@ -243,6 +240,7 @@ namespace cukd {
     StackEntry stackBase[30];
     StackEntry *stackPtr = stackBase;
 
+    int numSteps = 0;
     /*! current node in the tree we're traversing */
     int nodeID = 0;
     point_t closestPointOnSubtreeBounds = project(tree.bounds,queryPoint);
@@ -251,14 +249,13 @@ namespace cukd {
     node_t node;
     while (true) {
       while (true) {
+        numSteps++;
         CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
         node = tree.nodes[nodeID];
         if (node.count)
           // this is a leaf...
           break;
 
-        if (node.dim < 0)
-          printf("INVALID NODE\n");
         const auto query_coord = get_coord(queryPoint,node.dim);
         const bool leftIsClose = query_coord < node.pos;
         const int  lChild = node.offset+0;
@@ -270,8 +267,9 @@ namespace cukd {
         auto farSideCorner = closestPointOnSubtreeBounds;
           
         get_coord(farSideCorner,node.dim) = node.pos;
-        
-        if (sqrDistance(farSideCorner,queryPoint) < cullDist) {
+
+        const float farSideDist2 = sqrDistance(farSideCorner,queryPoint);
+        if (farSideDist2 < cullDist) {
           stackPtr->closestCorner = farSideCorner;
           stackPtr->nodeID  = farChild;
           ++stackPtr;
@@ -282,13 +280,16 @@ namespace cukd {
       for (int i=0;i<node.count;i++) {
         int primID = tree.primIDs[node.offset+i];
         CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
+        auto dp = node_traits::get_point(tree.data[primID]);
+          
         const auto sqrDist = sqrDistance(node_traits::get_point(tree.data[primID]),queryPoint);
         cullDist = result.processCandidate(primID,sqrDist);
       }
       
       while (true) {
-        if (stackPtr == stackBase) 
+        if (stackPtr == stackBase)  {
           return result.returnValue();
+        }
         --stackPtr;
         closestPointOnSubtreeBounds = stackPtr->closestCorner;
         if (sqrDistance(closestPointOnSubtreeBounds,queryPoint) >= cullDist)
@@ -306,9 +307,6 @@ namespace cukd {
           typename node_traits::point_t queryPoint,
           FcpSearchParams params = FcpSearchParams{})
   {
-    // int tid = threadIdx.x+blockIdx.x*blockDim.x;
-    // if (tid != 7) return 0;
-    
     FCPResult result;
     result.clear(sqr(params.cutOffRadius));
 
@@ -330,10 +328,12 @@ namespace cukd {
     /*! current node in the tree we're traversing */
     int nodeID = 0;
     node_t node;
+    int numSteps = 0;
     while (true) {
       while (true) {
         CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
         node = tree.nodes[nodeID];
+        ++numSteps;
         if (node.count)
           // this is a leaf...
           break;
@@ -362,8 +362,9 @@ namespace cukd {
       }
       
       while (true) {
-        if (stackPtr == stackBase) 
+        if (stackPtr == stackBase)  {
           return result.returnValue();
+        }
         --stackPtr;
         if (stackPtr->sqrDist >= cullDist)
           continue;

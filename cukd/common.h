@@ -356,7 +356,7 @@ namespace cukd {
 
 #if CUKD_ENABLE_STATS
 namespace cukd {
-  __constant__ __device__ int *g_traversalStats;
+  __constant__ __device__ unsigned long long *g_traversalStats;
 }
 #endif
   

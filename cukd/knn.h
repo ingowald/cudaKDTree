@@ -277,6 +277,7 @@ namespace cukd {
           // this is a leaf...
           break;
         const auto query_coord = get_coord(queryPoint,node.dim);
+        
         const bool leftIsClose = query_coord < node.pos;
         const int  lChild = node.offset+0;
         const int  rChild = node.offset+1;
