@@ -239,14 +239,89 @@ namespace cukd {
 
 
 namespace cukd {
+#if CUKD_IMPROVED_TRAVERSAL
   template<typename CandidateList,
            typename data_t,
            typename node_traits=default_node_traits<data_t>>
   inline __device__
   float knn(CandidateList &result,
             const SpatialKDTree<data_t,node_traits> &tree,
-            typename node_traits::point_t queryPoint,
-            FcpSearchParams params = FcpSearchParams{})
+            typename node_traits::point_t queryPoint)
+  {
+    using node_t     = typename SpatialKDTree<data_t,node_traits>::Node;
+    using point_t    = typename node_traits::point_t;
+    using scalar_t   = typename scalar_type_of<point_t>::type;
+    enum { num_dims  = num_dims_of<point_t>::value };
+    
+    scalar_t cullDist = result.initialCullDist2();
+
+    /* can do at most 2**30 points... */
+    struct StackEntry {
+      int   nodeID;
+      point_t closestCorner;
+    };
+    StackEntry stackBase[30];
+    StackEntry *stackPtr = stackBase;
+
+    /*! current node in the tree we're traversing */
+    int nodeID = 0;
+    point_t closestPointOnSubtreeBounds = project(tree.bounds,queryPoint);
+    if (sqrDistance(queryPoint,closestPointOnSubtreeBounds) > cullDist)
+      return result.returnValue();
+    node_t node;
+    while (true) {
+      while (true) {
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
+        node = tree.nodes[nodeID];
+        if (node.count)
+          // this is a leaf...
+          break;
+        const auto query_coord = get_coord(queryPoint,node.dim);
+        const bool leftIsClose = query_coord < node.pos;
+        const int  lChild = node.offset+0;
+        const int  rChild = node.offset+1;
+
+        const int closeChild = leftIsClose?lChild:rChild;
+        const int farChild   = leftIsClose?rChild:lChild;
+
+        auto farSideCorner = closestPointOnSubtreeBounds;
+        get_coord(farSideCorner,node.dim) = node.pos;
+        
+        if (sqrDistance(farSideCorner,queryPoint) < cullDist) {
+          stackPtr->closestCorner = farSideCorner;
+          stackPtr->nodeID  = farChild;
+          ++stackPtr;
+        }
+        nodeID = closeChild;
+      }
+
+      for (int i=0;i<node.count;i++) {
+        int primID = tree.primIDs[node.offset+i];
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
+        const auto sqrDist = sqrDistance(node_traits::get_point(tree.data[primID]),queryPoint);
+        cullDist = result.processCandidate(primID,sqrDist);
+      }
+      
+      while (true) {
+        if (stackPtr == stackBase) 
+          return result.returnValue();
+        --stackPtr;
+        closestPointOnSubtreeBounds = stackPtr->closestCorner;
+        if (sqrDistance(closestPointOnSubtreeBounds,queryPoint) >= cullDist)
+          continue;
+        nodeID = stackPtr->nodeID;
+        break;
+      }
+    }
+  }
+#else
+  template<typename CandidateList,
+           typename data_t,
+           typename node_traits=default_node_traits<data_t>>
+  inline __device__
+  float knn(CandidateList &result,
+            const SpatialKDTree<data_t,node_traits> &tree,
+            typename node_traits::point_t queryPoint)
   {
     using node_t     = typename SpatialKDTree<data_t,node_traits>::Node;
     using point_t    = typename node_traits::point_t;
@@ -268,6 +343,7 @@ namespace cukd {
     node_t node;
     while (true) {
       while (true) {
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
         node = tree.nodes[nodeID];
         if (node.count)
           // this is a leaf...
@@ -291,6 +367,7 @@ namespace cukd {
 
       for (int i=0;i<node.count;i++) {
         int primID = tree.primIDs[node.offset+i];
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
         const auto sqrDist = sqrDistance(node_traits::get_point(tree.data[primID]),queryPoint);
         cullDist = result.processCandidate(primID,sqrDist);
       }
@@ -306,4 +383,5 @@ namespace cukd {
       }
     }
   }
+#endif
 } // :: cukd
