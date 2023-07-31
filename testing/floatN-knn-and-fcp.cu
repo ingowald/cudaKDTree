@@ -280,7 +280,11 @@ void run_kernel(float  *d_results,
   if (firstTime) {
     cudaDeviceSynchronize();
     CUKD_STATS(
-               std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+               double checkSum = 0.;
+               for (int i=0;i<numQueries;i++)
+                 checkSum += d_results[i];
+               std::cout << "CHECKSUM " << checkSum << std::endl;
+               std::cout << "KDTREE_STATS " << *d_stats << " CHECKSUM " << checkSum << std::endl;
                std::cout << "NICE_STATS " << common::prettyNumber(*d_stats) << std::endl;
                );
     cudaFree(d_stats);
