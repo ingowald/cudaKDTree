@@ -237,7 +237,8 @@ namespace cukd {
       int   nodeID;
       point_t closestCorner;
     };
-    StackEntry stackBase[30];
+    enum{ stack_depth = 50 };
+    StackEntry stackBase[stack_depth];
     StackEntry *stackPtr = stackBase;
 
     int numSteps = 0;
@@ -273,6 +274,10 @@ namespace cukd {
           stackPtr->closestCorner = farSideCorner;
           stackPtr->nodeID  = farChild;
           ++stackPtr;
+          if ((stackPtr - stackBase) >= stack_depth) {
+            printf("STACK OVERFLOW %i\n",int(stackPtr - stackBase));
+            return -1;
+          }
         }
         nodeID = closeChild;
       }
@@ -322,7 +327,8 @@ namespace cukd {
       int   nodeID;
       float sqrDist;
     };
-    StackEntry stackBase[30];
+    enum{ stack_depth = 50 };
+    StackEntry stackBase[stack_depth];
     StackEntry *stackPtr = stackBase;
 
     /*! current node in the tree we're traversing */
@@ -350,6 +356,10 @@ namespace cukd {
           stackPtr->nodeID  = farChild;
           stackPtr->sqrDist = sqrDistToPlane;
           ++stackPtr;
+          if ((stackPtr - stackBase) >= stack_depth) {
+            printf("STACK OVERFLOW %i\n",int(stackPtr - stackBase));
+            return -1;
+          }
         }
         nodeID = closeChild;
       }

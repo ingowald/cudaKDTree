@@ -199,6 +199,7 @@ void run_kernel(float  *d_results,
   int nb = divRoundUp(numQueries,bs);
   unsigned long long *d_stats = 0;
   static bool firstTime = true;
+  PING; CUKD_CUDA_SYNC_CHECK();
   if (firstTime) {
     cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
     *d_stats = 0;
@@ -207,6 +208,8 @@ void run_kernel(float  *d_results,
     PRINT(symAddr);
     CUKD_STATS(cudaMemcpy(symAddr,&d_stats,sizeof(d_stats),cudaMemcpyHostToDevice));
   }
+  PING; CUKD_CUDA_SYNC_CHECK();
+  
 #if USE_KNN
   if (k == 4)
     d_knn<FixedCandidateList<4>><<<nb,bs>>>
@@ -277,6 +280,7 @@ void run_kernel(float  *d_results,
 # endif
      d_nodes,numNodes,cutOffRadius);
 #endif
+  PING; CUKD_CUDA_SYNC_CHECK();
   if (firstTime) {
     cudaDeviceSynchronize();
     CUKD_STATS(
@@ -290,6 +294,7 @@ void run_kernel(float  *d_results,
     cudaFree(d_stats);
     firstTime = false;
   }
+  PING; CUKD_CUDA_SYNC_CHECK();
 }
 
 #if EXPLICIT_DIM
@@ -586,6 +591,8 @@ int main(int ac, const char **av)
     : loadPoints<floatN>("query_points",numQueries);
   float  *d_results;
   CUKD_CUDA_CALL(MallocManaged((void**)&d_results,numQueries*sizeof(*d_results)));
+    PING;
+    CUKD_CUDA_SYNC_CHECK();
   {
     double t0 = getCurrentTime();
     for (int i=0;i<nRepeats;i++) {
@@ -603,6 +610,7 @@ int main(int ac, const char **av)
 #endif
          cutOffRadius);
     }
+    PING;
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
     std::cout << "done " << nRepeats
