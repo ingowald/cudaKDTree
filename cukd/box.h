@@ -63,6 +63,14 @@ namespace cukd {
 
     point_t lower, upper;
   };
+
+  /*! helper function for printf debugging */
+  template<typename T>
+  inline std::ostream &operator<<(std::ostream &o, const box_t<T> &b)
+  {
+    o << "{" << b.lower << "," << b.upper << "}";
+    return o;
+  }
   
   /*! computes the closest point to 'point' that's within the given
     box; if point itself is inside that box it'll be the point

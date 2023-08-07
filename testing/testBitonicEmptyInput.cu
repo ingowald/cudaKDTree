@@ -15,13 +15,128 @@
 // ======================================================================== //
 
 #include "cukd/builder.h"
+#include <random>
+
+namespace test_float3 {
+  void test_empty()
+  {
+    std::cout << "testing float3 array, empty input." << std::endl;
+    
+    // dummy arrays, just to get the types to force the right builder
+    // instantiation:
+    float3 *points = 0;
+    int numPoints = 0;
+    cukd::buildTree_bitonic(points,numPoints);
+  }
+
+  void test_simple()
+  {
+    std::cout << "testing float3 array, 1000 uniform random points." << std::endl;
+    
+    int numPoints = 1000;
+    
+    float3 *points = 0;
+    CUKD_CUDA_CALL(MallocManaged((void **)&points,numPoints*sizeof(float3)));
+    
+    std::default_random_engine rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<float> dist(0.f,100.f);
+    for (int i=0;i<numPoints;i++) {
+      points[i].x = dist(gen);
+      points[i].y = dist(gen);
+      points[i].z = dist(gen);
+    }
+    cukd::buildTree_bitonic(points,numPoints);
+    CUKD_CUDA_CALL(Free(points));
+  }
+}
+
+namespace test_photon {
+  /*! for those wondering what this test is for: have a look at Henrik
+    Wan Jensen, "Realistic Image Synthesis using Photon Mapping"
+    https://www.amazon.com/Realistic-Image-Synthesis-Photon-Mapping/dp/1568811470 */
+  struct Photon {
+    float3 position;
+    float3 power;
+    uint16_t normal_phi;
+    uint8_t  normal_theta;
+    uint8_t  splitDim;
+  };
+
+  struct Photon_traits {
+    using point_t = float3;
+    enum { has_explicit_dim = true };
+    
+    static inline __both__
+    const point_t &get_point(const Photon &p)
+    { return p.position; }
+    
+    static inline __both__ float get_coord(const Photon &p, int d)
+    { return cukd::get_coord(p.position,d); }
+    
+    static inline __device__ int  get_dim(const Photon &p)
+    { return p.splitDim; }
+    
+    static inline __device__ void set_dim(Photon &p, int d)
+    { p.splitDim = d; }
+  };
+  
+  void test_empty()
+  {
+    std::cout << "testing 'Photons' array (float3 plus payload), empty input." << std::endl;
+
+    // dummy arrays, just to get the types to force the right builder
+    // instantiation:
+    Photon *points = 0;
+    int numPoints = 0;
+    cukd::buildTree_bitonic<Photon,Photon_traits>
+      (points,numPoints);
+  }
+  
+  void test_simple()
+  {
+    std::cout << "testing 'Photons' array (float3 plus payload), 1000 random photons." << std::endl;
+
+    int numPhotons = 1000;
+    
+    Photon *photons = 0;
+    CUKD_CUDA_CALL(MallocManaged((void **)&photons,numPhotons*sizeof(Photon)));
+    
+    std::default_random_engine rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<float> dist(0.f,100.f);
+    for (int i=0;i<numPhotons;i++) {
+      photons[i].position.x = dist(gen);
+      photons[i].position.y = dist(gen);
+      photons[i].position.z = dist(gen);
+      photons[i].power = make_float3(0.f,0.f,0.f);
+      photons[i].normal_theta = 0;
+      photons[i].normal_phi = 0;
+    }
+    cukd::box_t<float3> *worldBounds = 0;
+    CUKD_CUDA_CALL(MallocManaged((void **)&worldBounds,sizeof(*worldBounds)));
+    
+    cukd::buildTree_bitonic<Photon,Photon_traits>
+      (photons,numPhotons,worldBounds);
+
+    std::cout << "world bounds is " << *worldBounds << std::endl;
+    CUKD_CUDA_CALL(Free(photons));
+    CUKD_CUDA_CALL(Free(worldBounds));
+  }
+}
 
 int main(int, const char **)
 {
-  // dummy arrays, just to get the types to force the right builder
-  // instantiation:
-  float3 *points = 0;
-  int numPoints = 0;
-  cukd::buildTree_bitonic(points,numPoints);
+  test_float3::test_empty();
+  CUKD_CUDA_SYNC_CHECK();
+
+  test_float3::test_simple();
+  CUKD_CUDA_SYNC_CHECK();
+
+  test_photon::test_empty();
+  CUKD_CUDA_SYNC_CHECK();
+
+  test_photon::test_simple();
+  CUKD_CUDA_SYNC_CHECK();
 }
 

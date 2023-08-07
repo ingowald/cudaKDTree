@@ -115,7 +115,9 @@ namespace cukd {
   inline __both__ float4 max(float4 a, float4 b)
   { return make_float4(max(a.x,b.x),max(a.y,b.y),max(a.z,b.z),max(a.w,b.w)); }
 
-  
+  inline std::ostream &operator<<(std::ostream &o, float3 v)
+  { o << "(" << v.x << "," << v.y << "," << v.z << ")"; return o; }
+
       
   // ==================================================================
   // for some tests: our own, arbitrary-dimensioal vector type

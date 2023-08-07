@@ -39,7 +39,7 @@ namespace cukd {
     ordering of its data points this will re-arrange the data points
     to fulfill the balanced k-d tree criterion - ie, this WILL modify
     the data array: no individual entry will get changed, but their
-    order might. If data_traits::has_explcit_dims is defined this
+    order might. If data_traits::has_explicit_dims is defined this
     builder will choose each node's split dimension based on the
     widest dimension of that node's subtree's domain; if not, it will
     chose the dimension in a round-robin style, where the root level
@@ -74,7 +74,7 @@ namespace cukd {
     buildTree<float4,float2_plus_payload_traits>(...);
       
     *** Example 3: assuming you have a data type 'Photon' and a
-    Photon_traits has Photon_traits::has_explciit_dim defined:
+    Photon_traits has Photon_traits::has_explicit_dim defined:
       
     cukd::box_t<float3> *d_worldBounds = <cudaMalloc>;
     buildTree<Photon,Photon_traits>(..., worldBounds, ...);
@@ -82,23 +82,9 @@ namespace cukd {
   */
   template<typename data_t,
            typename data_traits=default_data_traits<data_t>>
-  void buildTree_bitonic(data_t *d_points,
-                         int numPoints,
-                         cudaStream_t stream = 0);
-
-  /*! build a k-d over given set of points, but can build both
-    round-robin-style and "generalized" k-d trees where the split
-    dimension for each subtree is chosen based on the dimension
-    where that subtree's domain is widest. If the
-    data_traits::has_explicit_dim field is true, the latter type of
-    k-d tree is build; if it is false, this function build a regular
-    round-robin k-d tree instead
-  */
-  template<typename data_t,
-           typename data_traits=default_data_traits<data_t>>
   void buildTree_bitonic(data_t      *points,
                          int          numPoints,
-                         box_t<typename data_traits::point_t> *worldBounds,
+                         box_t<typename data_traits::point_t> *worldBounds = 0,
                          cudaStream_t stream = 0);
 
   // ==================================================================
@@ -240,10 +226,6 @@ namespace cukd {
     
       /* thrust helper typedefs for the zip iterator, to make the code
          below more readable */
-      // typedef typename thrust::device_vector<uint32_t>::iterator tag_iterator;
-      // typedef typename thrust::device_vector<data_t>::iterator point_iterator;
-      // typedef thrust::tuple<tag_iterator,point_iterator> iterator_tuple;
-      // typedef thrust::zip_iterator<iterator_tuple> tag_point_iterator;
 
       // check for invalid input, and return gracefully if so
       if (numPoints < 1) return;
@@ -264,14 +246,9 @@ namespace cukd {
     
       const int blockSize = 128;
       if (data_traits::has_explicit_dim) {
-        if (!worldBounds)
-          throw std::runtime_error
-            ("cukd::builder_atomic: asked to build k-d tree over "
-             "nodes with explciit dims, but no memory for world bounds provided");
         chooseInitialDim<data_t,data_traits>
           <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
           (worldBounds,d_points,numPoints);
-        // CUKD_CUDA_CALL(StreamSynchronize(stream));
       }
     
     
@@ -336,6 +313,7 @@ namespace cukd {
   template<typename data_t, typename data_traits>
   void buildTree_bitonic(data_t *d_points,
                          int numPoints,
+                         box_t<typename data_traits::point_t> *worldBounds,
                          cudaStream_t stream)
   {
     using namespace bitonicSortBuilder;
@@ -346,11 +324,14 @@ namespace cukd {
     
     if (numPoints < 1) return;
 
-    using box_t = cukd::box_t<point_t>;
-    box_t *worldBounds = 0;
-    if (data_traits::has_explicit_dim) {
-      cudaMallocAsync((void **)&worldBounds,sizeof(*worldBounds),stream);
+    if (worldBounds)
       computeBounds<data_t,data_traits>(worldBounds,d_points,numPoints,stream);
+    
+    if (data_traits::has_explicit_dim) {
+      if (!worldBounds)
+        throw std::runtime_error
+          ("cukd::builder_atomic: asked to build k-d tree over "
+           "nodes with explicit dims, but no memory for world bounds provided");
       
       const int blockSize = 128;
       chooseInitialDim<data_t,data_traits>
@@ -359,10 +340,6 @@ namespace cukd {
       cudaStreamSynchronize(stream);
     }
     bitonicSortBuilder::buildTree<data_t,data_traits>(d_points,numPoints,worldBounds,stream);
-    if (data_traits::has_explicit_dim) 
-      cudaFreeAsync(worldBounds,stream);
   }
-
-  
 
 }

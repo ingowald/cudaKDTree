@@ -38,7 +38,7 @@ namespace cukd {
     ordering of its data points this will re-arrange the data points
     to fulfill the balanced k-d tree criterion - ie, this WILL modify
     the data array: no individual entry will get changed, but their
-    order might. If data_traits::has_explcit_dims is defined this
+    order might. If data_traits::has_explicit_dims is defined this
     builder will choose each node's split dimension based on the
     widest dimension of that node's subtree's domain; if not, it will
     chose the dimension in a round-robin style, where the root level
@@ -73,7 +73,7 @@ namespace cukd {
     buildTree<float4,float2_plus_payload_traits>(...);
       
     *** Example 3: assuming you have a data type 'Photon' and a
-    Photon_traits has Photon_traits::has_explciit_dim defined:
+    Photon_traits has Photon_traits::has_explicit_dim defined:
       
     cukd::box_t<float3> *d_worldBounds = <cudaMalloc>;
     buildTree<Photon,Photon_traits>(..., worldBounds, ...);
@@ -428,8 +428,8 @@ namespace cukd {
       computeBounds<data_t,data_traits>(worldBounds,points,numPoints,stream);
     else if  (data_traits::has_explicit_dim) 
       throw std::runtime_error
-        ("cukd::builder_atomic: asked to build k-d tree over "
-         "nodes with explciit dims, but no memory for world bounds provided");
+        ("cukd::builder_inplace: asked to build k-d tree over "
+         "nodes with explicit dims, but no memory for world bounds provided");
     
     int numLevels = BinaryTree::numLevelsFor(numPoints);
     for (int L_b = 0; L_b < numLevels; L_b++)
