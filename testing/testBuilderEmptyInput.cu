@@ -26,28 +26,8 @@ namespace test_float3 {
     // instantiation:
     float3 *points = 0;
     int numPoints = 0;
-    cukd::buildTree_bitonic(points,numPoints);
-  }
-
-  void test_simple()
-  {
-    std::cout << "testing float3 array, 1000 uniform random points." << std::endl;
-    
-    int numPoints = 1000;
-    
-    float3 *points = 0;
-    CUKD_CUDA_CALL(MallocManaged((void **)&points,numPoints*sizeof(float3)));
-    
-    std::default_random_engine rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> dist(0.f,100.f);
-    for (int i=0;i<numPoints;i++) {
-      points[i].x = dist(gen);
-      points[i].y = dist(gen);
-      points[i].z = dist(gen);
-    }
-    cukd::buildTree_bitonic(points,numPoints);
-    CUKD_CUDA_CALL(Free(points));
+    // BUILDER_TO_TEST supplied by cmakefile:
+    cukd::BUILDER_TO_TEST(points,numPoints);
   }
 }
 
@@ -89,39 +69,9 @@ namespace test_photon {
     // instantiation:
     Photon *points = 0;
     int numPoints = 0;
-    cukd::buildTree_bitonic<Photon,Photon_traits>
+    // BUILDER_TO_TEST supplied by cmakefile:
+    cukd::BUILDER_TO_TEST<Photon,Photon_traits>
       (points,numPoints);
-  }
-  
-  void test_simple()
-  {
-    std::cout << "testing 'Photons' array (float3 plus payload), 1000 random photons." << std::endl;
-
-    int numPhotons = 1000;
-    
-    Photon *photons = 0;
-    CUKD_CUDA_CALL(MallocManaged((void **)&photons,numPhotons*sizeof(Photon)));
-    
-    std::default_random_engine rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> dist(0.f,100.f);
-    for (int i=0;i<numPhotons;i++) {
-      photons[i].position.x = dist(gen);
-      photons[i].position.y = dist(gen);
-      photons[i].position.z = dist(gen);
-      photons[i].power = make_float3(0.f,0.f,0.f);
-      photons[i].normal_theta = 0;
-      photons[i].normal_phi = 0;
-    }
-    cukd::box_t<float3> *worldBounds = 0;
-    CUKD_CUDA_CALL(MallocManaged((void **)&worldBounds,sizeof(*worldBounds)));
-    
-    cukd::buildTree_bitonic<Photon,Photon_traits>
-      (photons,numPhotons,worldBounds);
-
-    std::cout << "world bounds is " << *worldBounds << std::endl;
-    CUKD_CUDA_CALL(Free(photons));
-    CUKD_CUDA_CALL(Free(worldBounds));
   }
 }
 
@@ -130,13 +80,7 @@ int main(int, const char **)
   test_float3::test_empty();
   CUKD_CUDA_SYNC_CHECK();
 
-  test_float3::test_simple();
-  CUKD_CUDA_SYNC_CHECK();
-
   test_photon::test_empty();
-  CUKD_CUDA_SYNC_CHECK();
-
-  test_photon::test_simple();
   CUKD_CUDA_SYNC_CHECK();
 }
 

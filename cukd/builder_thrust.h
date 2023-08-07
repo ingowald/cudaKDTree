@@ -87,7 +87,8 @@ namespace cukd {
     buildTree<Photon,Photon_traits>(..., worldBounds, ...);
       
   */
-  template<typename data_t, typename data_traits>
+  template<typename data_t,
+           typename data_traits=default_data_traits<data_t>>
   void buildTree_thrust(/*! device-read/writeable array of data points */
                         data_t *d_points,
                         /*! number of data points */
@@ -96,7 +97,7 @@ namespace cukd {
                           bounding box of all data points. if
                           data_traits::has_explicit_dim is false, this is
                           optionally allowed to be null */
-                        cukd::box_t<typename data_t::point_t> *worldBounds,
+                        box_t<typename data_traits::point_t> *worldBounds=0,
                         /*! cuda stream to use for all kernels and mallocs
                           (the builder_thrust may _also_ do some global
                           device syncs) */
