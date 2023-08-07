@@ -17,10 +17,14 @@
 #include "cukd/builder.h"
 #include <random>
 
+#define AS_STRING(x) #x
+#define TO_STRING(x) AS_STRING(x)
+
 namespace test_float3 {
   void test_simple()
   {
-    std::cout << "testing float3 array, 1000 uniform random points." << std::endl;
+    std::cout << "testing `" << TO_STRING(BUILDER_TO_TEST)
+              << "` on float3 array, 1000 uniform random points." << std::endl;
     
     int numPoints = 1000;
     
@@ -73,7 +77,8 @@ namespace test_photon {
   
   void test_simple()
   {
-    std::cout << "testing 'Photons' array (float3 plus payload), 1000 random photons." << std::endl;
+    std::cout << "testing `" << AS_STRING(BUILDER_TO_TEST)
+              << "` on 'Photons' array (float3 plus payload), 1000 random photons." << std::endl;
 
     int numPhotons = 1000;
     
