@@ -20,228 +20,375 @@
 
 #include "cukd/common.h"
 #include "cukd/helpers.h"
+#include "cukd/data.h"
+#include "cukd/spatial-kdtree.h"
+
+// ==================================================================
+// INTERFACE SECTION
+// ==================================================================
+namespace cukd {
+
+  /*! Structure of parameters to control the behavior of the FCP
+    search.  By default FCP will perform an exact nearest neighbor
+    search, but the following parameters can be set to cut some
+    corners and make the search approximate in favor of speed. */
+  struct FcpSearchParams {
+    /*! Controls how many "far branches" of the tree will be
+      searched. If set to 0 the algorithm will only go down the tree
+      once following the nearest branch each time. Kernels may ignore
+      this value. */
+    int far_node_inspect_budget = INT_MAX;
+
+    /*! will only search for elements that are BELOW (i.e., NOT
+      including) this radius. This in particular allows for cutting
+      down on the number of branches to be visited during
+      traversal */
+    float cutOffRadius = INFINITY;
+  };
+
+  namespace stackBased {
+    /*! default, stack-based find-closest point kernel, with simple
+      point-to-plane-distacne test for culling subtrees 
+      
+      \returns the ID of the point that's closest to the query point,
+      or -1 if none could be found within the given serach radius
+    */
+    template<
+      /*! type of data point(s) that the tree is built over (e.g., float3) */
+      typename data_t,
+      /*! traits that describe these points (float3 etc have working defaults */
+      typename data_traits=default_data_traits<data_t>>
+    inline __device__
+    int fcp(typename data_traits::point_t queryPoint,
+            // /*! the world-space bounding box of all data points */
+            // const box_t<typename data_traits::point_t> worldBounds,
+            /*! device(!)-side array of data point, ordered in the
+              right way as produced by buildTree()*/
+            const data_t *dataPoints,
+            /*! number of data points in the tree */
+            int numDataPoints,
+            /*! paramteres to fine-tune the search */
+            FcpSearchParams params = FcpSearchParams{});
+  } // ::cukd::stackBased
+
+  namespace stackFree {
+    /*! stack-free version of the default find-cloest-point kernel
+      that lso uses simple point-to-plane-distacne test for culling
+      subtrees, but uses a stack-free rather than a stack-based
+      traversal. Will need a few more traversal steps than the
+      stack-based variant, but doesn't need to maintain a traversal
+      stack (nor incur the memory overhead for that) */
+    template<typename data_t,
+             typename data_traits=default_data_traits<data_t>>
+    inline __device__
+    int fcp(typename data_traits::point_t queryPoint,
+            // /*! the world-space bounding box of all data points */
+            // const box_t<typename data_traits::point_t> worldBounds,
+            /*! device(!)-side array of data point, ordered in the
+              right way as produced by buildTree()*/
+            const data_t *dataPoints,
+            /*! number of data points in the tree */
+            int numDataPoints,
+            /*! paramteres to fine-tune the search */
+            FcpSearchParams params = FcpSearchParams{});
+
+    // the same, for a _spatial_ k-d tree 
+    template<typename data_t,
+             typename data_traits=default_data_traits<data_t>>
+    inline __device__
+    int fcp(const SpatialKDTree<data_t,data_traits> &tree,
+            typename data_traits::point_t queryPoint,
+            FcpSearchParams params = FcpSearchParams{});
+  } // ::cukd::stackFree
+  
+  namespace cct {
+    /*! find-closest-point (fcp) kernel using specal
+      'closest-corner-tracking' traversal code; this traversal uses
+      a stack just like the stackBased::fcp (in fact, its stack
+      footprint is even larger), but is much better at culling data
+      in particular for non-uniform input data and unbounded
+      queries */
+    template<typename data_t,
+             typename data_traits=default_data_traits<data_t>>
+    inline __device__
+    int fcp(typename data_traits::point_t queryPoint,
+            /*! the world-space bounding box of all data points */
+            const box_t<typename data_traits::point_t> worldBounds,
+            /*! device(!)-side array of data point, ordered in the
+              right way as produced by buildTree()*/
+            const data_t *dataPoints,
+            /*! number of data points in the tree */
+            int numDataPoints,
+            /*! paramteres to fine-tune the search */
+            FcpSearchParams params = FcpSearchParams{});
+    
+    // the same, for a _spatial_ k-d tree 
+    template<typename data_t,
+             typename data_traits=default_data_traits<data_t>>
+    inline __device__
+    int fcp(const SpatialKDTree<data_t,data_traits> &tree,
+            typename data_traits::point_t queryPoint,
+            FcpSearchParams params = FcpSearchParams{});
+  } // ::cukd::cct
+  
+} // ::cukd
+
+
+  // ==================================================================
+  // IMPLEMENTATION SECTION
+  // ==================================================================
+
+#include "traverse-default-stack-based.h"
+#include "traverse-cct.h"
+#include "traverse-stack-free.h"
 
 namespace cukd {
 
-  template <typename scalar_t>
-  inline __device__ __host__
-  auto sqr(scalar_t f) { return f * f; }
-
-  template <typename scalar_t>
-  inline __device__ __host__
-  scalar_t sqrt(scalar_t f);
-
-  template<> inline __device__ __host__
-  float sqrt(float f) { return ::sqrtf(f); }
-
-  template <typename point_traits_a, typename point_traits_b=point_traits_a>
-  inline __device__ __host__
-  auto sqrDistance(const typename point_traits_a::point_t& a,
-                   const typename point_traits_b::point_t& b)
-  {
-    typename point_traits_a::scalar_t res = 0;
-#pragma unroll
-    for(int i=0; i<min(point_traits_a::numDims, point_traits_b::numDims); ++i) {
-      const auto diff = point_traits_a::getCoord(a, i) - point_traits_b::getCoord(b, i);
-      res += sqr(diff);
+  /*! helper struct to hold the current-best results of a fcp kernel during traversal */
+  struct FCPResult {
+    inline __device__ float initialCullDist2() const
+    { return closestDist2; }
+    
+    inline __device__ float clear(float initialDist2)
+    {
+      closestDist2 = initialDist2;
+      closestPrimID = -1;
+      return closestDist2;
     }
-    return res;
-  }
-
-  template <typename point_traits_a, typename point_traits_b=point_traits_a>
-  inline __device__ __host__
-  auto distance(const typename point_traits_a::point_t& a,
-                const typename point_traits_b::point_t& b)
-  {
-    typename point_traits_a::scalar_t res = 0;
-#pragma unroll
-    for(int i=0; i<min(point_traits_a::numDims, point_traits_b::numDims); ++i) {
-      const auto diff = point_traits_a::getCoord(a, i) - point_traits_b::getCoord(b, i);
-      res += sqr(diff);
+    
+    /*! process a new candidate with given ID and (square) distance;
+      and return square distance to be used for subsequent
+      queries */
+    inline __device__ float processCandidate(int candPrimID, float candDist2)
+    {
+      if (candDist2 < closestDist2) {
+        closestDist2 = candDist2;
+        closestPrimID = candPrimID;
+      }
+      return closestDist2;
     }
-    return sqrt(res);
-  }
 
-  
-  // Structure of parameters to control the behavior of the FCP search.
-  // By default FCP will perform an exact nearest neighbor search, but the
-  // following parameters can be set to cut some corners and make the search
-  // approximate in favor of speed.
-  struct FcpSearchParams {
-    // Controls how many "far branches" of the tree will be searched. If set to
-    // 0 the algorithm will only go down the tree once following the nearest
-    // branch each time.
-    int far_node_inspect_budget = INT_MAX;
-
-    // Controls when to go down the far branch: only follow a far branch if
-    // (1+eps) * D is within the search radius, where D is the distance to the
-    // far node. Similar to FLANN eps parameter.
-    float eps = 0.f;
-
-    // Controls when to go down the far branch: only go down the far branch if
-    // the distance to the far node is larger than this search radius.
-    float max_far_node_search_radius = 1e9f;
+    inline __device__ int returnValue() const
+    { return closestPrimID; }
+    
+    int   closestPrimID;
+    float closestDist2;
   };
 
-  template<
-    typename math_point_traits_t,
-    typename node_point_traits_t=math_point_traits_t>
+
+  template<typename data_t,
+           typename data_traits=default_data_traits<data_t>>
   inline __device__
-  int fcp(typename math_point_traits_t::point_t queryPoint,
-          const typename node_point_traits_t::point_t *d_nodes,
-          int N,
-          FcpSearchParams params = FcpSearchParams{})
+  int cct::fcp(typename data_traits::point_t queryPoint,
+               const box_t<typename data_traits::point_t> worldBounds,
+               const data_t *d_nodes,
+               int N,
+               FcpSearchParams params)
   {
-    using scalar_t = typename math_point_traits_t::scalar_t;
-    const auto max_far_node_search_radius_sqr
-      = params.max_far_node_search_radius
-      * params.max_far_node_search_radius;
-    const auto epsErr = 1 + params.eps;
-
-    int   closest_found_so_far = -1;
-    float closest_dist_sqr_found_so_far = CUDART_INF;
-
-    int prev = -1;
-    int curr = 0;
-
-    while (true) {
-      const int parent = (curr+1)/2-1;
-      if (curr >= N) {
-        // in some (rare) cases it's possible that below traversal
-        // logic will go to a "close child", but may actually only
-        // have a far child. In that case it's easiest to fix this
-        // right here, pretend we've done that (non-existent) close
-        // child, and let parent pick up traversal as if it had been
-        // done.
-        prev = curr;
-        curr = parent;
-
-        continue;
-      }
-      const auto &curr_node = d_nodes[curr];
-      const int  child = 2*curr+1;
-      const bool from_child = (prev >= child);
-      if (!from_child) {
-        const auto dist_sqr =
-          sqrDistance<math_point_traits_t,node_point_traits_t>(queryPoint,curr_node);
-        if (dist_sqr < closest_dist_sqr_found_so_far) {
-          closest_dist_sqr_found_so_far = dist_sqr;
-          closest_found_so_far          = curr;
-        }
-      }
-
-      const int   curr_dim = BinaryTree::levelOf(curr) % math_point_traits_t::numDims;
-      const float curr_dim_dist = (&queryPoint.x)[curr_dim] - (&curr_node.x)[curr_dim];
-      const int   curr_side = curr_dim_dist > 0.f;
-      const int   curr_close_child = 2*curr + 1 + curr_side;
-      const int   curr_far_child   = 2*curr + 2 - curr_side;
-
-      int next = -1;
-      if (prev == curr_close_child)
-        // if we came from the close child, we may still have to check
-        // the far side - but only if this exists, and if far half of
-        // current space if even within search radius.
-        next
-          = ((curr_far_child<N) && ((curr_dim_dist * curr_dim_dist) * epsErr < min(max_far_node_search_radius_sqr, closest_dist_sqr_found_so_far)) && (--params.far_node_inspect_budget>=0))
-          ? curr_far_child
-          : parent;
-      else if (prev == curr_far_child)
-        // if we did come from the far child, then both children are
-        // done, and we can only go up.
-        next = parent;
-      else
-        // we didn't come from any child, so must be coming from a
-        // parent... we've already been processed ourselves just now,
-        // so next stop is to look at the children (unless there
-        // aren't any). this still leaves the case that we might have
-        // a child, but only a far child, and this far child may or
-        // may not be in range ... we'll fix that by just going to
-        // near child _even if_ only the far child exists, and have
-        // that child do a dummy traversal of that missing child, then
-        // pick up on the far-child logic when we return.
-        next
-          = (child<N)
-          ? curr_close_child
-          : parent;
-
-      if (next == -1)
-        // if (curr == 0 && from_child)
-        // this can only (and will) happen if and only if we come from a
-        // child, arrive at the root, and decide to go to the parent of
-        // the root ... while means we're done.
-        return closest_found_so_far;
-
-      prev = curr;
-      curr = next;
-    }
+    FCPResult result;
+    result.clear(sqr(params.cutOffRadius));
+    traverse_cct<FCPResult,data_t,data_traits>
+      (result,queryPoint,worldBounds,d_nodes,N);
+    return result.returnValue();
   }
 
-  /*1 project a point into a boundinx box */
-  template <typename math_point_traits_t,
-            typename node_point_traits_t=math_point_traits_t>
+  template<typename data_t,
+           typename data_traits=default_data_traits<data_t>>
   inline __device__
-  int fcp(typename math_point_traits_t::point_t queryPoint,
-          const common::box_t<typename math_point_traits_t::point_t> *d_bounds,
-          const typename node_point_traits_t::point_t *d_nodes,
-          int numPoints,
-          FcpSearchParams params = FcpSearchParams{})
+  int stackFree::fcp(typename data_traits::point_t queryPoint,
+                     const data_t *d_nodes,
+                     int N,
+                     FcpSearchParams params)
   {
-    using scalar_t = typename math_point_traits_t::scalar_t;
-    scalar_t cullDist = sqr(params.max_far_node_search_radius);
-    int   closestID = -1;
+    FCPResult result;
+    result.clear(sqr(params.cutOffRadius));
+    traverse_stack_free<FCPResult,data_t,data_traits>
+      (result,queryPoint,d_nodes,N);
+    return result.returnValue();
+  }
 
-    struct StackEntry {
-      typename math_point_traits_t::point_t closestCorner;
-      int          nodeID;
-    };
+  template<typename data_t,
+           typename data_traits=default_data_traits<data_t>>
+  inline __device__
+  int stackBased::fcp(typename data_traits::point_t queryPoint,
+                      const data_t *d_nodes,
+                      int N,
+                      FcpSearchParams params)
+  {
+    FCPResult result;
+    result.clear(sqr(params.cutOffRadius));
+    traverse_default<FCPResult,data_t,data_traits>
+      (result,queryPoint,d_nodes,N);
+    return result.returnValue();
+  }
+
+  template<typename data_t,
+           typename data_traits=default_data_traits<data_t>>
+  inline __device__
+  int cct::fcp(const SpatialKDTree<data_t,data_traits> &tree,
+               typename data_traits::point_t queryPoint,
+               FcpSearchParams params)
+  {
+    FCPResult result;
+    result.clear(sqr(params.cutOffRadius));
+
+    using node_t     = typename SpatialKDTree<data_t,data_traits>::Node;
+    using point_t    = typename data_traits::point_t;
+    using scalar_t   = typename scalar_type_of<point_t>::type;
+    enum { num_dims  = num_dims_of<point_t>::value };
+    
+    scalar_t cullDist = result.initialCullDist2();
+
     /* can do at most 2**30 points... */
-    StackEntry  stackBase[30];
+    struct StackEntry {
+      int   nodeID;
+      point_t closestCorner;
+    };
+    enum{ stack_depth = 50 };
+    StackEntry stackBase[stack_depth];
     StackEntry *stackPtr = stackBase;
 
+    int numSteps = 0;
+    /*! current node in the tree we're traversing */
     int nodeID = 0;
-    auto closestPointOnSubtreeBounds = project<math_point_traits_t>(*d_bounds,queryPoint);
-    if (sqrDistance<math_point_traits_t>(queryPoint,closestPointOnSubtreeBounds) > cullDist)
-      return closestID;
-
-
+    point_t closestPointOnSubtreeBounds = project(tree.bounds,queryPoint);
+    if (sqrDistance(queryPoint,closestPointOnSubtreeBounds) > cullDist)
+      return result.returnValue();
+    node_t node;
     while (true) {
-      if (nodeID >= numPoints) {
-        while (true) {
-          if (stackPtr == stackBase)
-            return closestID;
-          --stackPtr;
-          closestPointOnSubtreeBounds = stackPtr->closestCorner;
-          if (sqrDistance<math_point_traits_t>(closestPointOnSubtreeBounds,queryPoint) > cullDist)
-            continue;
-          nodeID = stackPtr->nodeID;
+      while (true) {
+        numSteps++;
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
+        node = tree.nodes[nodeID];
+        if (node.count)
+          // this is a leaf...
           break;
+
+        const auto query_coord = get_coord(queryPoint,node.dim);
+        const bool leftIsClose = query_coord < node.pos;
+        const int  lChild = node.offset+0;
+        const int  rChild = node.offset+1;
+
+        const int closeChild = leftIsClose?lChild:rChild;
+        const int farChild   = leftIsClose?rChild:lChild;
+
+        auto farSideCorner = closestPointOnSubtreeBounds;
+          
+        get_coord(farSideCorner,node.dim) = node.pos;
+
+        const float farSideDist2 = sqrDistance(farSideCorner,queryPoint);
+        if (farSideDist2 < cullDist) {
+          stackPtr->closestCorner = farSideCorner;
+          stackPtr->nodeID  = farChild;
+          ++stackPtr;
+          if ((stackPtr - stackBase) >= stack_depth) {
+            printf("STACK OVERFLOW %i\n",int(stackPtr - stackBase));
+            return -1;
+          }
         }
-      }
-      const int dim    = BinaryTree::levelOf(nodeID) % math_point_traits_t::numDims;
-      const auto node  = d_nodes[nodeID];
-      const auto sqrDist = sqrDistance<node_point_traits_t,math_point_traits_t>(node,queryPoint);
-      if (sqrDist < cullDist) {
-        cullDist  = sqrDist;
-        closestID = nodeID;
+        nodeID = closeChild;
       }
 
-      const auto node_dim   = node_point_traits_t::getCoord(node,dim);
-      const auto query_dim  = math_point_traits_t::getCoord(queryPoint,dim);
-      const bool  leftIsClose = query_dim < node_dim;
-      const int   lChild = 2*nodeID+1;
-      const int   rChild = lChild+1;
-
-      auto farSideCorner = closestPointOnSubtreeBounds;
-      const int farChild = leftIsClose?rChild:lChild;
-      math_point_traits_t::setCoord(farSideCorner,dim,node_dim);
-      if (farChild < numPoints && sqrDistance<math_point_traits_t>(farSideCorner,queryPoint) <= cullDist) {
-        stackPtr->closestCorner = farSideCorner;
-        stackPtr->nodeID = farChild;
-        stackPtr++;
+      for (int i=0;i<node.count;i++) {
+        int primID = tree.primIDs[node.offset+i];
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
+        auto dp = data_traits::get_point(tree.data[primID]);
+          
+        const auto sqrDist = sqrDistance(data_traits::get_point(tree.data[primID]),queryPoint);
+        cullDist = result.processCandidate(primID,sqrDist);
       }
-
-      nodeID = leftIsClose?lChild:rChild;
+      
+      while (true) {
+        if (stackPtr == stackBase)  {
+          return result.returnValue();
+        }
+        --stackPtr;
+        closestPointOnSubtreeBounds = stackPtr->closestCorner;
+        if (sqrDistance(closestPointOnSubtreeBounds,queryPoint) >= cullDist)
+          continue;
+        nodeID = stackPtr->nodeID;
+        break;
+      }
     }
   }
-} // ::cukd
 
+  template<typename data_t,
+           typename data_traits=default_data_traits<data_t>>
+  inline __device__
+  int stackBased::fcp(const SpatialKDTree<data_t,data_traits> &tree,
+                      typename data_traits::point_t queryPoint,
+                      FcpSearchParams params = FcpSearchParams{})
+  {
+    FCPResult result;
+    result.clear(sqr(params.cutOffRadius));
+
+    using node_t     = typename SpatialKDTree<data_t,data_traits>::Node;
+    using point_t    = typename data_traits::point_t;
+    using scalar_t   = typename scalar_type_of<point_t>::type;
+    enum { num_dims  = num_dims_of<point_t>::value };
+    
+    scalar_t cullDist = result.initialCullDist2();
+
+    /* can do at most 2**30 points... */
+    struct StackEntry {
+      int   nodeID;
+      float sqrDist;
+    };
+    enum{ stack_depth = 50 };
+    StackEntry stackBase[stack_depth];
+    StackEntry *stackPtr = stackBase;
+
+    /*! current node in the tree we're traversing */
+    int nodeID = 0;
+    node_t node;
+    int numSteps = 0;
+    while (true) {
+      while (true) {
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
+        node = tree.nodes[nodeID];
+        ++numSteps;
+        if (node.count)
+          // this is a leaf...
+          break;
+        const auto query_coord = get_coord(queryPoint,node.dim);
+        const bool leftIsClose = query_coord < node.pos;
+        const int  lChild = node.offset+0;
+        const int  rChild = node.offset+1;
+
+        const int closeChild = leftIsClose?lChild:rChild;
+        const int farChild   = leftIsClose?rChild:lChild;
+        
+        const float sqrDistToPlane = sqr(query_coord - node.pos);
+        if (sqrDistToPlane < cullDist) {
+          stackPtr->nodeID  = farChild;
+          stackPtr->sqrDist = sqrDistToPlane;
+          ++stackPtr;
+          if ((stackPtr - stackBase) >= stack_depth) {
+            printf("STACK OVERFLOW %i\n",int(stackPtr - stackBase));
+            return -1;
+          }
+        }
+        nodeID = closeChild;
+      }
+
+      for (int i=0;i<node.count;i++) {
+        int primID = tree.primIDs[node.offset+i];
+        const auto sqrDist = sqrDistance(data_traits::get_point(tree.data[primID]),queryPoint);
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
+        cullDist = result.processCandidate(primID,sqrDist);
+      }
+      
+      while (true) {
+        if (stackPtr == stackBase)  {
+          return result.returnValue();
+        }
+        --stackPtr;
+        if (stackPtr->sqrDist >= cullDist)
+          continue;
+        nodeID = stackPtr->nodeID;
+        break;
+      }
+    }
+  }
+// #endif
+} // :: cukd

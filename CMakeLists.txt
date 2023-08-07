@@ -1,5 +1,5 @@
 # ======================================================================== #
-# Copyright 2021-2022 Ingo Wald                                            #
+# Copyright 2021-2023 Ingo Wald                                            #
 #                                                                          #
 # Licensed under the Apache License, Version 2.0 (the "License");          #
 # you may not use this file except in compliance with the License.         #
@@ -31,10 +31,15 @@ else()
   set(CUKD_IS_SUBPROJECT OFF)
 endif()
 
+option(BUILD_ALL_TESTS "Build entire type/dimension/kernel test matrix?" OFF)
+
+add_subdirectory(../bitonic ext_bitonic EXCLUDE_FROM_ALL)
+
 # ------------------------------------------------------------------
 # general cmake project configs
 # ------------------------------------------------------------------
 if (NOT CUKD_IS_SUBPROJECT)
+  option(CUKD_ENABLE_STATS "Enable Stats tracking?" ON)
   if(NOT SET_UP_CONFIGURATIONS_DONE)
     set(SET_UP_CONFIGURATIONS_DONE 1)
 
@@ -56,56 +61,152 @@ if (NOT CUKD_IS_SUBPROJECT)
   SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   SET(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-endif()
 
-set(CMAKE_CUDA_ARCHITECTURES 70 75 86)
-if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.17)
-  # nothing to do, setting CMAKE_CUDA_ARCHITECTURES is hte way to go
+  set(CMAKE_CUDA_ARCHITECTURES "70" CACHE STRING "Specific CUDA Arch(s) to build against")
+  #set(CMAKE_CUDA_ARCHITECTURES 70 75 86)
+  if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.17)
+    # nothing to do, setting CMAKE_CUDA_ARCHITECTURES is the way to go
+  else()
+    foreach (arch IN ITEMS ${CMAKE_CUDA_ARCHITECTURES})
+      #    message("status adding arch=${arch}")
+      set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${arch},code=sm_${arch}")
+    endforeach()
+  endif()
+
 else()
-  foreach (arch IN ITEMS ${CMAKE_CUDA_ARCHITECTURES})
-#    message("status adding arch=${arch}")
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${arch},code=sm_${arch}")
-  endforeach()
+  if (NOT CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 70 75 80 86)
+  endif()
 endif()
 
 
-
-set(CMAKE_CUDA_ARCHITECTURES 70 75 80 86)
-if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.17)
-  # nothing to do, setting CMAKE_CUDA_ARCHITECTURES is hte way to go
-else()
-  foreach (arch IN ITEMS ${CMAKE_CUDA_ARCHITECTURES})
-#    message("status adding arch=${arch}")
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${arch},code=sm_${arch}")
-  endforeach()
-endif()
-
+# ==================================================================
+# this builds four variants of this library, that differ in how the
+# k-d tree is being TRAVERSED:
+#
+# `cudaKDTree-default` uses a stack-based traversal, doesn't require
+# the world-space bounding box
+#
+# `cudaKDTree-sf` uses a stack-free traversal. Can generate in more
+# efficient code in some cases, but will suffer from the same issues
+# as the default variant for certain combination of input point
+# distributoins and query point distributions
+#
+# `cudaKDTree-cct` uses 'closest-corner-tracking', which can in some
+# cases be faster than teh default traversal method (in particular if
+# there is no good cut-off-radius, and queries can originate far from
+# the data points, and/or for highly clustered data. It does however
+# require to allocate and provide (a tiny amount of) memory for the
+# builder to store the world-space bounding box of the input points,
+# as well as to pass aht pointer to the query method.
+#
+# ==================================================================
 add_library(cudaKDTree INTERFACE)
 target_sources(cudaKDTree INTERFACE
   cukd/common.h
+  cukd/math.h
+  cukd/box.h
   cukd/builder.h
+  cukd/builder_bitonic.h
+  cukd/builder_thrust.h
+  cukd/builder_inplace.h
+  # SPATIAL k-d tree, with planes at arbitrary locatoins 
+  cukd/spatial-kdtree.h
   cukd/fcp.h
   cukd/knn.h
   )
 target_include_directories(cudaKDTree INTERFACE
-#target_link_libraries(cudaKDTree INTERFACE
   ${PROJECT_SOURCE_DIR}/
   )
+target_compile_definitions(cudaKDTree INTERFACE -DBLABLA=1)
 
-add_executable(cukd_test_float4-fcp testing/float4-fcp.cu)
-target_link_libraries(cukd_test_float4-fcp cudaKDTree)
 
-add_executable(cukd_test_float4-knn testing/float4-knn.cu)
-target_link_libraries(cukd_test_float4-knn cudaKDTree)
+# ================================================================== a
+# simple sample example of how to build a k-d tree
+# ==================================================================
+if (NOT CUKD_IS_SUBPROJECT)
+  add_executable(cukd_sample sample.cu)
+  target_link_libraries(cukd_sample cudaKDTree)
+endif()
 
-add_executable(cukd_test_float3-knn testing/float3-knn.cu)
-target_link_libraries(cukd_test_float3-knn cudaKDTree)
 
-add_executable(cukd_test_float3-fcp testing/float3-fcp.cu)
-target_link_libraries(cukd_test_float3-fcp cudaKDTree)
+
+
+# ==================================================================
+# create _a lot_ of test cases: this generates the whole matrix of
+# traversal_method x num_dims x {fcp,knn}
+# ==================================================================
+if (BUILD_ALL_TESTS)
+  add_library(cudaKDTree-cct INTERFACE)
+  target_link_libraries(cudaKDTree-cct INTERFACE cudaKDTree)
+  target_compile_definitions(cudaKDTree-cct        INTERFACE -DCUKD_CCT=1)
+
+  add_library(cudaKDTree-stack-free INTERFACE)
+  target_link_libraries(cudaKDTree-stack-free INTERFACE cudaKDTree)
+  target_compile_definitions(cudaKDTree-stack-free INTERFACE -DCUKD_SF=1)
+
+  add_library(cudaKDTree-default INTERFACE)
+  target_link_libraries(cudaKDTree-default INTERFACE cudaKDTree)
+  target_compile_definitions(cudaKDTree-default INTERFACE -DCUKD_DEFAULT=1)
+
 
   
 
+  
+  # test 2, 3, 4, and 8-dimensoinal data; the latter should - if it
+  # works for N=8, work for any other N>4
+#  set(DIMS_TO_BUILD 3)
+  set(DIMS_TO_BUILD 2 3 4 8)
+  foreach (D IN ITEMS ${DIMS_TO_BUILD})
+    # test all four possible traversal methosds
+    foreach(method stack-free cct default)
+      # test knn queries, on regular trees (no explicit dimension per node)
+      add_executable(cukd_float${D}-knn-${method} testing/floatN-knn-and-fcp.cu)
+      target_link_libraries(cukd_float${D}-knn-${method} cudaKDTree cudaKDTree-${method})
+      target_compile_definitions(cukd_float${D}-knn-${method}
+	PUBLIC -DD_FROM_CMAKE=${D} -DUSE_KNN=1)
+
+      # test knn queries, with 'explicit-dim' trees
+      add_executable(cukd_float${D}-knn-${method}-xd testing/floatN-knn-and-fcp.cu)
+      target_link_libraries(cukd_float${D}-knn-${method}-xd cudaKDTree-${method})
+      target_compile_definitions(cukd_float${D}-knn-${method}-xd
+	PUBLIC -DD_FROM_CMAKE=${D} -DEXPLICIT_DIM=1 -DUSE_KNN=1)
+
+      # test fcp queries, on regular trees
+      add_executable(cukd_float${D}-fcp-${method} testing/floatN-knn-and-fcp.cu)
+      target_link_libraries(cukd_float${D}-fcp-${method} cudaKDTree-${method})
+      target_compile_definitions(cukd_float${D}-fcp-${method}
+	PUBLIC -DD_FROM_CMAKE=${D})
+
+      # test fcp queries, with 'explicit-dim' trees
+      add_executable(cukd_float${D}-fcp-${method}-xd testing/floatN-knn-and-fcp.cu)
+      target_link_libraries(cukd_float${D}-fcp-${method}-xd cudaKDTree-${method})
+      target_compile_definitions(cukd_float${D}-fcp-${method}-xd
+	PUBLIC -DD_FROM_CMAKE=${D} -DEXPLICIT_DIM=1)
+
+    endforeach()
 
 
+    foreach(method spatial-default spatial-cct)
+      # test knn queries, on regular trees (no explicit dimension per node)
+      add_executable(cukd_float${D}-knn-${method} testing/floatN-knn-and-fcp.cu)
+      target_link_libraries(cukd_float${D}-knn-${method} cudaKDTree-${method})
+      target_compile_definitions(cukd_float${D}-knn-${method}
+	PUBLIC -DD_FROM_CMAKE=${D} -DUSE_KNN=1)
 
+      # test fcp queries, on regular trees
+      add_executable(cukd_float${D}-fcp-${method} testing/floatN-knn-and-fcp.cu)
+      target_link_libraries(cukd_float${D}-fcp-${method} cudaKDTree-${method})
+      target_compile_definitions(cukd_float${D}-fcp-${method}
+	PUBLIC -DD_FROM_CMAKE=${D})
+
+    endforeach()
+  endforeach()
+endif()
+
+
+if (NOT CUKD_IS_SUBPROJECT)
+  # add some unit tests
+  include(CTest) 
+  add_subdirectory(testing)
+endif()

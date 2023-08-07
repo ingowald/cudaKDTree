@@ -5,7 +5,6 @@ textures
 bin
 dbg
 *.user*
-build*
 *.sw?
 tags
 .ycm_extra_conf.pyc

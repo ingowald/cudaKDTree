@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2019-2021 Ingo Wald                                            //
+// Copyright 2019-2023 Ingo Wald                                            //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -16,318 +16,137 @@
 
 #pragma once
 
-#include "helpers.h"
-
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-#include <thrust/execution_policy.h>
-#include <thrust/fill.h>
-#include <thrust/sort.h>
+#include "cukd/helpers.h"
+#include "cukd/box.h"
 #include <cuda.h>
-#include <thrust/binary_search.h>
-#include <device_launch_parameters.h>
-#include <thrust/random/linear_congruential_engine.h>
-#include <thrust/random/uniform_real_distribution.h>
+
+/* This is a single include file from which
+
+  Builder variants "cheat sheet"
+
+  builder_thrust:
+  - temporary memory overhead for N points: N ints + order 2N points 
+    (ie, total mem order 3x that of input data!)
+  - perf 100K float3s (4090) :   ~4ms
+  - perf   1M float3s (4090) :  ~20ms
+  - perf  10M float3s (4090) : ~200ms
+  
+  builder_bitonic:
+  - temporary memory overhead for N points: N ints 
+    (ie, ca 30% mem overhead for float3)
+  - perf 100K float3s (4090) :  ~10ms
+  - perf   1M float3s (4090) :  ~27ms
+  - perf  10M float3s (4090) : ~390ms
+
+  builder_inplace:
+  - temporary memory overhead for N points: nada, nil, zilch.
+  - perf 100K float3s (4090) :  ~10ms
+  - perf   1M float3s (4090) : ~220ms
+  - perf  10M float3s (4090) : ~4.3ms
+
+ */
+
+#include "cukd/builder_thrust.h"
+#include "cukd/builder_bitonic.h"
+#include "cukd/builder_inplace.h"
 
 namespace cukd {
+  /*! Builds a left-balanced k-d tree over the given data points,
+    using data_traits to describe the type of data points that this
+    tree is being built over (i.e., how to separate a data item's
+    positional coordinates from any potential payload (if such exists,
+    e.g., in a 'photon' in photon mapping), what vector/point type to
+    use for this coordinate data (e.g., float3), whether the data have
+    a field to store an explicit split dimensional (for Bentley and
+    Samet's 'optimized' trees, etc.
 
-  typedef uint32_t tag_t;
+    Since a (point-)k-d tree's tree topology is implicit in the
+    ordering of its data points this will re-arrange the data points
+    to fulfill the balanced k-d tree criterion - ie, this WILL modify
+    the data array: no individual entry will get changed, but their
+    order might. If data_traits::has_explcit_dims is defined this
+    builder will choose each node's split dimension based on the
+    widest dimension of that node's subtree's domain; if not, it will
+    chose the dimension in a round-robin style, where the root level
+    is split along the 'x' coordinate, the next level in y, etc
 
-  // ==================================================================
-  // INTERFACE SECTION
-  // ==================================================================
+    'worldBounds' is a pointer to device-writeable memory to store the
+    world-space bounding box of the data points that the builder will
+    compute. If data_traits::has_explicit_dims is true this memory
+    _has_ to be provided to the builder, and the builder will fill it
+    in; if data_traits::has_explicit_dims is false, this memory region
+    is optional: the builder _will_ fill it in if provided, but will
+    ignore it if isn't.
 
-  /*! builds a regular, "round-robin" style k-d tree over the given
-    (device-side) array of points. Round-robin in this context means
-    that the first dimension is sorted along x, the second along y,
-    etc, going through all dimensions x->y->z... in round-robin
-    fashion. point_t can be any arbitrary struct, and is assumed to
-    have at least 'numDims' coordinates of type 'scalar_t', plus
-    whatever other payload data is desired.
-
-    Example 1: To build a 2D k-dtree over a CUDA int2 type (no other
+    *** Example 1: To build a 2D k-dtree over a CUDA int2 type (no other
     payload than the two coordinates):
+      
+    buildTree<int2>(....);
 
-    buildKDTree<int2>(....);
-
-    Example 2: to build a 1D kd-tree over a data type of float4,
+    In this case no data_traits need to be supplied beause these will
+    be auto-computed for simple cuda vector types.
+      
+    *** Example 2: to build a 1D kd-tree over a data type of float4,
     where the first coordinate of each point is the dimension we
     want to build the kd-tree over, and the other three coordinate
     are arbitrary other payload data:
-
-    buildKDTree<float4>(...);
+      
+    struct float2_plus_payload_traits {
+       using point_t = float2;
+       static inline __both__ const point_t &get_point(const float4 &n) 
+       { return make_float2(n.z,n.w); }
+    }
+    buildTree<float4,float2_plus_payload_traits>(...);
+      
+    *** Example 3: assuming you have a data type 'Photon' and a
+    Photon_traits has Photon_traits::has_explciit_dim defined:
+      
+    cukd::box_t<float3> *d_worldBounds = <cudaMalloc>;
+    buildTree<Photon,Photon_traits>(..., worldBounds, ...);
+      
   */
-  template<typename data_point_traits_t>
-  void buildTree(typename data_point_traits_t::point_t *d_points,
+  template<typename data_t, typename data_traits=default_data_traits<data_t>>
+  void buildTree(/*! device-read/writeable array of data points */
+                 data_t *d_points,
+                 /*! number of data points */
                  int numPoints,
-                 cudaStream_t stream = 0);
-
-  template<typename math_point_traits_t,
-           typename data_point_traits_t = math_point_traits_t>
-  void computeBounds(common::box_t<typename math_point_traits_t::point_t> *d_bounds,
-                     const typename data_point_traits_t::point_t *d_points,
-                     int numPoints,
-                     cudaStream_t stream=0);
-
-  // ==================================================================
-  // IMPLEMENTATION SECTION
-  // ==================================================================
-
-  template<typename point_traits_t>
-  struct ZipCompare {
-    ZipCompare(const int dim) : dim(dim) {}
-
-    /*! the actual comparison operator; will perform a
-      'zip'-comparison in that the first element is the major sort
-      order, and the second the minor one (for those of same major
-      sort key) */
-    inline __device__ bool operator()
-    (const thrust::tuple<tag_t, typename point_traits_t::point_t> &a,
-     const thrust::tuple<tag_t, typename point_traits_t::point_t> &b);
-
-    const int dim;
-  };
-
-  /* performs the L-th step's tag update: each input tag refers to a
-     subtree ID on level L, and - assuming all points and tags are in
-     the expected sort order described inthe paper - this kernel will
-     update each of these tags to either left or right child (or root
-     node) of given subtree*/
-  __global__
-  void updateTag(/*! array of tags we need to update */
-                 tag_t *tag,
-                 /*! num elements in the tag[] array */
-                 int numPoints,
-                 /*! which step we're in             */
-                 int L)
+                 /*! device-writeable pointer to store the world-space
+                     bounding box of all data points. if
+                     data_traits::has_explicit_dim is false, this is
+                     optionally allowed to be null */
+                 box_t<typename data_traits::point_t> *worldBounds,
+                 /*! cuda stream to use for all kernels and mallocs
+                     (the builder_thrust may _also_ do some global
+                     device syncs) */
+                 cudaStream_t stream=0)
   {
-    const int gid = threadIdx.x+blockIdx.x*blockDim.x;
-    if (gid >= numPoints) return;
+#if defined(CUKD_BUILDER_INPLACE)
+/* this is a _completely_ in-place builder; it will not allocate a
+   single byte of additional memory during building (or at any other
+   time); the downside is that for large array's it can be 10x-20x
+   slower . For refernece: for 10M float3 poitns, builder_inplace
+   takes about 4.3 seconds; builder_thrust will take about 200ms,
+   builder_bitonic will take about 390ms */
+    buildTree_inPlace<data_t,data_traits>
+      (d_points,numPoints,worldBounds,stream);
 
-    const int numSettled = FullBinaryTreeOf(L).numNodes();
-    if (gid < numSettled) return;
-
-    // get the subtree that the given node is in - which is exactly
-    // what the tag stores...
-    int subtree = tag[gid];
-
-    // computed the expected positoin of the pivot element for the
-    // given subtree when using our speific array layout.
-    const int pivotPos = ArrayLayoutInStep(L,numPoints).pivotPosOf(subtree);
-
-    if (gid < pivotPos)
-      // point is to left of pivot -> must be smaller or equal to
-      // pivot in given dim -> must go to left subtree
-      subtree = BinaryTree::leftChildOf(subtree);
-    else if (gid > pivotPos)
-      // point is to left of pivot -> must be bigger or equal to pivot
-      // in given dim -> must go to right subtree
-      subtree = BinaryTree::rightChildOf(subtree);
-    else
-      // point is _on_ the pivot position -> it's the root of that
-      // subtree, don't change it.
-      ;
-    tag[gid] = subtree;
-  }
-
-
-#if KDTREE_BUILDER_LOGGING
-  void print(const char *txt,
-             int step,
-             int numPoints,
-             tag_t *d_tags,
-             int1 *d_points)
-  {
-    std::vector<int> points(numPoints), tags(numPoints);
-    cudaMemcpy(points.data(),d_points,numPoints*sizeof(int),cudaMemcpyDefault);
-    cudaMemcpy(tags.data(),d_tags,numPoints*sizeof(int),cudaMemcpyDefault);
-    printf("-----------\n");
-    printf(txt,step);
-    printf("arry:");
-    for (int i=0;i<numPoints;i++)
-      printf("%6i",i);
-    printf("\n");
-    printf("tags:");
-    for (int i=0;i<numPoints;i++)
-      printf("%6i",tags[i]);
-    printf("\n");
-    printf("pnts:");
-    for (int i=0;i<numPoints;i++)
-      printf("%6i",points[i]);
-    printf("\n");
-  }
+#elif defined(CUKD_BUILDER_BITONIC)
+/* this builder uses our tag-update algorithm, but uses bitonic sort
+   instead of thrust for soring. it doesn't require thrust, and
+   doesn't require additional memory other than 1 int for the tag, but
+   for large arrays (10M-ish points) is about 2x slwoer than than the
+   thrust variant */
+    buildTree_bitonic<data_t,data_traits>
+      (d_points,numPoints,worldBounds,stream);
+#else
+/* this builder uses our tag-update algorithm, and uses thrust for
+    sorting the tag:node pairs. This is our fastest builder, but has
+    the downside that thrust's sort will not properly work in a
+    stream, and will, in parituclar, have to allocate (quite a bit
+    of!) temporary memory during sorting */
+    buildTree_thrust<data_t,data_traits>
+      (d_points,numPoints,worldBounds,stream);
 #endif
-
-  template<typename data_point_traits_t>
-  void buildTree(typename data_point_traits_t::point_t *d_points,
-                 int numPoints,
-                 cudaStream_t stream)
-  {
-    /* thrust helper typedefs for the zip iterator, to make the code
-       below more readable */
-    using data_point_t = typename data_point_traits_t::point_t;
-    typedef typename thrust::device_vector<tag_t>::iterator tag_iterator;
-    typedef typename thrust::device_vector<data_point_t>::iterator point_iterator;
-    typedef thrust::tuple<tag_iterator,point_iterator> iterator_tuple;
-    typedef thrust::zip_iterator<iterator_tuple> tag_point_iterator;
-    enum { numDims = data_point_traits_t::numDims };
-    // check for invalid input, and return gracefully if so
-    if (numPoints < 1) return;
-
-    /* the helper array  we use to store each node's subtree ID in */
-    // TODO allocate in stream?
-    thrust::device_vector<tag_t> tags(numPoints);
-    /* to kick off the build, every element is in the only
-       level-0 subtree there is, namely subtree number 0... duh */
-    thrust::fill(thrust::device.on(stream),tags.begin(),tags.end(),0);
-
-    /* create the zip iterators we use for zip-sorting the tag and
-       points array */
-    thrust::device_ptr<data_point_t> points_begin(d_points);
-    thrust::device_ptr<data_point_t> points_end(d_points+numPoints);
-    tag_point_iterator begin = thrust::make_zip_iterator
-      (thrust::make_tuple(tags.begin(),points_begin));
-    tag_point_iterator end = thrust::make_zip_iterator
-      (thrust::make_tuple(tags.end(),points_end));
-
-    /* compute number of levels in the tree, which dicates how many
-       construction steps we need to run */
-    const int numLevels = BinaryTree::numLevelsFor(numPoints);
-    const int deepestLevel = numLevels-1;
-
-#if KDTREE_BUILDER_LOGGING
-    cudaStreamSynchronize(stream);
-    print("init\n",-1,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
-#endif
-
-    /* now build each level, one after another, cycling through the
-       dimensoins */
-    for (int level=0;level<deepestLevel;level++) {
-      thrust::sort(thrust::device.on(stream),begin,end,
-                   ZipCompare<data_point_traits_t>((level)%numDims));
-
-#if KDTREE_BUILDER_LOGGING
-      cudaStreamSynchronize(stream);
-      print("step %i sort\n",level,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
-#endif
-      const int blockSize = 32;
-      const int numSettled = FullBinaryTreeOf(level).numNodes();
-      updateTag<<<common::divRoundUp(numPoints,blockSize),blockSize,1,stream>>>
-        (thrust::raw_pointer_cast(tags.data()),numPoints,level);
-
-#if KDTREE_BUILDER_LOGGING
-      cudaStreamSynchronize(stream);
-      print("step %i tags updated\n",level,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
-#endif
-    }
-    /* do one final sort, to put all elements in order - by now every
-       element has its final (and unique) nodeID stored in the tag[]
-       array, so the dimension we're sorting in really won't matter
-       any more */
-    thrust::sort(thrust::device.on(stream),begin,end,
-                 ZipCompare<data_point_traits_t>((deepestLevel)%numDims));
-#if KDTREE_BUILDER_LOGGING
-    cudaStreamSynchronize(stream);
-    print("final sort\n",-1,numPoints,thrust::raw_pointer_cast(tags.data()),d_points);
-#endif
-  }
-
-  template<typename math_point_traits_t,
-           typename data_point_traits_t = math_point_traits_t>
-  __global__
-  void computeBounds_copyFirst(
-      common::box_t<typename math_point_traits_t::point_t> *d_bounds,
-      const typename data_point_traits_t::point_t *d_points)
-  {
-    const auto point = d_points[0];
-    for (int d=0;d<math_point_traits_t::numDims;d++) {
-      const auto point_d = data_point_traits_t::getCoord(point,d);
-      math_point_traits_t::setCoord(d_bounds->lower,d,point_d);
-      math_point_traits_t::setCoord(d_bounds->upper,d,point_d);
-    }
-  }
-
-  inline __device__
-  float atomicMin(float *addr, float value)
-  {
-    float old = *addr, assumed;
-    if(old <= value) return old;
-    do {
-      assumed = old;
-      old = __int_as_float(atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value)));
-      value = min(value,old);
-    } while(old!=assumed);
-    return old;
-  }
-
-  inline __device__
-  float atomicMax(float *addr, float value)
-  {
-    float old = *addr, assumed;
-    if(old >= value) return old;
-    do {
-      assumed = old;
-      old = __int_as_float(atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value)));
-      value = max(value,old);
-    } while(old!=assumed);
-    return old;
-  }
-
-  template<typename math_point_traits_t,
-           typename data_point_traits_t = math_point_traits_t>
-  __global__
-  void computeBounds_atomicGrow(
-      common::box_t<typename math_point_traits_t::point_t> *d_bounds,
-      const typename data_point_traits_t::point_t *d_points,
-      int numPoints)
-  {
-    static_assert(math_point_traits_t::numDims <= data_point_traits_t::numDims, "dimension error");
-    const int tid = threadIdx.x+blockIdx.x*blockDim.x;
-    if (tid >= numPoints) return;
-    for (int d=0;d<math_point_traits_t::numDims;d++) {
-      const auto point_d = data_point_traits_t::getCoord(d_points[tid],d);
-      atomicMin(&d_bounds->lower.x+d,point_d);
-      atomicMax(&d_bounds->upper.x+d,point_d);
-    }
-  }
-
-  template<typename math_point_traits_t,
-           typename data_point_traits_t>
-  void computeBounds(common::box_t<typename math_point_traits_t::point_t> *d_bounds,
-                     const typename data_point_traits_t::point_t *d_points,
-                     int numPoints,
-                     cudaStream_t s)
-  {
-    computeBounds_copyFirst<math_point_traits_t, data_point_traits_t>
-      <<<1,1,0,s>>>
-      (d_bounds,d_points);
-    computeBounds_atomicGrow<math_point_traits_t, data_point_traits_t>
-      <<<common::divRoundUp(numPoints,128),128,0,s>>>
-      (d_bounds,d_points,numPoints);
-  }
-
-
-  /*! the actual comparison operator; will perform a
-    'zip'-comparison in that the first element is the major sort
-    order, and the second the minor one (for those of same major
-    sort key) */
-  template<typename point_traits_t>
-  inline __device__
-  bool ZipCompare<point_traits_t>::operator()
-    (const thrust::tuple<tag_t, typename point_traits_t::point_t> &a,
-     const thrust::tuple<tag_t, typename point_traits_t::point_t> &b)
-  {
-    const auto tag_a = thrust::get<0>(a);
-    const auto tag_b = thrust::get<0>(b);
-    const auto pnt_a = thrust::get<1>(a);
-    const auto pnt_b = thrust::get<1>(b);
-    const auto dim_a = point_traits_t::getCoord(pnt_a,dim);
-    const auto dim_b = point_traits_t::getCoord(pnt_b,dim);
-    const bool less =
-      (tag_a < tag_b)
-      ||
-      ((tag_a == tag_b) && (dim_a < dim_b));
-
-    return less;
   }
 }
+

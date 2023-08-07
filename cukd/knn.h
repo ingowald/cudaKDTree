@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2022-2022 Ingo Wald                                            //
+// Copyright 2022-2023 Ingo Wald                                            //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -22,19 +22,32 @@
 
 namespace cukd {
 
+  /*! list that stores the respectively k nearest candidates during
+      knn traversal, in this case using a simple linear sorted list of
+      k elements. Inserting into this list costs O(k), but can
+      probably be unrolled and kept in registers (unlike the heap
+      based variant below), and should thus be faster for small k than
+      using the heav varaitn - but it'll be painfully slow for larger
+      k */
   template<int k>
   struct FixedCandidateList
   {
+    inline __device__ float returnValue() const { return maxRadius2(); }
+    inline __device__ float processCandidate(int candPrimID, float candDist2)
+    { push(candDist2,candPrimID); return maxRadius2(); }
+    inline __device__ float initialCullDist2() const { return maxRadius2(); }
+
+
     inline __device__ uint64_t encode(float f, int i)
     {
       return (uint64_t(__float_as_uint(f)) << 32) | uint32_t(i);
     }
     
-    inline __device__ FixedCandidateList(float maxQueryDist)
+    inline __device__ FixedCandidateList(float cutOffRadius)
     {
 #pragma unroll
       for (int i=0;i<k;i++)
-        entry[i] = encode(maxQueryDist*maxQueryDist,-1);
+        entry[i] = encode(cutOffRadius*cutOffRadius,-1);
     }
 
     inline __device__ void push(float dist, int pointID)
@@ -49,30 +62,44 @@ namespace cukd {
       }
     }
 
-    inline __device__ float maxRadius2()
+    inline __device__ float get_dist2(int i) const { return decode_dist2(entry[i]); }
+    inline __device__ int get_pointID(int i) const { return decode_pointID(entry[i]); }
+    
+    inline __device__ float maxRadius2() const
     { return decode_dist2(entry[k-1]); }
-
-    inline __device__ float decode_dist2(uint64_t v)
+    
+    inline __device__ float decode_dist2(uint64_t v) const
     { return __uint_as_float(v >> 32); }
-    inline __device__ int decode_pointID(uint64_t v)
+    inline __device__ int decode_pointID(uint64_t v) const
     { return int(v); }
 
     uint64_t entry[k];
+    enum { num_k = k };
   };
 
   template<int k>
   struct HeapCandidateList
   {
+    // to make the traverseal lambdas happy:
+    inline __device__ float returnValue() const { return maxRadius2(); }
+    inline __device__ float processCandidate(int candPrimID, float candDist2)
+    { push(candDist2,candPrimID); return maxRadius2(); }
+    inline __device__ float initialCullDist2() const { return maxRadius2(); }
+    
+    inline __device__ float get_dist2(int i) const { return decode_dist2(entry[i]); }
+    inline __device__ int get_pointID(int i) const { return decode_pointID(entry[i]); }
+
+
     inline __device__ uint64_t encode(float f, int i)
     {
       return (uint64_t(__float_as_uint(f)) << 32) | uint32_t(i);
     }
     
-    inline __device__ HeapCandidateList(float maxRange)
+    inline __device__ HeapCandidateList(float cutOffRadius)
     {
 #pragma unroll
       for (int i=0;i<k;i++)
-        entry[i] = encode(maxRange*maxRange,-1);
+        entry[i] = encode(cutOffRadius*cutOffRadius,-1);
     }
 
     inline __device__ void push(float dist, int pointID)
@@ -106,116 +133,266 @@ namespace cukd {
       }
     }
     
-    inline __device__ float maxRadius2()
+    inline __device__ float maxRadius2() const
     { return decode_dist2(entry[0]); }
     
-    inline __device__ float decode_dist2(uint64_t v)
+    inline __device__ float decode_dist2(uint64_t v) const
     { return __uint_as_float(v >> 32); }
-    inline __device__ int decode_pointID(uint64_t v)
+    inline __device__ int decode_pointID(uint64_t v) const
     { return int(v); }
 
     uint64_t entry[k];
+    enum { num_k = k };
   };
 
-  /*! runs a k-nearest neighbor operation that tries to fill the
-    'currentlyClosest' candidate list (using the number of elemnt k
-    and max radius as provided by this class), using the provided
-    tree d_nodes with N points. The d_nodes array must be in
-    left-balanced kd-tree order. After this class the candidate list
-    will contain the k nearest elemnets; if less than k elements
-    were found some of the entries in the results list may point to
-    a point ID of -1. Return value of the function is the _square_
-    of the maximum distance among the k closest elements, if at k
-    were found; or the _square_ of the max search radius provided
-    for the query */
-  template<
-    typename math_point_traits_t,
-    typename node_point_traits_t=math_point_traits_t,
-    typename CandidateList
-    >
-  inline __device__
-  float knn(CandidateList &currentlyClosest,
-            typename math_point_traits_t::point_t queryPoint,
-            const typename node_point_traits_t::point_t *d_nodes,
-            int N)
-  {
-    using point_t = typename math_point_traits_t::point_t;
-    
-    float maxRadius2 = currentlyClosest.maxRadius2();
-
-    int prev = -1;
-    int curr = 0;
-
-    while (true) {
-      const int parent = (curr+1)/2-1;
-      if (curr >= N) {
-        // in some (rare) cases it's possible that below traversal
-        // logic will go to a "close child", but may actually only
-        // have a far child. In that case it's easiest to fix this
-        // right here, pretend we've done that (non-existent) close
-        // child, and let parent pick up traversal as if it had been
-        // done.
-        prev = curr;
-        curr = parent;
-        
-        continue;
-      }
-      const int  child = 2*curr+1;
-      const bool from_child = (prev >= child);
-      if (!from_child) {
-        float dist2 = sqrDistance<math_point_traits_t>(queryPoint,d_nodes[curr]);
-        if (dist2 <= maxRadius2) {
-          currentlyClosest.push(dist2,curr);
-          maxRadius2 = currentlyClosest.maxRadius2();
-        }
-      }
-
-      const auto &curr_node = d_nodes[curr];
-      const int   curr_dim = BinaryTree::levelOf(curr) % node_point_traits_t::numDims;
-      const float curr_dim_dist = (&queryPoint.x)[curr_dim] - (&curr_node.x)[curr_dim];
-      const int   curr_side = curr_dim_dist > 0.f;
-      const int   curr_close_child = 2*curr + 1 + curr_side;
-      const int   curr_far_child   = 2*curr + 2 - curr_side;
-      
-      int next = -1;
-      if (prev == curr_close_child)
-        // if we came from the close child, we may still have to check
-        // the far side - but only if this exists, and if far half of
-        // current space if even within search radius.
-        next
-          = ((curr_far_child<N) && ((curr_dim_dist*curr_dim_dist) <= maxRadius2))
-          ? curr_far_child
-          : parent;
-      else if (prev == curr_far_child)
-        // if we did come from the far child, then both children are
-        // done, and we can only go up.
-        next = parent;
-      else
-        // we didn't come from any child, so must be coming from a
-        // parent... we've already been processed ourselves just now,
-        // so next stop is to look at the children (unless there
-        // aren't any). this still leaves the case that we might have
-        // a child, but only a far child, and this far child may or
-        // may not be in range ... we'll fix that by just going to
-        // near child _even if_ only the far child exists, and have
-        // that child do a dummy traversal of that missing child, then
-        // pick up on the far-child logic when we return.
-        next
-          = (child<N)
-          ? curr_close_child
-          : parent;
-
-      if (next == -1)
-        // if (curr == 0 && from_child)
-        // this can only (and will) happen if and only if we come from a
-        // child, arrive at the root, and decide to go to the parent of
-        // the root ... while means we're done.
-        return maxRadius2;
-    
-      prev = curr;
-      curr = next;
-    }
-  }
-  
 } // ::cukd
 
+
+
+
+
+
+#if CUKD_IMPROVED_TRAVERSAL
+# if CUKD_STACK_FREE
+// stack-free, improved traversal
+#  include "traverse-sf-imp.h"
+namespace cukd {
+  template<typename CandidateList,
+           typename node_t,
+           typename node_traits=default_node_traits<node_t>>
+  inline __device__
+  float knn(CandidateList &result,
+            typename node_traits::point_t queryPoint,
+            const box_t<typename node_traits::point_t> worldBounds,
+            const node_t *d_nodes,
+            int N)
+  {
+    traverse_sf_imp<CandidateList,node_t,node_traits>
+      (result,queryPoint,worldBounds,d_nodes,N);
+    return result.returnValue();
+  }
+} // :: cukd
+
+# else
+// stack-free, improved traversal
+#  include "traverse-cct.h"
+namespace cukd {
+  template<typename CandidateList,
+           typename node_t,
+           typename node_traits=default_node_traits<node_t>>
+  inline __device__
+  float knn(CandidateList &result,
+            typename node_traits::point_t queryPoint,
+            const box_t<typename node_traits::point_t> worldBounds,
+            const node_t *d_nodes,
+            int N)
+  {
+    traverse_cct<CandidateList,node_t,node_traits>
+      (result,queryPoint,worldBounds,d_nodes,N);
+    return result.returnValue();
+  }
+} // :: cukd
+
+# endif
+#else
+# if CUKD_STACK_FREE
+// stack-free, regular traversal
+#  include "traverse-stack-free.h"
+namespace cukd {
+  template<typename CandidateList,
+           typename node_t,
+           typename node_traits=default_node_traits<node_t>>
+  inline __device__
+  float knn(CandidateList &result,
+            typename node_traits::point_t queryPoint,
+            const node_t *d_nodes,
+            int N)
+  {
+    traverse_stack_free<CandidateList,node_t,node_traits>
+      (result,queryPoint,d_nodes,N);
+    return result.returnValue();
+  }
+} // :: cukd
+# else
+// default stack-based traversal
+#  include "traverse-default-stack-based.h"
+namespace cukd {
+  template<typename CandidateList,
+           typename node_t,
+           typename node_traits=default_node_traits<node_t>>
+  inline __device__
+  float knn(CandidateList &result,
+            typename node_traits::point_t queryPoint,
+            const node_t *d_nodes,
+            int N)
+  {
+    traverse_default<CandidateList,node_t,node_traits>
+      (result,queryPoint,d_nodes,N);
+    return result.returnValue();
+  }
+  
+} // :: cukd
+
+# endif
+#endif
+
+
+
+namespace cukd {
+#if CUKD_IMPROVED_TRAVERSAL
+  template<typename CandidateList,
+           typename data_t,
+           typename node_traits=default_node_traits<data_t>>
+  inline __device__
+  float knn(CandidateList &result,
+            const SpatialKDTree<data_t,node_traits> &tree,
+            typename node_traits::point_t queryPoint)
+  {
+    using node_t     = typename SpatialKDTree<data_t,node_traits>::Node;
+    using point_t    = typename node_traits::point_t;
+    using scalar_t   = typename scalar_type_of<point_t>::type;
+    enum { num_dims  = num_dims_of<point_t>::value };
+    
+    scalar_t cullDist = result.initialCullDist2();
+
+    /* can do at most 2**30 points... */
+    struct StackEntry {
+      int   nodeID;
+      point_t closestCorner;
+    };
+    enum{ stack_depth = 50 };
+    StackEntry stackBase[stack_depth];
+    StackEntry *stackPtr = stackBase;
+
+    /*! current node in the tree we're traversing */
+    int nodeID = 0;
+    point_t closestPointOnSubtreeBounds = project(tree.bounds,queryPoint);
+    if (sqrDistance(queryPoint,closestPointOnSubtreeBounds) > cullDist)
+      return result.returnValue();
+    node_t node;
+    while (true) {
+      while (true) {
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
+        node = tree.nodes[nodeID];
+        if (node.count)
+          // this is a leaf...
+          break;
+        const auto query_coord = get_coord(queryPoint,node.dim);
+        
+        const bool leftIsClose = query_coord < node.pos;
+        const int  lChild = node.offset+0;
+        const int  rChild = node.offset+1;
+
+        const int closeChild = leftIsClose?lChild:rChild;
+        const int farChild   = leftIsClose?rChild:lChild;
+
+        auto farSideCorner = closestPointOnSubtreeBounds;
+        get_coord(farSideCorner,node.dim) = node.pos;
+        
+        if (sqrDistance(farSideCorner,queryPoint) < cullDist) {
+          stackPtr->closestCorner = farSideCorner;
+          stackPtr->nodeID  = farChild;
+          ++stackPtr;
+          if ((stackPtr - stackBase) >= stack_depth) {
+            printf("STACK OVERFLOW %i\n",int(stackPtr - stackBase));
+            return -1;
+          }
+        }
+        nodeID = closeChild;
+      }
+
+      for (int i=0;i<node.count;i++) {
+        int primID = tree.primIDs[node.offset+i];
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
+        const auto sqrDist = sqrDistance(node_traits::get_point(tree.data[primID]),queryPoint);
+        cullDist = result.processCandidate(primID,sqrDist);
+      }
+      
+      while (true) {
+        if (stackPtr == stackBase) 
+          return result.returnValue();
+        --stackPtr;
+        closestPointOnSubtreeBounds = stackPtr->closestCorner;
+        if (sqrDistance(closestPointOnSubtreeBounds,queryPoint) >= cullDist)
+          continue;
+        nodeID = stackPtr->nodeID;
+        break;
+      }
+    }
+  }
+#else
+  template<typename CandidateList,
+           typename data_t,
+           typename node_traits=default_node_traits<data_t>>
+  inline __device__
+  float knn(CandidateList &result,
+            const SpatialKDTree<data_t,node_traits> &tree,
+            typename node_traits::point_t queryPoint)
+  {
+    using node_t     = typename SpatialKDTree<data_t,node_traits>::Node;
+    using point_t    = typename node_traits::point_t;
+    using scalar_t   = typename scalar_type_of<point_t>::type;
+    enum { num_dims  = num_dims_of<point_t>::value };
+    
+    scalar_t cullDist = result.initialCullDist2();
+
+    /* can do at most 2**30 points... */
+    struct StackEntry {
+      int   nodeID;
+      float sqrDist;
+    };
+    enum{ stack_depth = 50 };
+    StackEntry stackBase[stack_depth];
+    StackEntry *stackPtr = stackBase;
+
+    /*! current node in the tree we're traversing */
+    int nodeID = 0;
+    node_t node;
+    while (true) {
+      while (true) {
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
+        node = tree.nodes[nodeID];
+        if (node.count)
+          // this is a leaf...
+          break;
+        const auto query_coord = get_coord(queryPoint,node.dim);
+        const bool leftIsClose = query_coord < node.pos;
+        const int  lChild = node.offset+0;
+        const int  rChild = node.offset+1;
+
+        const int closeChild = leftIsClose?lChild:rChild;
+        const int farChild   = leftIsClose?rChild:lChild;
+        
+        const float sqrDistToPlane = sqr(query_coord - node.pos);
+        if (sqrDistToPlane < cullDist) {
+          stackPtr->nodeID  = farChild;
+          stackPtr->sqrDist = sqrDistToPlane;
+          ++stackPtr;
+          if ((stackPtr - stackBase) >= stack_depth) {
+            printf("STACK OVERFLOW %i\n",int(stackPtr - stackBase));
+            return -1;
+          }
+        }
+        nodeID = closeChild;
+      }
+
+      for (int i=0;i<node.count;i++) {
+        int primID = tree.primIDs[node.offset+i];
+        CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
+        const auto sqrDist = sqrDistance(node_traits::get_point(tree.data[primID]),queryPoint);
+        cullDist = result.processCandidate(primID,sqrDist);
+      }
+      
+      while (true) {
+        if (stackPtr == stackBase) 
+          return result.returnValue();
+        --stackPtr;
+        if (stackPtr->sqrDist >= cullDist)
+          continue;
+        nodeID = stackPtr->nodeID;
+        break;
+      }
+    }
+  }
+#endif
+} // :: cukd

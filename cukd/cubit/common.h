@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2018-2023 Ingo Wald                                            //
+// Copyright 2018-2022 Ingo Wald                                            //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -22,9 +22,7 @@
 #  define _USE_MATH_DEFINES
 #endif
 #include <math.h> // using cmath causes issues under Windows
-#include <cuda_runtime.h>
-#include <math_constants.h>
-#include <cuda.h>
+
 #include <stdio.h>
 #include <iostream>
 #include <stdexcept>
@@ -39,8 +37,6 @@
 #include <execinfo.h>
 #include <sys/time.h>
 #endif
-#include <fstream>
-#include <iostream>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -60,17 +56,17 @@
 #endif
 
 #if defined(_MSC_VER)
-#  define CUKD_DLL_EXPORT __declspec(dllexport)
-#  define CUKD_DLL_IMPORT __declspec(dllimport)
+#  define CUBIT_DLL_EXPORT __declspec(dllexport)
+#  define CUBIT_DLL_IMPORT __declspec(dllimport)
 #elif defined(__clang__) || defined(__GNUC__)
-#  define CUKD_DLL_EXPORT __attribute__((visibility("default")))
-#  define CUKD_DLL_IMPORT __attribute__((visibility("default")))
+#  define CUBIT_DLL_EXPORT __attribute__((visibility("default")))
+#  define CUBIT_DLL_IMPORT __attribute__((visibility("default")))
 #else
-#  define CUKD_DLL_EXPORT
-#  define CUKD_DLL_IMPORT
+#  define CUBIT_DLL_EXPORT
+#  define CUBIT_DLL_IMPORT
 #endif
 
-# define CUKD_INTERFACE /* nothing - currently not building any special 'owl.dll' */
+# define CUBIT_INTERFACE /* nothing - currently not building any special 'owl.dll' */
 #if defined(_MSC_VER)
 #  define __PRETTY_FUNCTION__ __FUNCTION__
 #endif
@@ -102,57 +98,75 @@
 #define MAYBE_UNUSED
 #endif
 
-#define CUKD_NOTIMPLEMENTED throw std::runtime_error(std::string(__PRETTY_FUNCTION__)+" not implemented")
+#define CUBIT_NOTIMPLEMENTED throw std::runtime_error(std::string(__PRETTY_FUNCTION__)+" not implemented")
 
 #ifdef WIN32
-# define CUKD_TERMINAL_RED ""
-# define CUKD_TERMINAL_GREEN ""
-# define CUKD_TERMINAL_LIGHT_GREEN ""
-# define CUKD_TERMINAL_YELLOW ""
-# define CUKD_TERMINAL_BLUE ""
-# define CUKD_TERMINAL_LIGHT_BLUE ""
-# define CUKD_TERMINAL_RESET ""
-# define CUKD_TERMINAL_DEFAULT CUKD_TERMINAL_RESET
-# define CUKD_TERMINAL_BOLD ""
+# define CUBIT_TERMINAL_RED ""
+# define CUBIT_TERMINAL_GREEN ""
+# define CUBIT_TERMINAL_LIGHT_GREEN ""
+# define CUBIT_TERMINAL_YELLOW ""
+# define CUBIT_TERMINAL_BLUE ""
+# define CUBIT_TERMINAL_LIGHT_BLUE ""
+# define CUBIT_TERMINAL_RESET ""
+# define CUBIT_TERMINAL_DEFAULT CUBIT_TERMINAL_RESET
+# define CUBIT_TERMINAL_BOLD ""
 
-# define CUKD_TERMINAL_MAGENTA ""
-# define CUKD_TERMINAL_LIGHT_MAGENTA ""
-# define CUKD_TERMINAL_CYAN ""
-# define CUKD_TERMINAL_LIGHT_RED ""
+# define CUBIT_TERMINAL_MAGENTA ""
+# define CUBIT_TERMINAL_LIGHT_MAGENTA ""
+# define CUBIT_TERMINAL_CYAN ""
+# define CUBIT_TERMINAL_LIGHT_RED ""
 #else
-# define CUKD_TERMINAL_RED "\033[0;31m"
-# define CUKD_TERMINAL_GREEN "\033[0;32m"
-# define CUKD_TERMINAL_LIGHT_GREEN "\033[1;32m"
-# define CUKD_TERMINAL_YELLOW "\033[1;33m"
-# define CUKD_TERMINAL_BLUE "\033[0;34m"
-# define CUKD_TERMINAL_LIGHT_BLUE "\033[1;34m"
-# define CUKD_TERMINAL_RESET "\033[0m"
-# define CUKD_TERMINAL_DEFAULT CUKD_TERMINAL_RESET
-# define CUKD_TERMINAL_BOLD "\033[1;1m"
+# define CUBIT_TERMINAL_RED "\033[0;31m"
+# define CUBIT_TERMINAL_GREEN "\033[0;32m"
+# define CUBIT_TERMINAL_LIGHT_GREEN "\033[1;32m"
+# define CUBIT_TERMINAL_YELLOW "\033[1;33m"
+# define CUBIT_TERMINAL_BLUE "\033[0;34m"
+# define CUBIT_TERMINAL_LIGHT_BLUE "\033[1;34m"
+# define CUBIT_TERMINAL_RESET "\033[0m"
+# define CUBIT_TERMINAL_DEFAULT CUBIT_TERMINAL_RESET
+# define CUBIT_TERMINAL_BOLD "\033[1;1m"
 
-# define CUKD_TERMINAL_MAGENTA "\e[35m"
-# define CUKD_TERMINAL_LIGHT_MAGENTA "\e[95m"
-# define CUKD_TERMINAL_CYAN "\e[36m"
-# define CUKD_TERMINAL_LIGHT_RED "\033[1;31m"
+# define CUBIT_TERMINAL_MAGENTA "\e[35m"
+# define CUBIT_TERMINAL_LIGHT_MAGENTA "\e[95m"
+# define CUBIT_TERMINAL_CYAN "\e[36m"
+# define CUBIT_TERMINAL_LIGHT_RED "\033[1;31m"
 #endif
 
 #ifdef _MSC_VER
-# define CUKD_ALIGN(alignment) __declspec(align(alignment))
+# define __cubit_align(alignment) __declspec(align(alignment)) 
 #else
-# define CUKD_ALIGN(alignment) __attribute__((aligned(alignment)))
+# define __cubit_align(alignment) __attribute__((aligned(alignment)))
 #endif
 
 
 
-namespace cukd {
+namespace cubit {
   namespace common {
+
+#ifdef __CUDA_ARCH__
+    using ::min;
+    using ::max;
+    using std::abs;
+#else
+    using std::min;
+    using std::max;
+    using std::abs;
+#endif
+
+    inline __both__ int32_t  divRoundUp(int32_t a, int32_t b) { return (a+b-1)/b; }
+    inline __both__ uint32_t divRoundUp(uint32_t a, uint32_t b) { return (a+b-1)/b; }
+    inline __both__ int64_t  divRoundUp(int64_t a, int64_t b) { return (a+b-1)/b; }
+    inline __both__ uint64_t divRoundUp(uint64_t a, uint64_t b) { return (a+b-1)/b; }
+  
+    using ::sin; // this is the double version
+    using ::cos; // this is the double version
 
 #ifdef __WIN32__
 #  define osp_snprintf sprintf_s
 #else
 #  define osp_snprintf snprintf
 #endif
-
+  
     /*! added pretty-print function for large numbers, printing 10000000 as "10M" instead */
     inline std::string prettyDouble(const double val) {
       const double absVal = abs(val);
@@ -173,12 +187,12 @@ namespace cukd {
 
       return result;
     }
-
+  
 
     /*! return a nicely formatted number as in "3.4M" instead of
-      "3400000", etc, using mulitples of thousands (K), millions
-      (M), etc. Ie, the value 64000 would be returned as 64K, and
-      65536 would be 65.5K */
+        "3400000", etc, using mulitples of thousands (K), millions
+        (M), etc. Ie, the value 64000 would be returned as 64K, and
+        65536 would be 65.5K */
     inline std::string prettyNumber(const size_t s)
     {
       char buf[1000];
@@ -197,8 +211,8 @@ namespace cukd {
     }
 
     /*! return a nicely formatted number as in "3.4M" instead of
-      "3400000", etc, using mulitples of 1024 as in kilobytes,
-      etc. Ie, the value 65534 would be 64K, 64000 would be 63.8K */
+        "3400000", etc, using mulitples of 1024 as in kilobytes,
+        etc. Ie, the value 65534 would be 64K, 64000 would be 63.8K */
     inline std::string prettyBytes(const size_t s)
     {
       char buf[1000];
@@ -215,20 +229,20 @@ namespace cukd {
       }
       return buf;
     }
-
+  
     inline double getCurrentTime()
     {
 #ifdef _WIN32
       SYSTEMTIME tp; GetSystemTime(&tp);
       /*
-        Please note: we are not handling the "leap year" issue.
-      */
+         Please note: we are not handling the "leap year" issue.
+     */
       size_t numSecsSince2020
-        = tp.wSecond
-        + (60ull) * tp.wMinute
-        + (60ull * 60ull) * tp.wHour
-        + (60ull * 60ul * 24ull) * tp.wDay
-        + (60ull * 60ul * 24ull * 365ull) * (tp.wYear - 2020);
+          = tp.wSecond
+          + (60ull) * tp.wMinute
+          + (60ull * 60ull) * tp.wHour
+          + (60ull * 60ul * 24ull) * tp.wDay
+          + (60ull * 60ul * 24ull * 365ull) * (tp.wYear - 2020);
       return double(numSecsSince2020 + tp.wMilliseconds * 1e-3);
 #else
       struct timeval tp; gettimeofday(&tp,nullptr);
@@ -240,53 +254,25 @@ namespace cukd {
     {
       return s.substr(s.size()-suffix.size()) == suffix;
     }
-  } // ::common
-
-  template<typename T>
-  inline T *loadPoints(std::string fileName, size_t &count)
-  {
-    // size_t count;
-    std::cout << "loading points from " << fileName << std::endl;
-    std::ifstream in(fileName,std::ios::binary);
-    in.read((char*)&count,sizeof(count));
-    // numPoints = count;
-    std::cout << "loading " << count <<  " points" << std::endl;
-    T *d_points = 0;
-    cudaMallocManaged((void**)&d_points,count*sizeof(T));
-    in.read((char*)d_points,count*sizeof(T));
-    return d_points;
-  }
     
-  template<typename T>
-  inline T *loadPoints(std::string fileName, int &count)
-  {
-    size_t count64;
-    T *t = loadPoints<T>(fileName, count64);
-    count = count64;
-    return t;
-  }
-
-  // template<typename scalar_t>
-  // inline __device__ scalar_t clamp(scalar_t v, scalar_t lo, scalar_t hi)
-  // { return min(max(v,lo),hi); }
-
-} // ::cukd
+  } // ::cubit::common
 
 
-#define CUKD_CUDA_CHECK( call )                                         \
+#ifndef CUBIT_CUDA_CHECK
+#define CUBIT_CUDA_CHECK( call )                                              \
   {                                                                     \
     cudaError_t rc = call;                                              \
     if (rc != cudaSuccess) {                                            \
       fprintf(stderr,                                                   \
               "CUDA call (%s) failed with code %d (line %d): %s\n",     \
               #call, rc, __LINE__, cudaGetErrorString(rc));             \
-      throw std::runtime_error("fatal cuda error");                     \
+      throw("fatal cuda error");                                    \
     }                                                                   \
   }
 
-#define CUKD_CUDA_CALL(call) CUKD_CUDA_CHECK(cuda##call)
+#define CUBIT_CUDA_CALL(call) CUBIT_CUDA_CHECK(cuda##call)
 
-#define CUKD_CUDA_CHECK2( where, call )                                 \
+#define CUBIT_CUDA_CHECK2( where, call )                                      \
   {                                                                     \
     cudaError_t rc = call;                                              \
     if(rc != cudaSuccess) {                                             \
@@ -297,24 +283,35 @@ namespace cukd {
       fprintf(stderr,                                                   \
               "CUDA call (%s) failed with code %d (line %d): %s\n",     \
               #call, rc, __LINE__, cudaGetErrorString(rc));             \
-      throw std::runtime_error("fatal cuda error");                     \
+      throw("fatal cuda error");                                    \
     }                                                                   \
   }
 
-#define CUKD_CUDA_SYNC_CHECK()                                  \
+#define CUBIT_CUDA_SYNC_CHECK()                                       \
   {                                                             \
     cudaDeviceSynchronize();                                    \
     cudaError_t rc = cudaGetLastError();                        \
     if (rc != cudaSuccess) {                                    \
       fprintf(stderr, "error (%s: line %d): %s\n",              \
               __FILE__, __LINE__, cudaGetErrorString(rc));      \
-      throw std::runtime_error("fatal cuda error");             \
+      throw("fatal cuda error");                            \
+    }                                                           \
+  }
+
+#define CUBIT_CUDA_SYNC_CHECK_STREAM(s)                               \
+  {                                                             \
+    cudaStreamSynchronize(s);                                   \
+    cudaError_t rc = cudaGetLastError();                        \
+    if (rc != cudaSuccess) {                                    \
+      fprintf(stderr, "error (%s: line %d): %s\n",              \
+              __FILE__, __LINE__, cudaGetErrorString(rc));      \
+      throw("fatal cuda error");                            \
     }                                                           \
   }
 
 
 
-#define CUKD_CUDA_CHECK_NOTHROW( call )                                 \
+#define CUBIT_CUDA_CHECK_NOTHROW( call )                                      \
   {                                                                     \
     cudaError_t rc = call;                                              \
     if (rc != cudaSuccess) {                                            \
@@ -325,9 +322,9 @@ namespace cukd {
     }                                                                   \
   }
 
-#define CUKD_CUDA_CALL_NOTHROW(call) CUKD_CUDA_CHECK_NOTHROW(cuda##call)
+#define CUBIT_CUDA_CALL_NOTHROW(call) CUBIT_CUDA_CHECK_NOTHROW(cuda##call)
 
-#define CUKD_CUDA_CHECK2_NOTHROW( where, call )                         \
+#define CUBIT_CUDA_CHECK2_NOTHROW( where, call )                              \
   {                                                                     \
     cudaError_t rc = call;                                              \
     if(rc != cudaSuccess) {                                             \
@@ -341,23 +338,6 @@ namespace cukd {
       exit(2);                                                          \
     }                                                                   \
   }
-
-
-/* is supplied externally (from cmake) this adds a "int *stats"
-   paramater to all query functions, and makes the traversal routines
-   do atomic counting of traversal steps */
-#if CUKD_ENABLE_STATS
-# define CUKD_STATS(a) a
-# define CUKD_STATS_ARG(a,b) a,
-#else
-# define CUKD_STATS(a) /* nothing */
-# define CUKD_STATS_ARG(a,b) /* nothing */
-#endif
-
-#if CUKD_ENABLE_STATS
-namespace cukd {
-  __constant__ __device__ unsigned long long *g_traversalStats;
-}
 #endif
   
-
+} // ::cubit
