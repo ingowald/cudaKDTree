@@ -94,6 +94,25 @@ namespace cukd {
               // const box_t<typename data_traits::point_t> worldBounds,
               const data_t *d_nodes,
               int N);
+    template<
+      /*! type of object to manage the k-nearest objects*/
+      typename CandidateList,
+      /*! type of data in the underlying tree */
+      typename data_t,
+      /*! traits of data in the underlying tree */
+      typename data_traits=default_data_traits<data_t>>
+    inline __device__
+    float knn(CandidateList &result,
+              typename data_traits::point_t queryPoint,
+              const box_t<typename data_traits::point_t> worldBounds,
+              const data_t *d_nodes,
+              int N)
+    {
+      /* TODO: add early-out if distance to worldbounds is >= max query dist */
+      return knn<CandidateList,data_t,data_traits>
+        (result,queryPoint,d_nodes,N);
+    }
+
 
     /* the same, for a _spatial_ k-d tree */
     template<typename CandidateList,
@@ -125,6 +144,21 @@ namespace cukd {
               // const box_t<typename data_traits::point_t> worldBounds,
               const data_t *d_nodes,
               int N);
+    template<typename CandidateList,
+             typename data_t,
+             typename data_traits=default_data_traits<data_t>>
+    inline __device__
+    float knn(CandidateList &result,
+              typename data_traits::point_t queryPoint,
+              const box_t<typename data_traits::point_t> worldBounds,
+              const data_t *d_nodes,
+              int N)
+    {
+      /* TODO: add early-out if distance to worldbounds is >= max query dist */
+      return knn<CandidateList,data_t,data_traits>
+        (result,queryPoint,d_nodes,N);
+    }
+      
   } // ::cukd::stackFree
   
   namespace cct {

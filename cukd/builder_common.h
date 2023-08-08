@@ -24,8 +24,10 @@
 
 namespace cukd {
 
+  /*! helper function for swapping two elements - need to explcitly
+      prefix this to avoid name clashed with/in thrust */
   template<typename T>
-  inline __both__ void swap(T &a, T &b)
+  inline __both__ void cukd_swap(T &a, T &b)
   { T c = a; a = b; b = c; }
 
 

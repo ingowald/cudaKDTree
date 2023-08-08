@@ -69,6 +69,19 @@ namespace cukd {
             int numDataPoints,
             /*! paramteres to fine-tune the search */
             FcpSearchParams params = FcpSearchParams{});
+    template<typename data_t,
+             typename data_traits=default_data_traits<data_t>>
+    inline __device__
+    int fcp(typename data_traits::point_t queryPoint,
+            const box_t<typename data_traits::point_t> worldBounds,
+            const data_t *dataPoints,
+            int numDataPoints,
+            FcpSearchParams params = FcpSearchParams{})
+    {
+      /* TODO: add early-out if distance to worldbounds is >= max query dist */
+      return fcp<data_t,data_traits>
+        (queryPoint,dataPoints,numDataPoints,params);
+    }
 
     // the same, for a _spatial_ k-d tree 
     template<typename data_t,
@@ -99,6 +112,19 @@ namespace cukd {
             int numDataPoints,
             /*! paramteres to fine-tune the search */
             FcpSearchParams params = FcpSearchParams{});
+    template<typename data_t,
+             typename data_traits=default_data_traits<data_t>>
+    inline __device__
+    int fcp(typename data_traits::point_t queryPoint,
+            const box_t<typename data_traits::point_t> worldBounds,
+            const data_t *dataPoints,
+            int numDataPoints,
+            FcpSearchParams params = FcpSearchParams{})
+    {
+      /* TODO: add early-out if distance to worldbounds is >= max query dist */
+      return fcp<data_t,data_traits>
+        (queryPoint,dataPoints,numDataPoints,params);
+    }
   } // ::cukd::stackFree
   
   namespace cct {

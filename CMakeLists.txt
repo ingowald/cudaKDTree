@@ -39,7 +39,7 @@ add_subdirectory(../bitonic ext_bitonic EXCLUDE_FROM_ALL)
 # general cmake project configs
 # ------------------------------------------------------------------
 if (NOT CUKD_IS_SUBPROJECT)
-  option(CUKD_ENABLE_STATS "Enable Stats tracking?" ON)
+  option(CUKD_ENABLE_STATS "Enable Stats tracking?" OFF)
   if(NOT SET_UP_CONFIGURATIONS_DONE)
     set(SET_UP_CONFIGURATIONS_DONE 1)
 
@@ -137,68 +137,69 @@ endif()
 # traversal_method x num_dims x {fcp,knn}
 # ==================================================================
 if (BUILD_ALL_TESTS)
-  add_library(cudaKDTree-cct INTERFACE)
-  target_link_libraries(cudaKDTree-cct INTERFACE cudaKDTree)
-  target_compile_definitions(cudaKDTree-cct        INTERFACE -DCUKD_CCT=1)
-
-  add_library(cudaKDTree-stack-free INTERFACE)
-  target_link_libraries(cudaKDTree-stack-free INTERFACE cudaKDTree)
-  target_compile_definitions(cudaKDTree-stack-free INTERFACE -DCUKD_SF=1)
-
-  add_library(cudaKDTree-default INTERFACE)
-  target_link_libraries(cudaKDTree-default INTERFACE cudaKDTree)
-  target_compile_definitions(cudaKDTree-default INTERFACE -DCUKD_DEFAULT=1)
-
-
-  
-
-  
   # test 2, 3, 4, and 8-dimensoinal data; the latter should - if it
   # works for N=8, work for any other N>4
-#  set(DIMS_TO_BUILD 3)
+  #  set(DIMS_TO_BUILD 3)
   set(DIMS_TO_BUILD 2 3 4 8)
   foreach (D IN ITEMS ${DIMS_TO_BUILD})
     # test all four possible traversal methosds
-    foreach(method stack-free cct default)
+    foreach(method stackBased stackFree cct)
       # test knn queries, on regular trees (no explicit dimension per node)
       add_executable(cukd_float${D}-knn-${method} testing/floatN-knn-and-fcp.cu)
-      target_link_libraries(cukd_float${D}-knn-${method} cudaKDTree cudaKDTree-${method})
+      target_link_libraries(cukd_float${D}-knn-${method} cudaKDTree)
       target_compile_definitions(cukd_float${D}-knn-${method}
-	PUBLIC -DD_FROM_CMAKE=${D} -DUSE_KNN=1)
+	PUBLIC
+	-DD_FROM_CMAKE=${D}
+	-DUSE_KNN=1
+	-DTRAVERSAL_METHOD=${method})
 
       # test knn queries, with 'explicit-dim' trees
       add_executable(cukd_float${D}-knn-${method}-xd testing/floatN-knn-and-fcp.cu)
-      target_link_libraries(cukd_float${D}-knn-${method}-xd cudaKDTree-${method})
+      target_link_libraries(cukd_float${D}-knn-${method}-xd cudaKDTree)
       target_compile_definitions(cukd_float${D}-knn-${method}-xd
-	PUBLIC -DD_FROM_CMAKE=${D} -DEXPLICIT_DIM=1 -DUSE_KNN=1)
+	PUBLIC
+	-DD_FROM_CMAKE=${D}
+	-DEXPLICIT_DIM=1
+	-DUSE_KNN=1
+	-DTRAVERSAL_METHOD=${method})
 
       # test fcp queries, on regular trees
       add_executable(cukd_float${D}-fcp-${method} testing/floatN-knn-and-fcp.cu)
-      target_link_libraries(cukd_float${D}-fcp-${method} cudaKDTree-${method})
+      target_link_libraries(cukd_float${D}-fcp-${method} cudaKDTree)
       target_compile_definitions(cukd_float${D}-fcp-${method}
-	PUBLIC -DD_FROM_CMAKE=${D})
+	PUBLIC
+	-DD_FROM_CMAKE=${D}
+	-DTRAVERSAL_METHOD=${method})
 
       # test fcp queries, with 'explicit-dim' trees
       add_executable(cukd_float${D}-fcp-${method}-xd testing/floatN-knn-and-fcp.cu)
-      target_link_libraries(cukd_float${D}-fcp-${method}-xd cudaKDTree-${method})
+      target_link_libraries(cukd_float${D}-fcp-${method}-xd cudaKDTree)
       target_compile_definitions(cukd_float${D}-fcp-${method}-xd
-	PUBLIC -DD_FROM_CMAKE=${D} -DEXPLICIT_DIM=1)
+	PUBLIC
+	-DD_FROM_CMAKE=${D}
+	-DEXPLICIT_DIM=1
+	-DTRAVERSAL_METHOD=${method})
 
     endforeach()
 
 
-    foreach(method spatial-default spatial-cct)
+    foreach(method stackBased cct)
       # test knn queries, on regular trees (no explicit dimension per node)
-      add_executable(cukd_float${D}-knn-${method} testing/floatN-knn-and-fcp.cu)
-      target_link_libraries(cukd_float${D}-knn-${method} cudaKDTree-${method})
-      target_compile_definitions(cukd_float${D}-knn-${method}
-	PUBLIC -DD_FROM_CMAKE=${D} -DUSE_KNN=1)
+      add_executable(cukd_float${D}-knn-spatial-${method} testing/floatN-knn-and-fcp.cu)
+      target_link_libraries(cukd_float${D}-knn-spatial-${method} cudaKDTree)
+      target_compile_definitions(cukd_float${D}-knn-spatial-${method}
+	PUBLIC
+	-DD_FROM_CMAKE=${D}
+	-DUSE_KNN=1
+	-DTRAVERSAL_METHOD=${method})
 
       # test fcp queries, on regular trees
-      add_executable(cukd_float${D}-fcp-${method} testing/floatN-knn-and-fcp.cu)
-      target_link_libraries(cukd_float${D}-fcp-${method} cudaKDTree-${method})
-      target_compile_definitions(cukd_float${D}-fcp-${method}
-	PUBLIC -DD_FROM_CMAKE=${D})
+      add_executable(cukd_float${D}-fcp-spatial-${method} testing/floatN-knn-and-fcp.cu)
+      target_link_libraries(cukd_float${D}-fcp-spatial-${method} cudaKDTree)
+      target_compile_definitions(cukd_float${D}-fcp-spatial-${method}
+	PUBLIC
+	-DD_FROM_CMAKE=${D}
+	-DTRAVERSAL_METHOD=${method})
 
     endforeach()
   endforeach()

@@ -189,7 +189,7 @@ namespace cukd {
     if (data_traits::get_coord(points[partner],dim)
         <
         data_traits::get_coord(points[n],dim)) {
-      swap(points[n],points[partner]);
+      cukd::cukd_swap(points[n],points[partner]);
     } 
   }
   
@@ -269,7 +269,7 @@ namespace cukd {
     if (data_traits::get_coord(points[partner],dim)
         <
         data_traits::get_coord(points[n],dim)) {
-      swap(points[n],points[partner]);
+      cukd::cukd_swap(points[n],points[partner]);
     } 
     while (1) {
       trickleDownHeap<data_t,data_traits,0>(n,points,numPoints,dim);
@@ -277,7 +277,7 @@ namespace cukd {
       if (data_traits::get_coord(points[partner],dim)
           <
           data_traits::get_coord(points[n],dim)) {
-        swap(points[n],points[partner]);
+        cukd::cukd_swap(points[n],points[partner]);
         continue;
       } else
         break;
@@ -376,10 +376,10 @@ namespace cukd {
     
     scalar_t s_n = data_traits::get_coord(points[n],dim);
     if (l < numPoints && s_n < data_traits::get_coord(points[l],dim)) {
-      swap(points[n],points[l]);
+      cukd::cukd_swap(points[n],points[l]);
       // todo: trckle?
     } else if  (r < numPoints && data_traits::get_coord(points[r],dim) < s_n) {
-      swap(points[n],points[r]);
+      cukd::cukd_swap(points[n],points[r]);
       // todo: trckle?
     }
     if (data_traits::has_explicit_dim) 
