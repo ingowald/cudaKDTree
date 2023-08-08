@@ -48,7 +48,7 @@ namespace cukd {
 
   namespace stackBased {
     /*! default, stack-based find-closest point kernel, with simple
-      point-to-plane-distacne test for culling subtrees 
+      point-to-plane-distance test for culling subtrees 
       
       \returns the ID of the point that's closest to the query point,
       or -1 if none could be found within the given serach radius
@@ -69,11 +69,19 @@ namespace cukd {
             int numDataPoints,
             /*! paramteres to fine-tune the search */
             FcpSearchParams params = FcpSearchParams{});
+
+    // the same, for a _spatial_ k-d tree 
+    template<typename data_t,
+             typename data_traits=default_data_traits<data_t>>
+    inline __device__
+    int fcp(const SpatialKDTree<data_t,data_traits> &tree,
+            typename data_traits::point_t queryPoint,
+            FcpSearchParams params = FcpSearchParams{});
   } // ::cukd::stackBased
 
   namespace stackFree {
     /*! stack-free version of the default find-cloest-point kernel
-      that lso uses simple point-to-plane-distacne test for culling
+      that also uses simple point-to-plane-distacne test for culling
       subtrees, but uses a stack-free rather than a stack-based
       traversal. Will need a few more traversal steps than the
       stack-based variant, but doesn't need to maintain a traversal
@@ -91,18 +99,10 @@ namespace cukd {
             int numDataPoints,
             /*! paramteres to fine-tune the search */
             FcpSearchParams params = FcpSearchParams{});
-
-    // the same, for a _spatial_ k-d tree 
-    template<typename data_t,
-             typename data_traits=default_data_traits<data_t>>
-    inline __device__
-    int fcp(const SpatialKDTree<data_t,data_traits> &tree,
-            typename data_traits::point_t queryPoint,
-            FcpSearchParams params = FcpSearchParams{});
   } // ::cukd::stackFree
   
   namespace cct {
-    /*! find-closest-point (fcp) kernel using specal
+    /*! find-closest-point (fcp) kernel using special
       'closest-corner-tracking' traversal code; this traversal uses
       a stack just like the stackBased::fcp (in fact, its stack
       footprint is even larger), but is much better at culling data
@@ -134,9 +134,9 @@ namespace cukd {
 } // ::cukd
 
 
-  // ==================================================================
-  // IMPLEMENTATION SECTION
-  // ==================================================================
+// ==================================================================
+// IMPLEMENTATION SECTION
+// ==================================================================
 
 #include "traverse-default-stack-based.h"
 #include "traverse-cct.h"
@@ -317,7 +317,7 @@ namespace cukd {
   inline __device__
   int stackBased::fcp(const SpatialKDTree<data_t,data_traits> &tree,
                       typename data_traits::point_t queryPoint,
-                      FcpSearchParams params = FcpSearchParams{})
+                      FcpSearchParams params)
   {
     FCPResult result;
     result.clear(sqr(params.cutOffRadius));
