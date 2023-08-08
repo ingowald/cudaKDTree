@@ -203,7 +203,7 @@ namespace cukd {
 
 
   template<typename data_t,
-           typename data_traits=default_data_traits<data_t>>
+           typename data_traits>
   inline __device__
   int cct::fcp(typename data_traits::point_t queryPoint,
                const box_t<typename data_traits::point_t> worldBounds,
@@ -219,7 +219,7 @@ namespace cukd {
   }
 
   template<typename data_t,
-           typename data_traits=default_data_traits<data_t>>
+           typename data_traits>
   inline __device__
   int stackFree::fcp(typename data_traits::point_t queryPoint,
                      const data_t *d_nodes,
@@ -234,7 +234,7 @@ namespace cukd {
   }
 
   template<typename data_t,
-           typename data_traits=default_data_traits<data_t>>
+           typename data_traits>
   inline __device__
   int stackBased::fcp(typename data_traits::point_t queryPoint,
                       const data_t *d_nodes,
@@ -249,7 +249,7 @@ namespace cukd {
   }
 
   template<typename data_t,
-           typename data_traits=default_data_traits<data_t>>
+           typename data_traits>
   inline __device__
   int cct::fcp(const SpatialKDTree<data_t,data_traits> &tree,
                typename data_traits::point_t queryPoint,
@@ -339,7 +339,7 @@ namespace cukd {
   }
 
   template<typename data_t,
-           typename data_traits=default_data_traits<data_t>>
+           typename data_traits>
   inline __device__
   int stackBased::fcp(const SpatialKDTree<data_t,data_traits> &tree,
                       typename data_traits::point_t queryPoint,

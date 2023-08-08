@@ -493,7 +493,9 @@ int main(int ac, const char **av)
     else if (arg == "-r")
       cutOffRadius = std::stof(av[++i]);
     else if (arg == "--load-dumped-files")
-      { numPoints = numQueries = 0; }
+    {
+        numPoints = 0;  numQueries = 0;
+    }
 #if USE_KNN
     else if (arg == "-k")
       k = std::stoi(av[++i]);
@@ -554,17 +556,16 @@ int main(int ac, const char **av)
   
   floatN *d_queries
     = numQueries
-    ? generatePoints(numQueries)
+    ? generatePoints((int)numQueries)
     : loadPoints<floatN>("query_points",numQueries);
   float  *d_results;
   CUKD_CUDA_CALL(MallocManaged((void**)&d_results,numQueries*sizeof(*d_results)));
-  PING;
   CUKD_CUDA_SYNC_CHECK();
   {
     double t0 = getCurrentTime();
     for (int i=0;i<nRepeats;i++) {
       run_kernel
-        (d_results,d_queries,numQueries,
+        (d_results,d_queries,(int)numQueries,
 #if SPATIAL
          tree,
 #endif
@@ -575,7 +576,6 @@ int main(int ac, const char **av)
 #endif
          cutOffRadius);
     }
-    PING;
     CUKD_CUDA_SYNC_CHECK();
     double t1 = getCurrentTime();
     std::cout << "done " << nRepeats
