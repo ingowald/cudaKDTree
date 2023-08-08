@@ -192,7 +192,7 @@ void run_kernel(float  *d_results,
   int nb = divRoundUp(numQueries,bs);
   unsigned long long *d_stats = 0;
   static bool firstTime = true;
-  PING; CUKD_CUDA_SYNC_CHECK();
+  CUKD_CUDA_SYNC_CHECK();
   CUKD_STATS(if (firstTime) {
       cudaMallocManaged((char **)&d_stats,sizeof(*d_stats));
       *d_stats = 0;
@@ -202,7 +202,7 @@ void run_kernel(float  *d_results,
       CUKD_STATS(cudaMemcpy(symAddr,&d_stats,sizeof(d_stats),cudaMemcpyHostToDevice));
     }
     )
-  PING; CUKD_CUDA_SYNC_CHECK();
+  CUKD_CUDA_SYNC_CHECK();
   
 #if USE_KNN
   if (k == 4)
@@ -262,7 +262,7 @@ void run_kernel(float  *d_results,
      d_bounds,
      d_nodes,numNodes,cutOffRadius);
 #endif
-  PING; CUKD_CUDA_SYNC_CHECK();
+  CUKD_CUDA_SYNC_CHECK();
   if (firstTime) {
     cudaDeviceSynchronize();
     CUKD_STATS(
@@ -276,7 +276,7 @@ void run_kernel(float  *d_results,
     cudaFree(d_stats);
     firstTime = false;
   }
-  PING; CUKD_CUDA_SYNC_CHECK();
+  CUKD_CUDA_SYNC_CHECK();
 }
 
 #if EXPLICIT_DIM
