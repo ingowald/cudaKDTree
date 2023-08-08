@@ -103,12 +103,10 @@ To "explain" that to the builder, one would, for this example, define the follow
 	   /* inheriting from default_node_traits will
 	      define scalar_t, node_t, point_t, num_dims ...*/
 		  
-        static inline __device__ 
-		const float3 get_point(const my_data &n) 
+        static inline __device__ const float3 get_point(const my_data &n) 
 		{ return make_float3(n.pos_x,...); }
     
-		static inline __device__
-		float get_coord(const my_data &n, int d)
+	    static inline __device__ float get_coord(const my_data &n, int d)
 		{ if (d==0) return n.pos_x; ... }
 	};
 
