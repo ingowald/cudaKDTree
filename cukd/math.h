@@ -216,7 +216,6 @@ namespace cukd {
     using scalar_t = typename scalar_type_of<point_t>::type;
     int best_dim = 0;
     scalar_t best_val = get_coord(p,0);
-#pragma unroll
     for (int i=1;i<num_dims;i++) {
       scalar_t f = get_coord(p,i);
       if (f > best_val) {
@@ -259,7 +258,6 @@ namespace cukd {
                    const typename point_traits_b::point_t& b)
   {
     typename point_traits_a::scalar_t res = 0;
-#pragma unroll
     for(int i=0; i<min(point_traits_a::numDims, point_traits_b::numDims); ++i) {
       const auto diff = point_traits_a::getCoord(a, i) - point_traits_b::getCoord(b, i);
       res += sqr(diff);
@@ -273,7 +271,6 @@ namespace cukd {
                 const typename point_traits_b::point_t& b)
   {
     typename point_traits_a::scalar_t res = 0;
-#pragma unroll
     for(int i=0; i<min(point_traits_a::numDims, point_traits_b::numDims); ++i) {
       const auto diff = point_traits_a::getCoord(a, i) - point_traits_b::getCoord(b, i);
       res += sqr(diff);
