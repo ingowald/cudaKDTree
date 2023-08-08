@@ -36,6 +36,10 @@ namespace cukd {
     {
 #ifdef __CUDA_ARCH__
       int k = 63 - __clzll(nodeID+1);
+#elif defined(_MSC_VER)
+      unsigned long bs;
+      _BitScanReverse(&bs, nodeID + 1);
+      int k = 31 - bs;
 #else
       int k = 63 - __builtin_clzll(nodeID+1);
 #endif
