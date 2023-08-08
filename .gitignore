@@ -4,8 +4,6 @@ textures
 .#*
 bin
 dbg
-*.user*
-*.sw?
 tags
 .ycm_extra_conf.pyc
 *.autosave
@@ -26,13 +24,10 @@ ispc
 *.dvi
 *.lbl
 *.log
-paper/pointQueries/rtxPointQueries.pdf
-paper/pointQueries/rtxPointQueries-compressed.pdf
 *.swp
 *.out
 Session.vim
 .idea
 !*png/*.pdf
 .vs/
-samples/advanced/optix7course/models/
 

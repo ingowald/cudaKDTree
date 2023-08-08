@@ -54,7 +54,7 @@ requires zero additional memory during building, but for large arrays
   - temporary memory overhead for N points: nada, nil, zilch.
   - perf 100K float3s (4090) :  ~10ms
   - perf   1M float3s (4090) : ~220ms
-  - perf  10M float3s (4090) : ~4.3ms
+  - perf  10M float3s (4090) : ~4.3s
 
 ```
 
