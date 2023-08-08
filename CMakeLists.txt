@@ -33,7 +33,7 @@ endif()
 
 option(BUILD_ALL_TESTS "Build entire type/dimension/kernel test matrix?" OFF)
 
-add_subdirectory(../bitonic ext_bitonic EXCLUDE_FROM_ALL)
+#add_subdirectory(../bitonic ext_bitonic EXCLUDE_FROM_ALL)
 
 # ------------------------------------------------------------------
 # general cmake project configs
