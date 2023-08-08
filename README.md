@@ -100,14 +100,14 @@ floating point data points), but the `node_t would be tihs `my_data`.
 To "explain" that to the builder, one would, for this example, define the following:
 
     struct my_data_traits : public default_node_traits<float3> {
-	   /* inheriting from default_node_traits will
-	      define scalar_t, node_t, point_t, num_dims ...*/
+	  /* inheriting from default_node_traits will
+	     define scalar_t, node_t, point_t, num_dims ...*/
 		  
-        static inline __device__ const float3 get_point(const my_data &n) 
-		{ return make_float3(n.pos_x,...); }
+      static inline __device__ float3 get_point(const my_data &n) 
+	  { return make_float3(n.pos_x,...); }
     
-	    static inline __device__ float get_coord(const my_data &n, int d)
-		{ if (d==0) return n.pos_x; ... }
+	  static inline __device__ float get_coord(const my_data &n, int d)
+	  { if (d==0) return n.pos_x; ... }
 	};
 
 Using this description of how to interact with a node, the builder
