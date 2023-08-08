@@ -91,7 +91,7 @@ namespace cukd {
     inline __device__
     float knn(CandidateList &result,
               typename data_traits::point_t queryPoint,
-              const box_t<typename data_traits::point_t> worldBounds,
+              // const box_t<typename data_traits::point_t> worldBounds,
               const data_t *d_nodes,
               int N);
 
@@ -122,7 +122,7 @@ namespace cukd {
     inline __device__
     float knn(CandidateList &result,
               typename data_traits::point_t queryPoint,
-              const box_t<typename data_traits::point_t> worldBounds,
+              // const box_t<typename data_traits::point_t> worldBounds,
               const data_t *d_nodes,
               int N);
   } // ::cukd::stackFree
@@ -501,7 +501,7 @@ namespace cukd {
   namespace stackBased {
     template<typename CandidateList,
              typename data_t,
-             typename data_traits=default_data_traits<data_t>>
+             typename data_traits>
     inline __device__
     float knn(CandidateList &result,
               typename data_traits::point_t queryPoint,

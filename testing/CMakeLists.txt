@@ -55,3 +55,9 @@ add_test(NAME cukdTestInPlaceSimpleInput COMMAND cukdTestInPlaceSimpleInput)
 add_executable(cukdTestCompileSpatialKNN compileSpatialKNN.cu)
 target_link_libraries(cukdTestCompileSpatialKNN PRIVATE cudaKDTree)
 add_test(NAME cukdTestCompileSpatialKNN COMMAND cukdTestCompileSpatialKNN)
+# make sure all knn variants for a _spatial_ k-d tree will at least compile
+add_executable(cukdTestCompileKNN compileKNN.cu)
+target_link_libraries(cukdTestCompileKNN PRIVATE cudaKDTree)
+add_test(NAME cukdTestCompileKNN COMMAND cukdTestCompileKNN)
+
+enable_testing()
