@@ -174,14 +174,14 @@ abvoe), be done as such
 Similarly, a knn query for k=4 elements can be done via
 
      cukd::FixedCandidateList<4> closest(maxRadius);
-	 float sqrDistOfFuthestOneInClosest
-	    = cukd::knn(closest,queryPoints,points,numPoints));
+	 float sqrDistOfFurthestOneInClosest
+	    = cukd::knn(closest,queryPoint,points,numPoints));
 
 ... or for a large number of, for example, k=50 via
 
      cukd::HeapCandidateList<50> closest(maxRadius);
-	 float sqrDistOfFuthestOneInClosest
-	    = cukd::knn(closest,queryPoints,points,numPoints));
+	 float sqrDistOfFurthestOneInClosest
+	    = cukd::knn(closest,queryPoint,points,numPoints));
 
 As shown in the last two examples, the `knn` code can be templated
 over a "container" used for storing the k-nearest points. One such
