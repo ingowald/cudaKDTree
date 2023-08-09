@@ -262,7 +262,7 @@ namespace cukd {
   {
     size_t count64;
     T *t = loadPoints<T>(fileName, count64);
-    count = count64;
+    count = (int)count64;
     return t;
   }
 
