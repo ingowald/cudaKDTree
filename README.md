@@ -1,34 +1,34 @@
-# cudaKDTree - A Library for Building and Querying Left-Balanced (point-)kd-Trees in CUDA
+# cudaKDTree - A Library for Building and Querying Left-Balanced (point-)k-d Trees in CUDA
 
-Left-balanced kd-trees can be used to store and query k-dimensional
+Left-balanced k-d trees can be used to store and query k-dimensional
 data points; their main advantage over other data structures is that
 they can be stored without any pointers or other admin data - which
 makes them very useful for large data sets, and/or where you want to
 be able to predict how much memory you are going to use.
 
-This repo contains CUDA code two kinds of operations: *building* such
+This repository contains CUDA code two kinds of operations: *building* such
 trees, and *querying* them.
 
-## Building Left-balanced KD-Trees
+## Building Left-balanced k-d Trees
 
-This repo contains three different methods for building left-balanced
+This repository contains three different methods for building left-balanced
 and complete k-d trees. All three variants are templated over the data
 type contained in the tree; often this is simply a vector/point type
 like cuda `float3`, `int4`, etc; but the templating mechanism used
 also allow for specify more complex data types such as points carrying
 a certain payload (e.g., `struct { int3 position, int pointID };`), or
-even data points that allow for specifying a split dimensoin (to build
+even data points that allow for specifying a split dimension (to build
 what Samet calls 'generalized' k-d trees, and what Bentley originally
-called 'optimized' k-dtrees - those where each node can choose which
+called 'optimized' k-d trees - those where each node can choose which
 dimension it wants to split in).
 
 The three builders all offer exactly the same caller interface, and
-will all build *exactly* the same trees, but they offer differnt
+will all build *exactly* the same trees, but they offer different
 trade-offs regarding build speed vs temporary memory used during
 building. `cubit/builder_thrust` is the fastest, but relies on
 `thrust`, and requires up to 3x as much memory during building as the
 input data itself. `cubit/builder_bitonic` doesn't need thrust, runs
-better in a stream, and in terms of temp mem during building needs
+better in a stream, and in terms of temporary memory during building needs
 only exactly one int per input point. Finally, `cubit/builder_inplace`
 requires zero additional memory during building, but for large arrays
 (> 1M points) will be about an order of magnitude slower: 
@@ -67,15 +67,15 @@ as simply as
     cukd::buildTree<float3>(points[],numPoints);
 	
 (or in fact, if `points[]` is of type `float3 *` the compiler will
-even be able to auto-deduce that). This simple variant shold work for
+even be able to auto-deduce that). This simple variant should work for
 all of `float2`, `float3`, and `float4` (and probably even `int2`
-etc - if not it's trivially simpel to add).
+etc - if not it's trivially simple to add).
 
 
 ### Building over user types with payload data
 
 For data points with 'payload' you can specify a so-called
-`node_traits` struct that desribes how the builder can interact with
+`node_traits` struct that describes how the builder can interact with
 each data item. Note with 'node' we mean _both_ the node of the k-d
 tree, _and_ the type of each item in the input data array---since our
 balanced k-d trees are built by simply re-arranging these elements it
@@ -92,7 +92,7 @@ might want to store his points as
        float pos_z, nor_z;
     };
    
-and then ask the builder to build a kd-tree over an array of such
+and then ask the builder to build a k-d tree over an array of such
 `my_data`s. In that case, the _logical_ point type would be a `float3`
 (because the tree would be built over what is logically 3-dimensional
 floating point data points), but the `node_t would be tihs `my_data`.
@@ -119,10 +119,10 @@ can then be called by
 
 In particular for photon mapping, it has been shown that faster
 queries can be achieved if for each node in the k-d tree we choose the
-split dimensoin not in a round-robin way, but rather, by always
+split dimension not in a round-robin way, but rather, by always
 splitting in the widest dimension of that node's associated sub-tree.
 
-Both our builder and our traversal allow for doing tihs; however,
+Both our builder and our traversal allow for doing this; however,
 since this requires each node to be able to "somehow" store and
 retrieve a split dimension this requires to define one's own node
 type, and then define a `node_traits` for this that also defines some
@@ -158,12 +158,12 @@ mapping example one could use:
 This repo also contains both a stack-based and a stack-free traversal
 code for doing "shrinking-radius range-queries" (i.e., radius range
 queries where the radius can shrink during traversal). This traversal
-code is used in two examples: *fcp* (for find-closst-point) and *knn*
+code is used in two examples: *fcp* (for find-closest-point) and *knn*
 (for k-nearest neighbors).
 
-For the *fct* example, you can, for example (assuming that `points[]`
-and `numPoints` describe a balanced kd-tree that was built as described
-abvoe), be done as such
+For the *fcp* example, you can, for example (assuming that `points[]`
+and `numPoints` describe a balanced k-d tree that was built as described
+above), be done as such
 
     __global__ void myKernel(float3 *points, int numPoints, ... ) {
 	   ...
