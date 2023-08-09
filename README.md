@@ -168,7 +168,7 @@ above), be done as such
     __global__ void myKernel(float3 *points, int numPoints, ... ) {
 	   ...
 	   float3 queryPoint = ...;
-	   int idOfClosestPoint = fcp(queryPoints,points,numPoints)
+	   int idOfClosestPoint = fcp(queryPoint,points,numPoints)
 	   ...
 	   
 Similarly, a knn query for k=4 elements can be done via
