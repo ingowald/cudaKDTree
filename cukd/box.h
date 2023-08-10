@@ -42,6 +42,12 @@ namespace cukd {
       return true;
     }
 
+    inline __both__ void grow(const point_t &p)
+    {
+      lower = min(lower,p);
+      upper = max(upper,p);
+    }
+    
     inline __both__ void setEmpty()
     {
       enum { num_dims = num_dims_of<point_t>::value };

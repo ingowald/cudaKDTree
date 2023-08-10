@@ -14,34 +14,20 @@
 // limitations under the License.                                           //
 // ======================================================================== //
 
-#include "cukd/builder.h"
+#include "cukd/builder_host.h"
 #include <random>
 
-#define AS_STRING(x) #x
-#define TO_STRING(x) AS_STRING(x)
-
 namespace test_float3 {
-  void test_simple()
+  void test_empty()
   {
-    std::cout << "testing `" << TO_STRING(BUILDER_TO_TEST)
-              << "` on float3 array, 1000 uniform random points." << std::endl;
+    std::cout << "testing float3 array, empty input." << std::endl;
     
-    int numPoints = 1000;
-    
+    // dummy arrays, just to get the types to force the right builder
+    // instantiation:
     float3 *points = 0;
-    CUKD_CUDA_CALL(MallocManaged((void **)&points,numPoints*sizeof(float3)));
-    
-    std::default_random_engine rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> dist(0.f,100.f);
-    for (int i=0;i<numPoints;i++) {
-      points[i].x = dist(gen);
-      points[i].y = dist(gen);
-      points[i].z = dist(gen);
-    }
+    int numPoints = 0;
     // BUILDER_TO_TEST supplied by cmakefile:
-    cukd::BUILDER_TO_TEST(points,numPoints);
-    CUKD_CUDA_CALL(Free(points));
+    cukd::buildTree_host(points,numPoints);
   }
 }
 
@@ -68,54 +54,31 @@ namespace test_photon {
     static inline __both__ float get_coord(const Photon &p, int d)
     { return cukd::get_coord(p.position,d); }
     
-    static inline __device__ int  get_dim(const Photon &p)
+    static inline __both__ int  get_dim(const Photon &p)
     { return p.splitDim; }
     
-    static inline __device__ void set_dim(Photon &p, int d)
+    static inline __both__ void set_dim(Photon &p, int d)
     { p.splitDim = d; }
   };
   
-  void test_simple()
+  void test_empty()
   {
-    std::cout << "testing `" << AS_STRING(BUILDER_TO_TEST)
-              << "` on 'Photons' array (float3 plus payload), 1000 random photons." << std::endl;
+    std::cout << "testing 'Photons' array (float3 plus payload), empty input." << std::endl;
 
-    int numPhotons = 1000;
-    
-    Photon *photons = 0;
-    CUKD_CUDA_CALL(MallocManaged((void **)&photons,numPhotons*sizeof(Photon)));
-    
-    std::default_random_engine rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> dist(0.f,100.f);
-    for (int i=0;i<numPhotons;i++) {
-      photons[i].position.x = dist(gen);
-      photons[i].position.y = dist(gen);
-      photons[i].position.z = dist(gen);
-      photons[i].power = make_float3(0.f,0.f,0.f);
-      photons[i].normal_theta = 0;
-      photons[i].normal_phi = 0;
-    }
-    cukd::box_t<float3> *worldBounds = 0;
-    CUKD_CUDA_CALL(MallocManaged((void **)&worldBounds,sizeof(*worldBounds)));
-    
-    cukd::BUILDER_TO_TEST<Photon,Photon_traits>
-      (photons,numPhotons,worldBounds);
-
-    std::cout << "world bounds is " << *worldBounds << std::endl;
-    CUKD_CUDA_CALL(Free(photons));
-    CUKD_CUDA_CALL(Free(worldBounds));
+    // dummy arrays, just to get the types to force the right builder
+    // instantiation:
+    Photon *points = 0;
+    int numPoints = 0;
+    // BUILDER_TO_TEST supplied by cmakefile:
+    cukd::buildTree_host<Photon,Photon_traits>
+      (points,numPoints);
   }
 }
 
 int main(int, const char **)
 {
-  test_float3::test_simple();
-  CUKD_CUDA_SYNC_CHECK();
-
-  test_photon::test_simple();
-  CUKD_CUDA_SYNC_CHECK();
-
+  test_float3::test_empty();
+  test_photon::test_empty();
   return 0;
 }
 

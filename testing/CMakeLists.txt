@@ -52,10 +52,13 @@ add_test(NAME cukdTestInPlaceSimpleInput COMMAND cukdTestInPlaceSimpleInput)
 
 
 
-#add_executable(cukdTestHostBuilderEmptyInput testHostBuilderEmptyInput.cpp)
-#target_compile_definitions(cukdTestHostBuilderEmptyInput PUBLIC -DBUILDER_TO_TEST=buildTree_inPlace)
-#target_link_libraries(cukdTestHostBuilderEmptyInput PRIVATE cudaKDTree)
-#add_test(NAME cukdTestHostBuilderEmptyInput COMMAND cukdTestHostBuilderEmptyInput)
+add_executable(cukdTestHostBuilderEmptyInput testHostBuilderEmptyInput.cu)
+target_link_libraries(cukdTestHostBuilderEmptyInput PRIVATE cudaKDTree)
+add_test(NAME cukdTestHostBuilderEmptyInput COMMAND cukdTestHostBuilderEmptyInput)
+
+add_executable(cukdTestHostBuilderSimpleInput testHostBuilderSimpleInput.cu)
+target_link_libraries(cukdTestHostBuilderSimpleInput PRIVATE cudaKDTree)
+add_test(NAME cukdTestHostBuilderSimpleInput COMMAND cukdTestHostBuilderSimpleInput)
 
 
 

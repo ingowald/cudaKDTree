@@ -14,7 +14,7 @@
 // limitations under the License.                                           //
 // ======================================================================== //
 
-#include "cukd/builder.h"
+#include "cukd/builder_host.h"
 #include <random>
 
 #define AS_STRING(x) #x
@@ -23,8 +23,7 @@
 namespace test_float3 {
   void test_simple()
   {
-    std::cout << "testing `" << TO_STRING(BUILDER_TO_TEST)
-              << "` on float3 array, 1000 uniform random points." << std::endl;
+    std::cout << "testing `buildTree_host` on float3 array, 1000 uniform random points." << std::endl;
     
     int numPoints = 1000;
     
@@ -40,7 +39,7 @@ namespace test_float3 {
       points[i].z = dist(gen);
     }
     // BUILDER_TO_TEST supplied by cmakefile:
-    cukd::BUILDER_TO_TEST(points,numPoints);
+    cukd::buildTree_host(points,numPoints);
     CUKD_CUDA_CALL(Free(points));
   }
 }
@@ -68,22 +67,25 @@ namespace test_photon {
     static inline __both__ float get_coord(const Photon &p, int d)
     { return cukd::get_coord(p.position,d); }
     
-    static inline __device__ int  get_dim(const Photon &p)
+    static inline __both__ int  get_dim(const Photon &p)
     { return p.splitDim; }
     
-    static inline __device__ void set_dim(Photon &p, int d)
+    static inline __both__ void set_dim(Photon &p, int d)
     { p.splitDim = d; }
   };
   
   void test_simple()
   {
-    std::cout << "testing `" << AS_STRING(BUILDER_TO_TEST)
-              << "` on 'Photons' array (float3 plus payload), 1000 random photons." << std::endl;
+    std::cout << "testing `buildTree_host` on 'Photons' array"
+      " (float3 plus payload), 1000 random photons." << std::endl;
 
     int numPhotons = 1000;
-    
-    Photon *photons = 0;
-    CUKD_CUDA_CALL(MallocManaged((void **)&photons,numPhotons*sizeof(Photon)));
+
+    std::vector<Photon> h_photons(numPhotons);
+    Photon *photons = h_photons.data();
+
+    // Photon *photons = 0;
+    // CUKD_CUDA_CALL(MallocManaged((void **)&photons,numPhotons*sizeof(Photon)));
     
     std::default_random_engine rd;
     std::mt19937 gen(rd());
@@ -99,11 +101,11 @@ namespace test_photon {
     cukd::box_t<float3> *worldBounds = 0;
     CUKD_CUDA_CALL(MallocManaged((void **)&worldBounds,sizeof(*worldBounds)));
     
-    cukd::BUILDER_TO_TEST<Photon,Photon_traits>
+    cukd::buildTree_host<Photon,Photon_traits>
       (photons,numPhotons,worldBounds);
 
     std::cout << "world bounds is " << *worldBounds << std::endl;
-    CUKD_CUDA_CALL(Free(photons));
+    // CUKD_CUDA_CALL(Free(photons));
     CUKD_CUDA_CALL(Free(worldBounds));
   }
 }

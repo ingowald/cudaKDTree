@@ -16,11 +16,10 @@
 
 #pragma once
 
-#include "cukd/builder_common.h"
+#include "cukd/builder_thrust.h"
 
 namespace cukd {
-  
-  
+
   // ==================================================================
   // INTERFACE SECTION
   // ==================================================================
@@ -81,38 +80,30 @@ namespace cukd {
   */
   template<typename data_t,
            typename data_traits=default_data_traits<data_t>>
-  void buildTree_inPlace(/*! device-read/writeable array of data points */
-                         data_t      *points,
-                         /*! number of data points */
-                         int          numPoints,
-                         /*! device-writeable pointer to store the world-space
-                           bounding box of all data points. if
-                           data_traits::has_explicit_dim is false, this is
-                           optionally allowed to be null */
-                         box_t<typename data_traits::point_t> *worldBounds=0,
-                         /*! cuda stream to use for all kernels and mallocs
-                           (the builder_thrust may _also_ do some global
-                           device syncs) */
-                         cudaStream_t stream = 0,
-                         /*! memory resource that can be used to
-                           control how memory allocations will be
-                           implemented (eg, using Async allocs only
-                           on CDUA > 11, or using managed vs device
-                           mem) */
-                         GpuMemoryResource &memResource=defaultGpuMemResource());
+  void buildTree_host(/*! device-read/writeable array of data points */
+                      data_t *d_points,
+                      /*! number of data points */
+                      int numPoints,
+                      /*! device-writeable pointer to store the world-space
+                        bounding box of all data points. if
+                        data_traits::has_explicit_dim is false, this is
+                        optionally allowed to be null */
+                      box_t<typename data_traits::point_t> *worldBounds=0);
+
 
   // ==================================================================
   // IMPLEMENTATION SECTION
   // ==================================================================
 
-  namespace inPlaceBuilder {
-    
+  namespace builder_host {
+
     inline __both__ int firstNodeOnLevel(int L) { return (1<<L) - 1; }
     inline __both__ int numNodesOnLevel(int L) { return 1<<L; }
     inline __both__ int partnerOf(int n, int L_r, int L_b)
     {
       return (((n+1) ^ (1<<(L_r-L_b-1))))-1;
     }
+
 
     template<typename scalar_t, int side>
     inline __both__
@@ -163,90 +154,38 @@ namespace cukd {
       if (n != input_n) 
         points[n] = point_n;
     }
-
-
-    template<typename data_t, typename data_traits>
-    __global__ void d_quickSwap(/*! _build_ root level */int L_b,
-                                data_t *points,
-                                int numPoints)
-    {
-      int n = threadIdx.x + blockIdx.x*blockDim.x;
-      if (n >= numPoints) return;
     
-      int L_n = BinaryTree::levelOf(n);
-      if (L_n <= L_b) return;
-    
-      int partner = partnerOf(n,L_n,L_b);
-      if (partner >= numPoints) return;
-
-      if (partner < n)
-        // only one of the two can do the work, or they'll race each
-        // other - let's always pick the lower one.
-        return;
-
-      using point_t  = typename data_traits::point_t;
-      enum { num_dims = num_dims_of<point_t>::value };
-
-      const int     dim
-        = data_traits::has_explicit_dim
-        ? data_traits::get_dim(points[((n+1)>>(L_n-L_b))-1])
-        : (L_b % num_dims);
-    
-      if (data_traits::get_coord(points[partner],dim)
-          <
-          data_traits::get_coord(points[n],dim)) {
-        cukd::cukd_swap(points[n],points[partner]);
-      } 
-    }
-  
-    template<typename data_t, typename data_traits>
-    void quickSwap(/*! _build_ root level */
-                   int          L_b,
-                   data_t      *points,
-                   int          numPoints,
-                   cudaStream_t stream)
+    template<typename data_t,
+             typename data_traits>
+    inline
+    void computeBounds_host(box_t<typename data_traits::point_t> *d_bounds,
+                            const data_t *d_points,
+                            int numPoints)
     {
-      // printTree<data_t,data_traits>(points,numPoints);
-      // std::cout << "---- building heaps on " << L_h << ", root level " << L_b << std::endl << std::flush;
-      int bs = 1024;
-      int nb = divRoundUp(numPoints,bs);
-      d_quickSwap<data_t,data_traits><<<nb,bs,0,stream>>>(L_b,points,numPoints);
-    }
-
-    template<typename data_t, typename data_traits>
-    void printTree(data_t *points,int numPoints)
-    {
-      cudaDeviceSynchronize();
-      using point_t  = typename data_traits::point_t;
-      using scalar_t = typename scalar_type_of<point_t>::type;
+      using point_t = typename data_traits::point_t;
       enum { num_dims = num_dims_of<point_t>::value };
     
-      for (int L=0;true;L++) {
-        int begin = firstNodeOnLevel(L);
-        int end = std::min(numPoints,begin+numNodesOnLevel(L));
-        if (end <= begin) break;
-        printf("### level %i ###\n",L);
-        for (int i=begin;i<end;i++) 
-          printf("%5i.",i);
-        printf("\n");
-      
-        for (int d=0;d<num_dims;d++) {
-          for (int i=begin;i<end;i++) 
-            printf("%5.3f ",(data_traits::get_coord(points[i],d)));
-          // printf("%6i",int(data_traits::get_coord(points[i],d)));
-          printf("\n");
-        }
+      box_t<typename data_traits::point_t> bb;
+      bb.setEmpty();
+
+      for (int tid=0;tid<numPoints;tid++) {
+        using point_t = typename data_traits::point_t;
+        point_t point = data_traits::get_point(d_points[tid]);
+        bb.grow(point);
       }
+      *d_bounds = bb;
     }
-  
 
     template<typename data_t, typename data_traits>
-    __global__ void d_buildHeaps(/*! _heap_ root level */int L_h,
-                                 /*! _build_ root level */int L_b,
-                                 data_t *__restrict__ points,
-                                 int numPoints)
+    // __global__
+    inline
+    void h_buildHeaps(int tid,
+                      /*! _heap_ root level */int L_h,
+                      /*! _build_ root level */int L_b,
+                      data_t *__restrict__ points,
+                      int numPoints)
     {
-      int tid = threadIdx.x + blockIdx.x*blockDim.x;
+      // int tid = threadIdx.x + blockIdx.x*blockDim.x;
       if (L_h == L_b+1)
         tid *= 1<<(L_h-L_b);
       int numNodesOnL_h = numNodesOnLevel(L_h);
@@ -297,32 +236,36 @@ namespace cukd {
                     /*! _build_ root level */
                     int          L_b,
                     data_t      *points,
-                    int          numPoints,
-                    cudaStream_t stream)
+                    int          numPoints)
     {
       int numNodesOnL_h = numNodesOnLevel(L_h);
-      int bs = 64;
-      int nb = divRoundUp(numNodesOnL_h,bs);
-      d_buildHeaps<data_t,data_traits><<<nb,bs,0,stream>>>
-        (L_h,L_b,points,numPoints);
+      // int bs = 64;
+      // int nb = divRoundUp(numNodesOnL_h,bs);
+      for (int tid=0;tid<numNodesOnL_h;tid++)
+        h_buildHeaps<data_t,data_traits>//<<<nb,bs,0,stream>>>
+          (tid,L_h,L_b,points,numPoints);
     }
 
 
 
     template<typename data_t, typename data_traits>
-    __global__
-    void d_selectDimsOnLevel(int     L_b,
+    inline
+    void h_selectDimsOnLevel(int tid,
+                             int     L_b,
                              data_t *points,
                              int     numPoints,
                              box_t<typename data_traits::point_t> *worldBounds)
     {
-      int tid = threadIdx.x + blockIdx.x*blockDim.x;
+      // int tid = threadIdx.x + blockIdx.x*blockDim.x;
       int numNodesOnL_b = numNodesOnLevel(L_b);
-      if (tid >= numNodesOnL_b)
+      if (tid >= numNodesOnL_b) {
         return;
+      }
 
       int n = firstNodeOnLevel(L_b)+tid;
-      if (n >= numPoints) return;
+      if (n >= numPoints) {
+        return;
+      }
                                            
       using point_t  = typename data_traits::point_t;
       enum { num_dims = num_dims_of<point_t>::value };
@@ -338,29 +281,30 @@ namespace cukd {
 
     template<typename data_t, typename data_traits>
     void selectDimsOnLevel(int          L_b,
-                           data_t      *points,
-                           int          numPoints,
-                           box_t<typename data_traits::point_t> *worldBounds,
-                           cudaStream_t stream)
+                                data_t      *points,
+                                int          numPoints,
+                                box_t<typename data_traits::point_t> *worldBounds)
     {
       // std::cout << "selecting dims ..." << std::endl << std::flush;
       int numNodesOnL_b = numNodesOnLevel(L_b);
-      int bs = 64;
-      int nb = divRoundUp(numNodesOnL_b,bs);
-      d_selectDimsOnLevel<data_t,data_traits><<<nb,bs,0,stream>>>
-        (L_b,points,numPoints,worldBounds);
+      // int bs = 64;
+      // int nb = divRoundUp(numNodesOnL_b,bs);
+      for (int tid=0;tid<numNodesOnL_b;tid++)
+        h_selectDimsOnLevel<data_t,data_traits>//<<<nb,bs,0,stream>>>
+          (tid,L_b,points,numPoints,worldBounds);
     }
   
-
-
+  
     template<typename data_t, typename data_traits>
-    __global__
-    void d_fixPivots(/*! _build_ root level */
+    // __global__
+    inline
+    void h_fixPivots(int tid,
+                     /*! _build_ root level */
                      int     L_b,
                      data_t *points,
                      int     numPoints)
     {
-      int tid = threadIdx.x + blockIdx.x*blockDim.x;
+      // int tid = threadIdx.x + blockIdx.x*blockDim.x;
       int numNodesOnL_b = numNodesOnLevel(L_b);
       if (tid >= numNodesOnL_b)
         return;
@@ -393,16 +337,17 @@ namespace cukd {
     }
   
     template<typename data_t, typename data_traits>
-    void fixPivots(/*! _build_ root level */int L_b,
-                   data_t *points,
-                   int numPoints,
-                   cudaStream_t stream)
+    inline void fixPivots(/*! _build_ root level */int L_b,
+                          data_t *points,
+                          int numPoints)
     {
       int numNodesOnL_b = numNodesOnLevel(L_b);
-      int bs = 64;
-      int nb = divRoundUp(numNodesOnL_b,bs);
-      d_fixPivots<data_t,data_traits><<<nb,bs,0,stream>>>(L_b,points,numPoints);
+      // int bs = 64;
+      // int nb = divRoundUp(numNodesOnL_b,bs);
+      for (int tid=0;tid<numNodesOnL_b;tid++)
+        h_fixPivots<data_t,data_traits>(tid,L_b,points,numPoints);
     }
+  
 
     template<typename data_t, typename data_traits>
     void buildLevel(/*! level that we're ultimately _building_ */
@@ -410,36 +355,31 @@ namespace cukd {
                     int          numLevels,
                     data_t      *d_points,
                     int          numPoints,
-                    box_t<typename data_traits::point_t> *worldBounds,
-                    cudaStream_t stream)
+                    box_t<typename data_traits::point_t> *worldBounds)
     {
       if (data_traits::has_explicit_dim)
         selectDimsOnLevel<data_t,data_traits>
-          (L_b,d_points,numPoints,worldBounds,stream);
+          (L_b,d_points,numPoints,worldBounds);
     
       for (int L_h = numLevels-1; L_h > L_b; --L_h)
-        buildHeaps<data_t,data_traits>(L_h,L_b,d_points,numPoints,stream);
+        buildHeaps<data_t,data_traits>(L_h,L_b,d_points,numPoints);
 
-      fixPivots<data_t,data_traits>(L_b,d_points,numPoints,stream);
+      fixPivots<data_t,data_traits>(L_b,d_points,numPoints);
     }
-  } // ::cukd::inPlaceBuilder
+    
+
+  }
   
   template<typename data_t, typename data_traits>
-  void buildTree_inPlace(data_t      *points,
-                         int          numPoints,
-                         box_t<typename data_traits::point_t> *worldBounds,
-                         cudaStream_t stream,
-                         /*! memory resource that can be used to
-                           control how memory allocations will be
-                           implemented (eg, using Async allocs only
-                           on CDUA > 11, or using managed vs device
-                           mem) */
-                         GpuMemoryResource &memResource)
+  void buildTree_host(data_t *points,
+                      int numPoints,
+                      box_t<typename data_traits::point_t> *worldBounds)
   {
     if (numPoints <= 1)
       return;
     if (worldBounds) 
-      computeBounds<data_t,data_traits>(worldBounds,points,numPoints,stream);
+      builder_host::computeBounds_host<data_t,data_traits>
+        (worldBounds,points,numPoints);
     else if  (data_traits::has_explicit_dim) 
       throw std::runtime_error
         ("cukd::builder_inplace: asked to build k-d tree over "
@@ -447,19 +387,8 @@ namespace cukd {
     
     int numLevels = BinaryTree::numLevelsFor(numPoints);
     for (int L_b = 0; L_b < numLevels; L_b++)
-      inPlaceBuilder::buildLevel<data_t,data_traits>
-        (L_b,numLevels,points,numPoints,worldBounds,stream);
-    
-    cudaStreamSynchronize(stream);
-  }
-  
-  /*! non-generalized direction tree build */
-  template<typename data_t, typename data_traits>
-  void buildTree_inPlace(data_t *points,
-                         int numPoints,
-                         cudaStream_t stream)
-  {
-    buildTree_inPlace<data_t,data_traits>(points,numPoints,nullptr,stream);
+      builder_host::buildLevel<data_t,data_traits>
+        (L_b,numLevels,points,numPoints,worldBounds);
   }
   
 }
