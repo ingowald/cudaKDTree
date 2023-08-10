@@ -128,7 +128,7 @@ namespace cukd {
       and applying all clipping planes to the world-space bounding
       box */
   template<typename data_t,typename data_traits>
-  inline __device__
+  inline __both__
   box_t<typename data_traits::point_t>
   findBounds(int subtree,
              const box_t<typename data_traits::point_t> *d_bounds,
@@ -140,7 +140,6 @@ namespace cukd {
     
     box_t<point_t> bounds = *d_bounds;
     int curr = subtree;
-    // const bool dbg = false;
     while (curr > 0) {
       const int     parent = (curr+1)/2-1;
       const data_t &parent_node = d_nodes[parent];
