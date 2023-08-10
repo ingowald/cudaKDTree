@@ -82,5 +82,7 @@ int main(int, const char **)
 
   test_photon::test_empty();
   CUKD_CUDA_SYNC_CHECK();
+
+  return 0;
 }
 
