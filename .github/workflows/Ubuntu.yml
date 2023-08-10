@@ -1,0 +1,105 @@
+# Compile project on Ubuntu
+name: Ubuntu
+on:
+  push:
+    paths:
+      - "**"
+      - "!.github/**"
+      - ".github/workflows/Ubuntu.yml"
+      - "!scripts/"
+      - "scripts/actions/install_cuda_ubuntu.sh"
+      - "!*.md"
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      # explicit include-based build matrix, of known valid options
+      matrix:
+        include:
+          # 22.04 supports CUDA 11.7+
+          - os: ubuntu-22.04
+            cuda: "12.0"
+            gcc: 11
+          - os: ubuntu-22.04
+            cuda: "11.8"
+            gcc: 10
+          - os: ubuntu-22.04
+            cuda: "11.7"
+            gcc: 10
+          # 20.04 supports CUDA 11.0+
+          - os: ubuntu-20.04
+            cuda: "11.6"
+            gcc: 10
+          - os: ubuntu-20.04
+            cuda: "11.5"
+            gcc: 10
+          - os: ubuntu-20.04
+            cuda: "11.4"
+            gcc: 10
+          - os: ubuntu-20.04
+            cuda: "11.3"
+            gcc: 10
+          - os: ubuntu-20.04
+            cuda: "11.2"
+            gcc: 10
+          - os: ubuntu-20.04
+            cuda: "11.0"
+            gcc: 9
+          # 18.04 supports CUDA 10.1+ (gxx <= 8), but were deprecated on 2022-08-08 and unsupported from 2023-04-01
+          # - os: ubuntu-18.04
+          #   cuda: "10.2"
+          #   gcc: 8
+          # - os: ubuntu-18.04
+          #   cuda: "10.1"
+          #   gcc: 8
+          # 16.04 runners are deprecated / removed in september 2021.
+          # It should still be possible to install CUDA 8 - CUDA 10 in 18.04 images by using the 16.04 repository, but install_cuda_ubuntu.sh would require changes to do so / a way to override the repository to use.
+    env:
+      build_dir: "build"
+      config: "Release"
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install CUDA
+      env:
+        cuda: ${{ matrix.cuda }}
+      run: ./scripts/actions/install_cuda_ubuntu.sh
+      shell: bash
+
+    # Specify the correct host compilers
+    - name: Install/Select gcc and g++ 
+      run: |
+        sudo apt-get install -y gcc-${{ matrix.gcc }} g++-${{ matrix.gcc }}
+        echo "CC=/usr/bin/gcc-${{ matrix.gcc }}" >> $GITHUB_ENV
+        echo "CXX=/usr/bin/g++-${{ matrix.gcc }}" >> $GITHUB_ENV
+        echo "CUDAHOSTCXX=/usr/bin/g++-${{ matrix.gcc }}" >> $GITHUB_ENV
+
+    - name: Configure cmake
+      id: configure
+      run: cmake . -B ${{ env.build_dir }} -DCMAKE_BUILD_TYPE=${{ env.config }}
+
+    - name: Configure Error Processing
+      if: ${{ failure() && steps.configure.outcome == 'failure' }}
+      run: |
+          if [[ -d "${{ env.build_dir }}" ]]; then
+            pushd "${{ env.build_dir }}"
+            if [[ -f "CMakeFiles/CMakeOutput.log" ]]; then
+              echo "---- CMakeFiles/CMakeOutput.log"
+              cat CMakeFiles/CMakeOutput.log
+              echo "----"
+            fi
+            if [[ -f "CMakeFiles/CMakeError.log" ]]; then
+              echo "---- CMakeFiles/CMakeError.log"
+              cat CMakeFiles/CMakeError.log
+              echo "----"
+            fi
+          fi
+
+
+
+    - name: Build everything else
+      working-directory: ${{ env.build_dir }}
+      run: cmake --build . --target all --verbose -j `nproc`
+
