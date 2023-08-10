@@ -118,7 +118,6 @@ target_sources(cudaKDTree INTERFACE
 target_include_directories(cudaKDTree INTERFACE
   ${PROJECT_SOURCE_DIR}/
   )
-target_compile_definitions(cudaKDTree INTERFACE -DBLABLA=1)
 
 
 # ================================================================== a

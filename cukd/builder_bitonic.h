@@ -85,7 +85,13 @@ namespace cukd {
   void buildTree_bitonic(data_t      *points,
                          int          numPoints,
                          box_t<typename data_traits::point_t> *worldBounds = 0,
-                         cudaStream_t stream = 0);
+                         cudaStream_t stream = 0,
+                         /*! memory resource that can be used to
+                             control how memory allocations will be
+                             implemented (eg, using Async allocs only
+                             on CDUA > 11, or using managed vs device
+                             mem) */
+                         GpuMemoryResource &memResource=defaultGpuMemResource());
 
   // ==================================================================
   // IMPLEMENTATION SECTION
@@ -218,7 +224,12 @@ namespace cukd {
     void buildTree(data_t *d_points,
                    int numPoints,
                    box_t<typename data_traits::point_t> *worldBounds,
-                   cudaStream_t stream)
+                   cudaStream_t stream,
+                   /*! memory resource that can be used to control how
+                     memory allocations will be implemented (eg, using
+                     Async allocs only on CDUA > 11, or using managed
+                     vs device mem) */
+                   GpuMemoryResource &memResource)
     {
       using point_t  = typename data_traits::point_t;
       using scalar_t = typename scalar_type_of<point_t>::type;
@@ -233,7 +244,8 @@ namespace cukd {
       /* the helper array  we use to store each node's subtree ID in */
       // TODO allocate in stream?
       uint32_t *tags = 0;
-      CUKD_CUDA_CALL(MallocAsync((void**)&tags,numPoints*sizeof(uint32_t),stream));
+      CUKD_CUDA_CHECK(memResource.malloc((void**)&tags,numPoints*sizeof(uint32_t),stream));
+      // CUKD_CUDA_CALL(MallocAsync((void**)&tags,numPoints*sizeof(uint32_t),stream));
       CUKD_CUDA_CALL(MemsetAsync(tags,0,numPoints*sizeof(uint32_t),stream));
     
       /* compute number of levels in the tree, which dicates how many
@@ -276,8 +288,9 @@ namespace cukd {
          any more */
       cubit::zip_sort<uint32_t,data_t,ZipLess<data_t,data_traits>,zip_block_size>
         (tags,d_points,numPoints,ZipLess<data_t,data_traits>{deepestLevel%num_dims});
-    
-      cudaFreeAsync(tags,stream);
+
+      CUKD_CUDA_CHECK(memResource.free(tags,stream));
+      // cudaFreeAsync(tags,stream);
     }
 
 
@@ -314,7 +327,13 @@ namespace cukd {
   void buildTree_bitonic(data_t *d_points,
                          int numPoints,
                          box_t<typename data_traits::point_t> *worldBounds,
-                         cudaStream_t stream)
+                         cudaStream_t stream,
+                         /*! memory resource that can be used to
+                           control how memory allocations will be
+                           implemented (eg, using Async allocs only
+                           on CDUA > 11, or using managed vs device
+                           mem) */
+                         GpuMemoryResource &memResource)
   {
     using namespace bitonicSortBuilder;
     
@@ -339,7 +358,8 @@ namespace cukd {
         (worldBounds,d_points,numPoints);
       cudaStreamSynchronize(stream);
     }
-    bitonicSortBuilder::buildTree<data_t,data_traits>(d_points,numPoints,worldBounds,stream);
+    bitonicSortBuilder::buildTree<data_t,data_traits>
+      (d_points,numPoints,worldBounds,stream,memResource);
   }
 
 }

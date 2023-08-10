@@ -101,7 +101,13 @@ namespace cukd {
                         /*! cuda stream to use for all kernels and mallocs
                           (the builder_thrust may _also_ do some global
                           device syncs) */
-                        cudaStream_t stream=0);
+                        cudaStream_t stream=0,
+                        /*! memory resource that can be used to
+                          control how memory allocations will be
+                          implemented (eg, using Async allocs only
+                          on CDUA > 11, or using managed vs device
+                          mem) */
+                        GpuMemoryResource &memResource=defaultGpuMemResource());
   
   // ==================================================================
   // IMPLEMENTATION SECTION
@@ -275,7 +281,13 @@ namespace cukd {
   void buildTree_thrust(data_t *d_points,
                         int numPoints,
                         box_t<typename data_traits::point_t> *worldBounds,
-                        cudaStream_t stream)
+                        cudaStream_t stream,
+                        /*! memory resource that can be used to
+                          control how memory allocations will be
+                          implemented (eg, using Async allocs only
+                          on CDUA > 11, or using managed vs device
+                          mem) */
+                        GpuMemoryResource &memResource)
   {
     using namespace thrustSortBuilder;
     

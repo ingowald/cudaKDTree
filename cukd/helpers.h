@@ -21,6 +21,55 @@
 
 namespace cukd {
 
+  // ------------------------------------------------------------------
+  /*! defines a 'memory resource' that can be used for allocating gpu
+      memory; this allows the user to switch between usign
+      cudaMallocAsync (where avialble) vs regular cudaMalloc (where
+      not), or to use their own memory pool, to use managed memory,
+      etc. All memory allocatoins done during construction will use
+      the memory resource passed to the respective build function. */
+  struct GpuMemoryResource {
+    virtual cudaError_t malloc(void** ptr, size_t size, cudaStream_t s) = 0;
+    virtual cudaError_t free(void* ptr, cudaStream_t s) = 0;
+  };
+
+  struct ManagedMemMemoryResource : public GpuMemoryResource {
+    cudaError_t malloc(void** ptr, size_t size, cudaStream_t s) override
+    {
+      cudaStreamSynchronize(s);
+      return cudaMallocManaged(ptr,size);
+    }
+    cudaError_t free(void* ptr, cudaStream_t s) override
+    {
+      cudaStreamSynchronize(s);
+      return cudaFree(ptr);
+    }
+  };
+
+  /* by default let's use cuda malloc async, which is much better and
+     faster than regular malloc; but that's available on cuda 11, so
+     let's add a fall back for older cuda's, too */
+#if CUDART_VERSION >= 11000
+  struct AsyncGpuMemoryResource final : GpuMemoryResource {
+    cudaError_t malloc(void** ptr, size_t size, cudaStream_t s) override {
+      return cudaMallocAsync(ptr, size, s);
+    }
+    cudaError_t free(void* ptr, cudaStream_t s) override {
+      return cudaFreeAsync(ptr, s);
+    }
+  };
+
+  inline GpuMemoryResource &defaultGpuMemResource() {
+    static AsyncGpuMemoryResource memResource;
+    return memResource;
+  }
+#else
+  inline GpuMemoryResource &defaultGpuMemResource() {
+    static ManagedMemMemoryResource memResource;
+    return memResource;
+  }
+#endif
+
   /*! helper functions for a generic, arbitrary-size binary tree -
     mostly to compute level of a given node in that tree, and child
     IDs, parent IDs, etc */
