@@ -37,24 +37,24 @@ jobs:
           - os: windows-2019
             cuda: "11.4.0"
             visual_studio: "Visual Studio 16 2019"
-          - os: windows-2019
-            cuda: "11.3.0"
-            visual_studio: "Visual Studio 16 2019"
-          - os: windows-2019
-            cuda: "11.2.0"
-            visual_studio: "Visual Studio 16 2019"
-          - os: windows-2019
-            cuda: "11.1.0"
-            visual_studio: "Visual Studio 16 2019"
-          - os: windows-2019
-            cuda: "11.0.1"
-            visual_studio: "Visual Studio 16 2019"
-          - os: windows-2019
-            cuda: "10.2.89"
-            visual_studio: "Visual Studio 16 2019"
-          - os: windows-2019
-            cuda: "10.1.243"
-            visual_studio: "Visual Studio 16 2019"
+          #- os: windows-2019
+          #  cuda: "11.3.0"
+          #  visual_studio: "Visual Studio 16 2019"
+          #- os: windows-2019
+          #  cuda: "11.2.0"
+          #  visual_studio: "Visual Studio 16 2019"
+          #- os: windows-2019
+          #  cuda: "11.1.0"
+          #  visual_studio: "Visual Studio 16 2019"
+          #- os: windows-2019
+          #  cuda: "11.0.1"
+          #  visual_studio: "Visual Studio 16 2019"
+          #- os: windows-2019
+          #  cuda: "10.2.89"
+          #  visual_studio: "Visual Studio 16 2019"
+          #- os: windows-2019
+          #  cuda: "10.1.243"
+          #  visual_studio: "Visual Studio 16 2019"
 
     env:
       build_dir: "build"

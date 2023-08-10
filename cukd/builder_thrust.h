@@ -117,13 +117,13 @@ namespace cukd {
     
     template<typename data_t, typename data_traits>
     struct ZipCompare {
-      ZipCompare(const int dim, const data_t *nodes) : dim(dim), nodes(nodes) {}
+      explicit ZipCompare(const int dim, const data_t *nodes) : dim(dim), nodes(nodes) {}
 
       /*! the actual comparison operator; will perform a
         'zip'-comparison in that the first element is the major sort
         order, and the second the minor one (for those of same major
         sort key) */
-      inline __device__ bool operator()
+      inline __both__ bool operator()
       (const thrust::tuple<uint32_t, data_t> &a,
        const thrust::tuple<uint32_t, data_t> &b);
 
@@ -153,19 +153,20 @@ namespace cukd {
        the expected sort order described inthe paper - this kernel will
        update each of these tags to either left or right child (or root
        node) of given subtree*/
-    __global__
-    void updateTag(/*! array of tags we need to update */
+    inline __both__
+    void updateTag(int gid,
+                   /*! array of tags we need to update */
                    uint32_t *tag,
                    /*! num elements in the tag[] array */
                    int numPoints,
                    /*! which step we're in             */
                    int L)
     {
-      const int gid = threadIdx.x+blockIdx.x*blockDim.x;
-      if (gid >= numPoints) return;
+      // const int gid = threadIdx.x+blockIdx.x*blockDim.x;
+      // if (gid >= numPoints) return;
 
-      const int numSettled = FullBinaryTreeOf(L).numNodes();
-      if (gid < numSettled) return;
+      // const int numSettled = FullBinaryTreeOf(L).numNodes();
+      // if (gid < numSettled) return;
 
       // get the subtree that the given node is in - which is exactly
       // what the tag stores...
@@ -190,6 +191,25 @@ namespace cukd {
       tag[gid] = subtree;
     }
 
+    /* performs the L-th step's tag update: each input tag refers to a
+       subtree ID on level L, and - assuming all points and tags are in
+       the expected sort order described inthe paper - this kernel will
+       update each of these tags to either left or right child (or root
+       node) of given subtree*/
+    __global__
+    void updateTags(/*! array of tags we need to update */
+                    uint32_t *tag,
+                    /*! num elements in the tag[] array */
+                    int numPoints,
+                    /*! which step we're in             */
+                    int L)
+    {
+      const int gid = threadIdx.x+blockIdx.x*blockDim.x;
+      if (gid >= numPoints) return;
+
+      updateTag(gid,tag,numPoints,L);
+    }
+    
 
     /* performs the L-th step's tag update: each input tag refers to a
        subtree ID on level L, and - assuming all points and tags are in
@@ -197,19 +217,17 @@ namespace cukd {
        update each of these tags to either left or right child (or root
        node) of given subtree*/
     template<typename data_t, typename data_traits>
-    __global__
-    void updateTagsAndSetDims(/*! array of tags we need to update */
-                              const box_t<typename data_traits::point_t> *d_bounds,
-                              uint32_t  *tag,
-                              data_t *d_nodes,
-                              /*! num elements in the tag[] array */
-                              int numPoints,
-                              /*! which step we're in             */
-                              int L)
+    inline __both__
+    void updateTagAndSetDim(int gid,
+                            /*! array of tags we need to update */
+                            const box_t<typename data_traits::point_t> *d_bounds,
+                            uint32_t  *tag,
+                            data_t *d_nodes,
+                            /*! num elements in the tag[] array */
+                            int numPoints,
+                            /*! which step we're in             */
+                            int L)
     {
-      const int gid = threadIdx.x+blockIdx.x*blockDim.x;
-      if (gid >= numPoints) return;
-
       const int numSettled = FullBinaryTreeOf(L).numNodes();
       if (gid < numSettled) return;
 
@@ -244,7 +262,37 @@ namespace cukd {
       tag[gid] = subtree;
     }
   
-
+    /* performs the L-th step's tag update: each input tag refers to a
+       subtree ID on level L, and - assuming all points and tags are in
+       the expected sort order described inthe paper - this kernel will
+       update each of these tags to either left or right child (or root
+       node) of given subtree*/
+    template<typename data_t, typename data_traits>
+    __global__
+    void updateTagsAndSetDims(/*! array of tags we need to update */
+                              const box_t<typename data_traits::point_t> *d_bounds,
+                              uint32_t  *tag,
+                              data_t *d_nodes,
+                              /*! num elements in the tag[] array */
+                              int numPoints,
+                              /*! which step we're in             */
+                              int L)
+    {
+      const int gid = threadIdx.x+blockIdx.x*blockDim.x;
+      if (gid >= numPoints) return;
+      
+      updateTagAndSetDim<data_t,data_traits>
+        (gid,
+         /*! array of tags we need to update */
+         d_bounds,
+         tag,
+         d_nodes,
+         /*! num elements in the tag[] array */
+         numPoints,
+         /*! which step we're in             */
+         L);
+    }
+    
     /*! the actual comparison operator; will perform a
       'zip'-comparison in that the first element is the major sort
       order, and the second the minor one (for those of same major
@@ -356,7 +404,7 @@ namespace cukd {
           <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
           (worldBounds,thrust::raw_pointer_cast(tags.data()),d_points,numPoints,level);
       } else {
-        updateTag<<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
+        updateTags<<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
           (thrust::raw_pointer_cast(tags.data()),numPoints,level);
       }
       cudaStreamSynchronize(stream);
