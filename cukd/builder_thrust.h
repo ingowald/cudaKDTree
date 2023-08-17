@@ -375,7 +375,6 @@ namespace cukd {
        construction steps we need to run */
     const int numLevels = BinaryTree::numLevelsFor(numPoints);
     const int deepestLevel = numLevels-1;
-    PING; PRINT(deepestLevel);
     
     using box_t = cukd::box_t<point_t>;
     if (worldBounds) {
@@ -403,27 +402,18 @@ namespace cukd {
                    ZipCompare<data_t,data_traits>
                    ((level)%num_dims,d_points));
 
-      std::cout << "## SORT ## " << level << std::endl;
-      for (int i=0;i<numPoints;i++)
-        std::cout << tags[i] << ":" << d_points[i] << " ";
-      std::cout << std::endl;
-      
       const int blockSize = 128;
       if (data_traits::has_explicit_dim) {
         updateTagsAndSetDims<data_t,data_traits>
           <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
-          (worldBounds,thrust::raw_pointer_cast(tags.data()),d_points,numPoints,level);
+          (worldBounds,thrust::raw_pointer_cast(tags.data()),
+           d_points,numPoints,level);
       } else {
         updateTags
           <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
           (thrust::raw_pointer_cast(tags.data()),numPoints,level);
       }
       cudaStreamSynchronize(stream);
-      std::cout << "-- tags  -- " << level << std::endl;
-      for (int i=0;i<numPoints;i++)
-        std::cout << tags[i] << ":" << d_points[i] << " ";
-      std::cout << std::endl;
-      
     }
     
     /* do one final sort, to put all elements in order - by now every

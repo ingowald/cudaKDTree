@@ -198,7 +198,6 @@ void run_kernel(float  *d_results,
       *d_stats = 0;
       void *symAddr = 0;
       cudaGetSymbolAddress(&symAddr,cukd::g_traversalStats);
-      PRINT(symAddr);
       CUKD_STATS(cudaMemcpy(symAddr,&d_stats,sizeof(d_stats),cudaMemcpyHostToDevice));
     }
     )
@@ -346,10 +345,7 @@ void checkRec(data_t *nodes, int numNodes,
     
   if (curr >= numNodes) return;
 
-  PING; PRINT(curr);
-  
   point_t point = data_traits::get_point(nodes[curr]);
-  PRINT(point); PRINT(bounds);
   
   if (!bounds.contains(point))
     throw std::runtime_error
@@ -376,7 +372,6 @@ void checkTree(data_t *nodes, int numNodes, std::vector<data_t> &savedNodes)
 {
   cukd::box_t<floatN> bounds;
   bounds.setInfinite();
-  PING; PRINT(bounds);
   checkRec<data_t,data_traits>(nodes,numNodes,bounds,0);
   std::cout << "** verify: tree checked, and valid k-d tree" << std::endl;
 }
