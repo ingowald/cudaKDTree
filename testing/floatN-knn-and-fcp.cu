@@ -116,7 +116,7 @@ void d_fcp(float   *d_results,
   params.cutOffRadius = cutOffRadius;
 #if SPATIAL
   int closestID
-    = cukd::fcp
+    = TRAVERSAL_METHOD::fcp
     <data_t,data_traits>
     (tree,queryPos,params);
 #else

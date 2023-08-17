@@ -189,6 +189,7 @@ if (BUILD_ALL_TESTS)
       target_compile_definitions(cukd_float${D}-knn-spatial-${method}
 	PUBLIC
 	-DD_FROM_CMAKE=${D}
+	-DSPATIAL=1
 	-DUSE_KNN=1
 	-DTRAVERSAL_METHOD=${method})
 
@@ -197,6 +198,7 @@ if (BUILD_ALL_TESTS)
       target_link_libraries(cukd_float${D}-fcp-spatial-${method} cudaKDTree)
       target_compile_definitions(cukd_float${D}-fcp-spatial-${method}
 	PUBLIC
+	-DSPATIAL=1
 	-DD_FROM_CMAKE=${D}
 	-DTRAVERSAL_METHOD=${method})
 
