@@ -346,7 +346,11 @@ void checkRec(data_t *nodes, int numNodes,
     
   if (curr >= numNodes) return;
 
+  PING; PRINT(curr);
+  
   point_t point = data_traits::get_point(nodes[curr]);
+  PRINT(point); PRINT(bounds);
+  
   if (!bounds.contains(point))
     throw std::runtime_error
       ("invalid k-d tree - node "+std::to_string(curr)+" not in parent bounds");
@@ -372,6 +376,7 @@ void checkTree(data_t *nodes, int numNodes, std::vector<data_t> &savedNodes)
 {
   cukd::box_t<floatN> bounds;
   bounds.setInfinite();
+  PING; PRINT(bounds);
   checkRec<data_t,data_traits>(nodes,numNodes,bounds,0);
   std::cout << "** verify: tree checked, and valid k-d tree" << std::endl;
 }
