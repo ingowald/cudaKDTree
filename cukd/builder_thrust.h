@@ -117,7 +117,9 @@ namespace cukd {
     
     template<typename data_t, typename data_traits>
     struct ZipCompare {
-      explicit ZipCompare(const int dim, const data_t *nodes) : dim(dim), nodes(nodes) {}
+      explicit ZipCompare(const int dim, const data_t *nodes)
+        : dim(dim), nodes(nodes)
+      {}
 
       /*! the actual comparison operator; will perform a
         'zip'-comparison in that the first element is the major sort
@@ -165,8 +167,8 @@ namespace cukd {
       // const int gid = threadIdx.x+blockIdx.x*blockDim.x;
       // if (gid >= numPoints) return;
 
-      // const int numSettled = FullBinaryTreeOf(L).numNodes();
-      // if (gid < numSettled) return;
+      const int numSettled = FullBinaryTreeOf(L).numNodes();
+      if (gid < numSettled) return;
 
       // get the subtree that the given node is in - which is exactly
       // what the tag stores...
@@ -373,10 +375,11 @@ namespace cukd {
        construction steps we need to run */
     const int numLevels = BinaryTree::numLevelsFor(numPoints);
     const int deepestLevel = numLevels-1;
-
+    
     using box_t = cukd::box_t<point_t>;
     if (worldBounds) {
-      computeBounds<data_t,data_traits>(worldBounds,d_points,numPoints,stream);
+      computeBounds<data_t,data_traits>
+        (worldBounds,d_points,numPoints,stream);
     }
     if (data_traits::has_explicit_dim) {
       if (!worldBounds)
@@ -396,15 +399,18 @@ namespace cukd {
        dimensoins */
     for (int level=0;level<deepestLevel;level++) {
       thrust::sort(thrust::device.on(stream),begin,end,
-                   ZipCompare<data_t,data_traits>((level)%num_dims,d_points));
-      
+                   ZipCompare<data_t,data_traits>
+                   ((level)%num_dims,d_points));
+
       const int blockSize = 128;
       if (data_traits::has_explicit_dim) {
         updateTagsAndSetDims<data_t,data_traits>
           <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
-          (worldBounds,thrust::raw_pointer_cast(tags.data()),d_points,numPoints,level);
+          (worldBounds,thrust::raw_pointer_cast(tags.data()),
+           d_points,numPoints,level);
       } else {
-        updateTags<<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
+        updateTags
+          <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
           (thrust::raw_pointer_cast(tags.data()),numPoints,level);
       }
       cudaStreamSynchronize(stream);
@@ -415,7 +421,9 @@ namespace cukd {
        array, so the dimension we're sorting in really won't matter
        any more */
     thrust::sort(thrust::device.on(stream),begin,end,
-                 ZipCompare<data_t,data_traits>((deepestLevel)%num_dims,d_points));
+                 ZipCompare<data_t,data_traits>
+                 ((deepestLevel)%num_dims,d_points));
+    cudaStreamSynchronize(stream);
   }
 
 

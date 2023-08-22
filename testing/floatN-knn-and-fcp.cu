@@ -116,7 +116,7 @@ void d_fcp(float   *d_results,
   params.cutOffRadius = cutOffRadius;
 #if SPATIAL
   int closestID
-    = cukd::fcp
+    = TRAVERSAL_METHOD::fcp
     <data_t,data_traits>
     (tree,queryPos,params);
 #else
@@ -198,7 +198,6 @@ void run_kernel(float  *d_results,
       *d_stats = 0;
       void *symAddr = 0;
       cudaGetSymbolAddress(&symAddr,cukd::g_traversalStats);
-      PRINT(symAddr);
       CUKD_STATS(cudaMemcpy(symAddr,&d_stats,sizeof(d_stats),cudaMemcpyHostToDevice));
     }
     )
@@ -347,6 +346,7 @@ void checkRec(data_t *nodes, int numNodes,
   if (curr >= numNodes) return;
 
   point_t point = data_traits::get_point(nodes[curr]);
+  
   if (!bounds.contains(point))
     throw std::runtime_error
       ("invalid k-d tree - node "+std::to_string(curr)+" not in parent bounds");
