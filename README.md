@@ -95,7 +95,7 @@ might want to store his points as
 and then ask the builder to build a k-d tree over an array of such
 `my_data`s. In that case, the _logical_ point type would be a `float3`
 (because the tree would be built over what is logically 3-dimensional
-floating point data points), but the `node_t would be tihs `my_data`.
+floating point data points), but the `node_t would be this `my_data`.
 
 To "explain" that to the builder, one would, for this example, define the following:
 
