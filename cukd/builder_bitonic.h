@@ -84,13 +84,13 @@ namespace cukd {
            typename data_traits=default_data_traits<data_t>>
   void buildTree_bitonic(data_t      *points,
                          int          numPoints,
-                         box_t<typename data_traits::point_t> *worldBounds = 0,
+                         cukd::box_t<typename data_traits::point_t> *worldBounds = 0,
                          cudaStream_t stream = 0,
                          /*! memory resource that can be used to
-                             control how memory allocations will be
-                             implemented (eg, using Async allocs only
-                             on CDUA > 11, or using managed vs device
-                             mem) */
+                           control how memory allocations will be
+                           implemented (eg, using Async allocs only
+                           on CDUA > 11, or using managed vs device
+                           mem) */
                          GpuMemoryResource &memResource=defaultGpuMemResource());
 
   // ==================================================================
@@ -113,13 +113,15 @@ namespace cukd {
                           int numPoints)
     {
       using point_t  = typename data_traits::point_t;
-      using scalar_t = typename scalar_type_of<point_t>::type;
-      enum { num_dims = num_dims_of<point_t>::value };
+      using point_traits = ::cukd::point_traits<point_t>;
+      using scalar_t = typename point_traits::scalar_t;
+      enum { num_dims = point_traits::num_dims };
 
       const int tid = threadIdx.x+blockIdx.x*blockDim.x;
       if (tid >= numPoints) return;
-    
-      int dim = arg_max(d_bounds->size());
+
+      int dim = d_bounds->widestDimension();
+      
       data_traits::set_dim(d_nodes[tid],dim);
     }
   
@@ -182,6 +184,9 @@ namespace cukd {
                               /*! which step we're in             */
                               int L)
     {
+      using point_t = typename data_traits::point_t;
+      using point_traits = ::cukd::point_traits<point_t>;
+      
       const int gid = threadIdx.x+blockIdx.x*blockDim.x;
       if (gid >= numPoints) return;
 
@@ -204,18 +209,18 @@ namespace cukd {
         // point is to left of pivot -> must be smaller or equal to
         // pivot in given dim -> must go to left subtree
         subtree = BinaryTree::leftChildOf(subtree);
-        get_coord(bounds.upper,pivotDim) = pivotCoord;
+        point_traits::set_coord(bounds.upper,pivotDim,pivotCoord);
       } else if (gid > pivotPos) {
         // point is to left of pivot -> must be bigger or equal to pivot
         // in given dim -> must go to right subtree
         subtree = BinaryTree::rightChildOf(subtree);
-        get_coord(bounds.lower,pivotDim) = pivotCoord;
+        point_traits::set_coord(bounds.lower,pivotDim,pivotCoord);
       } else
         // point is _on_ the pivot position -> it's the root of that
         // subtree, don't change it.
         ;
       if (gid != pivotPos)
-        data_traits::set_dim(d_nodes[gid],arg_max(bounds.size()));
+        data_traits::set_dim(d_nodes[gid],bounds.widestDimension());
       tag[gid] = subtree;
     }
   
@@ -232,8 +237,9 @@ namespace cukd {
                    GpuMemoryResource &memResource)
     {
       using point_t  = typename data_traits::point_t;
-      using scalar_t = typename scalar_type_of<point_t>::type;
-      enum { num_dims = num_dims_of<point_t>::value };
+      using point_traits = ::cukd::point_traits<point_t>;
+      using scalar_t = typename point_traits::scalar_t;
+      enum { num_dims = point_traits::num_dims };
     
       /* thrust helper typedefs for the zip iterator, to make the code
          below more readable */
@@ -326,7 +332,7 @@ namespace cukd {
   template<typename data_t, typename data_traits>
   void buildTree_bitonic(data_t *d_points,
                          int numPoints,
-                         box_t<typename data_traits::point_t> *worldBounds,
+                         cukd::box_t<typename data_traits::point_t> *worldBounds,
                          cudaStream_t stream,
                          /*! memory resource that can be used to
                            control how memory allocations will be
@@ -337,27 +343,23 @@ namespace cukd {
   {
     using namespace bitonicSortBuilder;
     
-    using point_t  = typename data_traits::point_t;
-    using scalar_t = typename scalar_type_of<point_t>::type;
-    enum { num_dims = num_dims_of<point_t>::value };
+    using point_t      = typename data_traits::point_t;
+    using point_traits = cukd::point_traits<point_t>;
+    using scalar_t     = typename point_traits::scalar_t;
+    enum { num_dims = point_traits::num_dims };
     
     if (numPoints < 1) return;
 
-    if (worldBounds)
-      computeBounds<data_t,data_traits>(worldBounds,d_points,numPoints,stream);
-    
     if (data_traits::has_explicit_dim) {
       if (!worldBounds)
         throw std::runtime_error
           ("cukd::builder_atomic: asked to build k-d tree over "
            "nodes with explicit dims, but no memory for world bounds provided");
-      
-      const int blockSize = 128;
-      chooseInitialDim<data_t,data_traits>
-        <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
-        (worldBounds,d_points,numPoints);
-      cudaStreamSynchronize(stream);
     }
+
+    if (worldBounds)
+      computeBounds<data_t,data_traits>(worldBounds,d_points,numPoints,stream);
+    
     bitonicSortBuilder::buildTree<data_t,data_traits>
       (d_points,numPoints,worldBounds,stream,memResource);
   }

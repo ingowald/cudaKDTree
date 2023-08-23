@@ -97,7 +97,7 @@ namespace cukd {
                           bounding box of all data points. if
                           data_traits::has_explicit_dim is false, this is
                           optionally allowed to be null */
-                        box_t<typename data_traits::point_t> *worldBounds=0,
+                        cukd::box_t<typename data_traits::point_t> *worldBounds=0,
                         /*! cuda stream to use for all kernels and mallocs
                           (the builder_thrust may _also_ do some global
                           device syncs) */
@@ -108,6 +108,14 @@ namespace cukd {
                           on CDUA > 11, or using managed vs device
                           mem) */
                         GpuMemoryResource &memResource=defaultGpuMemResource());
+
+  /*! builds tree on the host, using host read/writeable data (using
+    managed memory is fine) */
+  template<typename data_t,
+           typename data_traits=default_data_traits<data_t>>
+  void buildTree_host(data_t *d_points,
+                      int numPoints,
+                      cukd::box_t<typename data_traits::point_t> *worldBounds=0);
   
   // ==================================================================
   // IMPLEMENTATION SECTION
@@ -135,19 +143,26 @@ namespace cukd {
 
     template<typename data_t,typename data_traits>
     __global__
-    void chooseInitialDim(const box_t<typename data_traits::point_t> *d_bounds,
+    void chooseInitialDim(cukd::box_t<typename data_traits::point_t> *d_bounds,
                           data_t *d_nodes,
                           int numPoints)
     {
-      using point_t  = typename data_traits::point_t;
-      using scalar_t = typename scalar_type_of<point_t>::type;
-      enum { num_dims = num_dims_of<point_t>::value };
-    
       const int tid = threadIdx.x+blockIdx.x*blockDim.x;
       if (tid >= numPoints) return;
 
-      int dim = arg_max(d_bounds->size());
+      int dim = d_bounds->widestDimension();//arg_max(d_bounds->size());
       data_traits::set_dim(d_nodes[tid],dim);
+    }
+  
+    template<typename data_t,typename data_traits>
+    void host_chooseInitialDim(cukd::box_t<typename data_traits::point_t> *d_bounds,
+                               data_t *d_nodes,
+                               int numPoints)
+    {
+      for (int tid=0;tid<numPoints;tid++) {
+        int dim = d_bounds->widestDimension();//arg_max(d_bounds->size());
+        data_traits::set_dim(d_nodes[tid],dim);
+      }
     }
   
     /* performs the L-th step's tag update: each input tag refers to a
@@ -212,6 +227,22 @@ namespace cukd {
       updateTag(gid,tag,numPoints,L);
     }
     
+    /* performs the L-th step's tag update: each input tag refers to a
+       subtree ID on level L, and - assuming all points and tags are in
+       the expected sort order described inthe paper - this kernel will
+       update each of these tags to either left or right child (or root
+       node) of given subtree*/
+    inline void host_updateTags(/*! array of tags we need to update */
+                                uint32_t *tag,
+                                /*! num elements in the tag[] array */
+                                int numPoints,
+                                /*! which step we're in             */
+                                int L)
+    {
+      for (int gid=0;gid<numPoints;gid++) 
+        updateTag(gid,tag,numPoints,L);
+    }
+    
 
     /* performs the L-th step's tag update: each input tag refers to a
        subtree ID on level L, and - assuming all points and tags are in
@@ -222,7 +253,7 @@ namespace cukd {
     inline __both__
     void updateTagAndSetDim(int gid,
                             /*! array of tags we need to update */
-                            const box_t<typename data_traits::point_t> *d_bounds,
+                            const cukd::box_t<typename data_traits::point_t> *d_bounds,
                             uint32_t  *tag,
                             data_t *d_nodes,
                             /*! num elements in the tag[] array */
@@ -230,13 +261,16 @@ namespace cukd {
                             /*! which step we're in             */
                             int L)
     {
+      using point_t = typename data_traits::point_t;
+      using point_traits = typename ::cukd::point_traits<point_t>;
+      
       const int numSettled = FullBinaryTreeOf(L).numNodes();
       if (gid < numSettled) return;
 
       // get the subtree that the given node is in - which is exactly
       // what the tag stores...
       int subtree = tag[gid];
-      box_t<typename data_traits::point_t> bounds
+      cukd::box_t<typename data_traits::point_t> bounds
         = findBounds<data_t,data_traits>(subtree,d_bounds,d_nodes);
       // computed the expected positoin of the pivot element for the
       // given subtree when using our speific array layout.
@@ -249,18 +283,18 @@ namespace cukd {
         // point is to left of pivot -> must be smaller or equal to
         // pivot in given dim -> must go to left subtree
         subtree = BinaryTree::leftChildOf(subtree);
-        get_coord(bounds.upper,pivotDim) = pivotCoord;
+        point_traits::set_coord(bounds.upper,pivotDim,pivotCoord);
       } else if (gid > pivotPos) {
         // point is to left of pivot -> must be bigger or equal to pivot
         // in given dim -> must go to right subtree
         subtree = BinaryTree::rightChildOf(subtree);
-        get_coord(bounds.lower,pivotDim) = pivotCoord;
+        point_traits::set_coord(bounds.lower,pivotDim,pivotCoord);
       } else
         // point is _on_ the pivot position -> it's the root of that
         // subtree, don't change it.
         ;
       if (gid != pivotPos)
-        data_traits::set_dim(d_nodes[gid],arg_max(bounds.size()));
+        data_traits::set_dim(d_nodes[gid],bounds.widestDimension());
       tag[gid] = subtree;
     }
   
@@ -272,7 +306,7 @@ namespace cukd {
     template<typename data_t, typename data_traits>
     __global__
     void updateTagsAndSetDims(/*! array of tags we need to update */
-                              const box_t<typename data_traits::point_t> *d_bounds,
+                              const cukd::box_t<typename data_traits::point_t> *d_bounds,
                               uint32_t  *tag,
                               data_t *d_nodes,
                               /*! num elements in the tag[] array */
@@ -294,17 +328,49 @@ namespace cukd {
          /*! which step we're in             */
          L);
     }
+
+    /* performs the L-th step's tag update: each input tag refers to a
+       subtree ID on level L, and - assuming all points and tags are in
+       the expected sort order described inthe paper - this kernel will
+       update each of these tags to either left or right child (or root
+       node) of given subtree*/
+    template<typename data_t, typename data_traits>
+    void host_updateTagsAndSetDims
+    (/*! array of tags we need to update */
+     const cukd::box_t<typename data_traits::point_t> *d_bounds,
+     uint32_t  *tag,
+     data_t *d_nodes,
+     /*! num elements in the tag[] array */
+     int numPoints,
+     /*! which step we're in             */
+     int L)
+    {
+      for (int gid=0;gid<numPoints;gid++) 
+        updateTagAndSetDim<data_t,data_traits>
+          (gid,
+           /*! array of tags we need to update */
+           d_bounds,
+           tag,
+           d_nodes,
+           /*! num elements in the tag[] array */
+           numPoints,
+           /*! which step we're in             */
+           L);
+    }
     
     /*! the actual comparison operator; will perform a
       'zip'-comparison in that the first element is the major sort
       order, and the second the minor one (for those of same major
       sort key) */
     template<typename data_t, typename data_traits>
-    inline __device__
+    inline __both__
     bool ZipCompare<data_t,data_traits>::operator()
       (const thrust::tuple<uint32_t, data_t> &a,
        const thrust::tuple<uint32_t, data_t> &b)
     {
+      using point_t = typename data_traits::point_t;
+      using point_traits = ::cukd::point_traits<point_t>;
+      
       const auto tag_a = thrust::get<0>(a);
       const auto tag_b = thrust::get<0>(b);
       const auto pnt_a = thrust::get<1>(a);
@@ -327,6 +393,7 @@ namespace cukd {
 
 
 
+
   template<typename data_t, typename data_traits>
   void buildTree_thrust(data_t *d_points,
                         int numPoints,
@@ -340,10 +407,11 @@ namespace cukd {
                         GpuMemoryResource &memResource)
   {
     using namespace thrustSortBuilder;
-    
+
     using point_t  = typename data_traits::point_t;
-    using scalar_t = typename scalar_type_of<point_t>::type;
-    enum { num_dims = num_dims_of<point_t>::value };
+    using point_traits = ::cukd::point_traits<point_t>;
+    using scalar_t = typename point_traits::scalar_t;
+    enum { num_dims = point_traits::num_dims };
     
     /* thrust helper typedefs for the zip iterator, to make the code
        below more readable */
@@ -376,7 +444,7 @@ namespace cukd {
     const int numLevels = BinaryTree::numLevelsFor(numPoints);
     const int deepestLevel = numLevels-1;
     
-    using box_t = cukd::box_t<point_t>;
+    using box_t = cukd::box_t<typename data_traits::point_t>;
     if (worldBounds) {
       computeBounds<data_t,data_traits>
         (worldBounds,d_points,numPoints,stream);
@@ -425,8 +493,94 @@ namespace cukd {
                  ((deepestLevel)%num_dims,d_points));
     cudaStreamSynchronize(stream);
   }
+      
+  template<typename data_t, typename data_traits>
+  void buildTree_host(data_t *d_points,
+                      int numPoints,
+                      cukd::box_t<typename data_traits::point_t> *worldBounds)
+  {
+    using namespace thrustSortBuilder;
 
+    using point_t      = typename data_traits::point_t;
+    using point_traits = ::cukd::point_traits<point_t>;
+    using scalar_t    = typename point_traits::scalar_t;
+    enum { num_dims   = point_traits::num_dims };
+    
+    /* thrust helper typedefs for the zip iterator, to make the code
+       below more readable */
+#if 1
+    typedef uint32_t *tag_iterator;
+    typedef data_t   *point_iterator;
+#else
+    typedef typename thrust::device_vector<uint32_t>::iterator tag_iterator;
+    typedef typename thrust::device_vector<data_t>::iterator point_iterator;
+#endif
+    typedef thrust::tuple<tag_iterator,point_iterator> iterator_tuple;
+    typedef thrust::zip_iterator<iterator_tuple> tag_point_iterator;
 
+    // check for invalid input, and return gracefully if so
+    if (numPoints < 1) return;
 
+    /* the helper array  we use to store each node's subtree ID in */
+    // TODO allocate in stream?
+    std::vector<uint32_t> tags(numPoints);
+    /* to kick off the build, every element is in the only
+       level-0 subtree there is, namely subtree number 0... duh */
+    thrust::fill(thrust::host,tags.begin(),tags.end(),0);
 
-}
+    /* create the zip iterators we use for zip-sorting the tag and
+       points array */
+    thrust::device_ptr<data_t> points_begin(d_points);
+    thrust::device_ptr<data_t> points_end(d_points+numPoints);
+    tag_point_iterator begin = thrust::make_zip_iterator
+      (thrust::make_tuple(tags.data(),d_points));
+    tag_point_iterator end = thrust::make_zip_iterator
+      (thrust::make_tuple(tags.data()+numPoints,d_points+numPoints));
+
+    /* compute number of levels in the tree, which dicates how many
+       construction steps we need to run */
+    const int numLevels = BinaryTree::numLevelsFor(numPoints);
+    const int deepestLevel = numLevels-1;
+    
+    using box_t = cukd::box_t<point_t>;
+    if (worldBounds) {
+      host_computeBounds<data_t,data_traits>
+        (worldBounds,d_points,numPoints);
+    }
+    if (data_traits::has_explicit_dim) {
+      if (!worldBounds)
+        throw std::runtime_error
+          ("cukd::builder_host: asked to build k-d tree over nodes"
+           " with explicit dims, but no memory for world bounds provided");
+      
+      host_chooseInitialDim<data_t,data_traits>
+        (worldBounds,d_points,numPoints);
+    }
+    
+    /* now build each level, one after another, cycling through the
+       dimensoins */
+    for (int level=0;level<deepestLevel;level++) {
+      thrust::sort(thrust::host,begin,end,
+                   ZipCompare<data_t,data_traits>
+                   ((level)%num_dims,d_points));
+      
+      if (data_traits::has_explicit_dim) {
+        host_updateTagsAndSetDims<data_t,data_traits>
+          (worldBounds,thrust::raw_pointer_cast(tags.data()),
+           d_points,numPoints,level);
+      } else {
+        host_updateTags
+          (thrust::raw_pointer_cast(tags.data()),numPoints,level);
+      }
+    }
+    
+    /* do one final sort, to put all elements in order - by now every
+       element has its final (and unique) nodeID stored in the tag[]
+       array, so the dimension we're sorting in really won't matter
+       any more */
+    thrust::sort(thrust::host,begin,end,
+                 ZipCompare<data_t,data_traits>
+                 ((deepestLevel)%num_dims,d_points)); 
+  }
+
+} // ::cukd

@@ -59,6 +59,7 @@ namespace test_photon {
 
   struct Photon_traits {
     using point_t = float3;
+
     enum { has_explicit_dim = true };
     
     static inline __both__

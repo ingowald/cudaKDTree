@@ -255,13 +255,15 @@ namespace cukd {
                typename data_traits::point_t queryPoint,
                FcpSearchParams params)
   {
+    
     FCPResult result;
     result.clear(sqr(params.cutOffRadius));
 
-    using node_t     = typename SpatialKDTree<data_t,data_traits>::Node;
-    using point_t    = typename data_traits::point_t;
-    using scalar_t   = typename scalar_type_of<point_t>::type;
-    enum { num_dims  = num_dims_of<point_t>::value };
+    using node_t       = typename SpatialKDTree<data_t,data_traits>::Node;
+    using point_t      = typename data_traits::point_t;
+    using point_traits = typename data_traits::point_traits;
+    using scalar_t     = typename scalar_type_of<point_t>::type;
+    enum { num_dims    = point_traits::num_dims };
     
     scalar_t cullDist = result.initialCullDist2();
 
@@ -300,7 +302,7 @@ namespace cukd {
 
         auto farSideCorner = closestPointOnSubtreeBounds;
           
-        get_coord(farSideCorner,node.dim) = node.pos;
+        point_traits::set_coord(farSideCorner,node.dim,node.pos);
 
         const float farSideDist2 = sqrDistance(farSideCorner,queryPoint);
         if (farSideDist2 < cullDist) {
