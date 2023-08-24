@@ -184,11 +184,14 @@ struct PointWithPayload {
 };
 
 template<typename T, int D>
-struct PointWithPayload_traits {
-  using point_t = vecN<T,D>;
-  using point_traits = ::cukd::point_traits<point_t>;
-  using data_t = PointWithPayload<T,D>;
-  using box_t  = ::cukd::box_t<point_t>;
+struct PointWithPayload_traits : public cukd::default_data_traits<vecN<T,D>> {
+
+  /*! @{ just for our own readability: */
+  using inherited    = cukd::default_data_traits<vecN<T,D>>;
+  using data_t       = PointWithPayload<T,D>;
+  using point_traits = typename inherited::point_traits;
+  using point_t      = typename inherited::point_t;
+  /*! @] */
     
   enum { has_explicit_dim = true };
   
