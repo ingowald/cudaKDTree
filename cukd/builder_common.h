@@ -39,6 +39,12 @@ namespace cukd {
                      const data_t *d_points,
                      int numPoints,
                      cudaStream_t stream=0);
+  
+  template<typename data_t, 
+           typename data_traits=default_data_traits<data_t>>
+  void host_computeBounds(cukd::box_t<typename data_traits::point_t> *d_bounds,
+                          const data_t *d_points,
+                          int numPoints);
 
   // ==================================================================
   // IMPLEMENTATION SECTION
@@ -46,7 +52,7 @@ namespace cukd {
 
   template<typename data_t, typename data_traits>
   __global__
-  void computeBounds_copyFirst(box_t<typename data_traits::point_t> *d_bounds,
+  void computeBounds_copyFirst(cukd::box_t<typename data_traits::point_t> *d_bounds,
                                const data_t *d_points)
   {
     if (threadIdx.x != 0) return;
@@ -56,6 +62,14 @@ namespace cukd {
     d_bounds->lower = d_bounds->upper = point;
   }
 
+  inline __device__
+  int atomicMin(int *addr, int value)
+  { return ::atomicMin(addr,value); }
+  
+  inline __device__
+  int atomicMax(int *addr, int value)
+  { return ::atomicMax(addr,value); }
+  
   inline __device__
   float atomicMin(float *addr, float value)
   {
@@ -85,23 +99,24 @@ namespace cukd {
   template<typename data_t,
            typename data_traits>
   __global__
-  void computeBounds_atomicGrow(box_t<typename data_traits::point_t> *d_bounds,
+  void computeBounds_atomicGrow(cukd::box_t<typename data_traits::point_t> *d_bounds,
                                 const data_t *d_points,
                                 int numPoints)
   {
     using point_t = typename data_traits::point_t;
-    enum { num_dims = num_dims_of<point_t>::value };
+    using point_traits = ::cukd::point_traits<point_t>;//typename data_traits::point_traits;
+    using scalar_t = typename point_traits::scalar_t;
+    enum { num_dims = point_traits::num_dims };
     
     const int tid = threadIdx.x+blockIdx.x*blockDim.x;
     if (tid >= numPoints) return;
     
-    using point_t = typename data_traits::point_t;
     point_t point = data_traits::get_point(d_points[tid]);
 #pragma unroll(num_dims)
     for (int d=0;d<num_dims;d++) {
-      float &lo = get_coord(d_bounds->lower,d);
-      float &hi = get_coord(d_bounds->upper,d);
-      float f = get_coord(point,d);
+      scalar_t &lo = point_traits::get_coord(d_bounds->lower,d);
+      scalar_t &hi = point_traits::get_coord(d_bounds->upper,d);
+      scalar_t f = point_traits::get_coord(point,d);
       atomicMin(&lo,f);
       atomicMax(&hi,f);
     }
@@ -109,7 +124,7 @@ namespace cukd {
 
   /*! host-side helper function to compute bounding box of the data set */
   template<typename data_t, typename data_traits>
-  void computeBounds(box_t<typename data_traits::point_t> *d_bounds,
+  void computeBounds(cukd::box_t<typename data_traits::point_t> *d_bounds,
                      const data_t *d_points,
                      int numPoints,
                      cudaStream_t s)
@@ -122,6 +137,17 @@ namespace cukd {
       (d_bounds,d_points,numPoints);
   }
 
+  /*! host-side helper function to compute bounding box of the data set */
+  template<typename data_t, typename data_traits>
+  void host_computeBounds(cukd::box_t<typename data_traits::point_t> *d_bounds,
+                          const data_t *d_points,
+                          int numPoints)
+  {
+    d_bounds->setEmpty();
+    for (int i=0;i<numPoints;i++)
+      d_bounds->grow(data_traits::get_point(d_points[i]));
+  }
+  
 
   /*! helper function that finds, for a given node in the tree, the
       bounding box of that subtree's domain; by walking _up_ the tree
@@ -129,16 +155,17 @@ namespace cukd {
       box */
   template<typename data_t,typename data_traits>
   inline __both__
-  box_t<typename data_traits::point_t>
+  cukd::box_t<typename data_traits::point_t>
   findBounds(int subtree,
-             const box_t<typename data_traits::point_t> *d_bounds,
+             const cukd::box_t<typename data_traits::point_t> *d_bounds,
              data_t *d_nodes)
   {
     using point_t  = typename data_traits::point_t;
-    using scalar_t = typename scalar_type_of<point_t>::type;
-    enum { num_dims = num_dims_of<point_t>::value };
+    using point_traits = ::cukd::point_traits<point_t>;
+    using scalar_t = typename point_traits::scalar_t;
+    enum { num_dims = point_traits::num_dims };
     
-    box_t<point_t> bounds = *d_bounds;
+    cukd::box_t<typename data_traits::point_t> bounds = *d_bounds;
     int curr = subtree;
     while (curr > 0) {
       const int     parent = (curr+1)/2-1;
@@ -152,14 +179,14 @@ namespace cukd {
       
       if (curr & 1) {
         // curr is left child, set upper
-        get_coord(bounds.upper,parent_dim)
-          = min(parent_split_pos,
-                get_coord(bounds.upper,parent_dim));
+        point_traits::set_coord(bounds.upper,parent_dim,
+                                min(parent_split_pos,
+                                    get_coord(bounds.upper,parent_dim)));
       } else {
         // curr is right child, set lower
-        get_coord(bounds.lower,parent_dim)
-          = max(parent_split_pos,
-                get_coord(bounds.lower,parent_dim));
+        point_traits::set_coord(bounds.lower,parent_dim,
+                                max(parent_split_pos,
+                                    get_coord(bounds.lower,parent_dim)));
       }
       curr = parent;
     }

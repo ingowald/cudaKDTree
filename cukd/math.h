@@ -58,7 +58,6 @@ namespace cukd {
   template<> struct num_dims_of<int3>   { enum { value = 3 }; };
   template<> struct num_dims_of<int4>   { enum { value = 4 }; };
 
-
   inline __both__ float get_coord(const float2 &v, int d) { return d?v.y:v.x; }
   inline __both__ float get_coord(const float3 &v, int d) { return (d==2)?v.z:(d?v.y:v.x); }
   inline __both__ float get_coord(const float4 &v, int d) { return (d>=2)?(d>2?v.w:v.z):(d?v.y:v.x); }
@@ -68,12 +67,23 @@ namespace cukd {
   inline __both__ float &get_coord(float4 &v, int d) { return (d>=2)?(d>2?v.w:v.z):(d?v.y:v.x); }
 
 
+  inline __both__ int get_coord(const int2 &v, int d) { return d?v.y:v.x; }
+  inline __both__ int get_coord(const int3 &v, int d) { return (d==2)?v.z:(d?v.y:v.x); }
+  inline __both__ int get_coord(const int4 &v, int d) { return (d>=2)?(d>2?v.w:v.z):(d?v.y:v.x); }
+  
+  inline __both__ int &get_coord(int2 &v, int d) { return d?v.y:v.x; }
+  inline __both__ int &get_coord(int3 &v, int d) { return (d==2)?v.z:(d?v.y:v.x); }
+  inline __both__ int &get_coord(int4 &v, int d) { return (d>=2)?(d>2?v.w:v.z):(d?v.y:v.x); }
 
   
-
-
-
-
+  inline __both__ void set_coord(int2 &v, int d, int vv) { (d?v.y:v.x) = vv; }
+  inline __both__ void set_coord(int3 &v, int d, int vv) { ((d==2)?v.z:(d?v.y:v.x)) = vv; }
+  inline __both__ void set_coord(int4 &v, int d, int vv) { ((d>=2)?(d>2?v.w:v.z):(d?v.y:v.x)) = vv; }
+  
+  inline __both__ void set_coord(float2 &v, float d, float vv) { (d?v.y:v.x) = vv; }
+  inline __both__ void set_coord(float3 &v, float d, float vv) { ((d==2)?v.z:(d?v.y:v.x)) = vv; }
+  inline __both__ void set_coord(float4 &v, float d, float vv) { ((d>=2)?(d>2?v.w:v.z):(d?v.y:v.x)) = vv; }
+  
   inline __both__ int32_t divRoundUp(int32_t a, int32_t b) { return (a+b-1)/b; }
   inline __both__ uint32_t divRoundUp(uint32_t a, uint32_t b) { return (a+b-1)/b; }
   inline __both__ int64_t divRoundUp(int64_t a, int64_t b) { return (a+b-1)/b; }
@@ -130,9 +140,11 @@ namespace cukd {
   template<int N> struct num_dims_of<vec_float<N>> { enum { value = N }; };
   
   template<int N>
+  inline __both__ float get_coord(const vec_float<N> &v, int d) { return v.v[d]; }
+  template<int N>
   inline __both__ float &get_coord(vec_float<N> &v, int d) { return v.v[d]; }
   template<int N>
-  inline __both__ float get_coord(const vec_float<N> &v, int d) { return v.v[d]; }
+  inline __both__ void set_coord(vec_float<N> &v, int d, float vv) { v.v[d] = vv; }
   
   
 
@@ -277,6 +289,46 @@ namespace cukd {
     }
     return sqrt(res);
   }
+
+
+
+
+  template<typename T> struct point_traits;
+
+  /*! point traits that describe our defaul tpoint type of cuda float3, int3, float4, etc.
+    
+    The four basic things a point_traits has to do for a given type are:
+    
+    - define the scalar_t that this point is built over
+    
+    - define the enum num_dims of dimensions that this point has
+    
+    - define a static function `get_coord(const point_t, int d)` that
+    returns the given point's d'th coordiate
+    
+    - define a static function `set_coord(point_t &, int d, scalar_t
+      v)` that sets the given point's d'the coordinate to the given
+      value
+   */
+  template<typename cuda_t>
+  struct point_traits {
+    enum { num_dims = num_dims_of<cuda_t>::value };
+    using scalar_t  = typename scalar_type_of<cuda_t>::type;
+
+    /*! get the d'th coordindate - for our default cuda types we use
+        the ::cukd::get_coord helpers we hvae for those types */
+    static inline __both__
+    scalar_t get_coord(const cuda_t &v, int d) { return ::cukd::get_coord(v,d); }
+
+    static inline __both__
+    scalar_t &get_coord(cuda_t &v, int d) { return ::cukd::get_coord(v,d); }
+    
+    static inline __both__
+    void set_coord(cuda_t &v, int d, scalar_t vv) { ::cukd::set_coord(v,d,vv); }
+  };
+
+
+
 
   
 } // ::cukd

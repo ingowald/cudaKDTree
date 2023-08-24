@@ -403,9 +403,9 @@ void checkRec(SpatialKDTree<data_t,data_traits> &tree,
   const scalar_t curr_s = node.pos;
   
   cukd::box_t<point_t> lBounds = bounds;
-  get_coord(lBounds.upper,node.dim) = curr_s;
+  set_coord(lBounds.upper,node.dim,curr_s);
   cukd::box_t<point_t> rBounds = bounds;
-  get_coord(rBounds.lower,node.dim) = curr_s;
+  set_coord(rBounds.lower,node.dim,curr_s);
 
   checkRec<data_t,data_traits>(tree,lBounds,node.offset+0);
   checkRec<data_t,data_traits>(tree,rBounds,node.offset+1);

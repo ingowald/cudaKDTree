@@ -132,9 +132,11 @@ namespace cukd {
                          int numPoints,
                          int dim)
     {
-      const int input_n = n;
-      using point_t  = typename data_traits::point_t;
-      using scalar_t = typename scalar_type_of<point_t>::type;
+      const int input_n  = n;
+      using point_t      = typename data_traits::point_t;
+      using point_traits = ::cukd::point_traits<point_t>;
+      using scalar_t     = typename point_traits::scalar_t;
+      
       data_t point_n = points[n];
       scalar_t s_n = data_traits::get_coord(point_n,dim);
       while (true) {
@@ -184,8 +186,10 @@ namespace cukd {
         // other - let's always pick the lower one.
         return;
 
-      using point_t  = typename data_traits::point_t;
-      enum { num_dims = num_dims_of<point_t>::value };
+    using point_t  = typename data_traits::point_t;
+    using point_traits = ::cukd::point_traits<point_t>;
+    using scalar_t = typename point_traits::scalar_t;
+    enum { num_dims = point_traits::num_dims };
 
       const int     dim
         = data_traits::has_explicit_dim
@@ -217,10 +221,12 @@ namespace cukd {
     void printTree(data_t *points,int numPoints)
     {
       cudaDeviceSynchronize();
-      using point_t  = typename data_traits::point_t;
-      using scalar_t = typename scalar_type_of<point_t>::type;
-      enum { num_dims = num_dims_of<point_t>::value };
-    
+
+    using point_t  = typename data_traits::point_t;
+    using point_traits = ::cukd::point_traits<point_t>;
+    using scalar_t = typename point_traits::scalar_t;
+    enum { num_dims = point_traits::num_dims };
+
       for (int L=0;true;L++) {
         int begin = firstNodeOnLevel(L);
         int end = std::min(numPoints,begin+numNodesOnLevel(L));
@@ -264,8 +270,10 @@ namespace cukd {
         // other - let's always pick the lower one.
         return;
 
-      using point_t  = typename data_traits::point_t;
-      enum { num_dims = num_dims_of<point_t>::value };
+    using point_t  = typename data_traits::point_t;
+    using point_traits = ::cukd::point_traits<point_t>;
+    using scalar_t = typename point_traits::scalar_t;
+    enum { num_dims = point_traits::num_dims };
 
       const int     dim
         = data_traits::has_explicit_dim
@@ -324,13 +332,15 @@ namespace cukd {
       int n = firstNodeOnLevel(L_b)+tid;
       if (n >= numPoints) return;
                                            
-      using point_t  = typename data_traits::point_t;
-      enum { num_dims = num_dims_of<point_t>::value };
+    using point_t  = typename data_traits::point_t;
+    using point_traits = ::cukd::point_traits<point_t>;
+    using scalar_t = typename point_traits::scalar_t;
+    enum { num_dims = point_traits::num_dims };
 
       if (worldBounds) {
         box_t<typename data_traits::point_t> bounds
           = findBounds<data_t,data_traits>(n,worldBounds,points);
-        data_traits::set_dim(points[n],arg_max(bounds.size()));
+        data_traits::set_dim(points[n],bounds.widestDimension());
       } else {
         data_traits::set_dim(points[n],L_b % num_dims);
       }
@@ -371,9 +381,11 @@ namespace cukd {
       int l = 2*n+1;
       int r = l+1;
 
-      using point_t  = typename data_traits::point_t;
-      using scalar_t = typename scalar_type_of<point_t>::type;
-      enum { num_dims = num_dims_of<point_t>::value };
+
+    using point_t  = typename data_traits::point_t;
+    using point_traits = ::cukd::point_traits<point_t>;
+    using scalar_t = typename point_traits::scalar_t;
+    enum { num_dims = point_traits::num_dims };
     
       const int  dim
         = data_traits::has_explicit_dim

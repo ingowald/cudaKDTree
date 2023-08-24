@@ -28,60 +28,76 @@
 #pragma once
 
 #include "cukd/math.h"
+#include "cukd/box.h"
 
 namespace cukd {
 
   
-  /*! defines an abstract interface to what a 'node' in a k-d tree
-    is. This needs to define the follwing:
+  /*! defines an abstract interface to what a 'data point' in a k-d
+    tree is -- which is some ort of actual D-dimensional point of
+    scalar coordinates, plus potentially some payload, and potentially
+    a means of storing the split dimension). This needs to define the
+    follwing:
 
-    - data_traits::scalar_t: the scalar type of each point member (eg,
-    float for a float3 data_t)
+    - data_traits::point_t: the actual point type that stores the
+    coordinates of this data point
 
-    - enum data_traits::num_dims: the number of dimensions of the
-    data; e.g., a k-d tree build over float4 4d points would define
-    tihs to '4'; a kd tree built over a struct htat has 3d position
-    and some other additional payload would use '3'.
-
-    - scalar_t data_traits::get(data_t &, int d) : return a
-    reference to the 'd'th positional coordinate of the given node
-
-    - enum data_traits::has_explicit_dim : whether that node type
-    has a field to store an explicit split dimensoin in each
-    node. If not, the k-d tree builder and traverse _have_ to use
-    round-robin for split distance; otherwise, it will alwyas
-    split the widest dimension
+    - enum data_traits::has_explicit_dim : whether that node type has
+    a field to store an explicit split dimension in each node. If not,
+    the k-d tree builder and traverse _have_ to use round-robin for
+    split distance; otherwise, it will alwyas split the widest
+    dimension. 
 
     - enum data_traits::set_dim(data_t &, int) and
-    data_traits::get_dim(data_t &
-  */
-  template<typename data_t> struct default_data_traits {
+    data_traits::get_dim(data_t &) to read and write dimensions. For
+    data_t's that don't actually have any explicit split dmensoin
+    these function may be dummies that don't do anything (they'll
+    never get called in that case), but they have to be defined to
+    make the compiler happy.
 
+    The _default_ data point for this library is just the point_t
+    itself: no payload, no means of storing any split dimension (ie,
+    always doing round-robin dimensions), and the coordinates just
+    stored as the point itself.
+  */
+  template<typename _point_t> struct default_data_traits {
+    using data_t = _point_t;
+    
     // ------------------------------------------------------------------
     /* part I : describes the _types_ of node of the tree, position,
        scalar, dimnensionaltiy, etc */
     // ------------------------------------------------------------------
-
+    
     /*! the *logical* type used for mathematical things like distance
       computations, specifiing the location of a data point,
       etc. this defines number of dimensions, scalar type, etc, but
       leaves the node to define its own data layout */
-    using point_t = data_t;
-
+    using point_t      = _point_t;
+    using point_traits = point_traits<point_t>;
+    using box_t        = cukd::box_t<point_t>;
+    
+    using scalar_t  = typename point_traits::scalar_t;
+    enum { num_dims = point_traits::num_dims };
+    
     // ------------------------------------------------------------------
     /* part II : how to extract a point or coordinate from an actual
        data struct */
     // ------------------------------------------------------------------
 
     /*! return a reference to the 'd'th positional coordinate of the
-      given node */
+      given node - for the default simple 'data==point' case we can
+      simply return a reference to the point itself */
     static inline __both__ const point_t &get_point(const data_t &n) { return n; }
     
     /*! return a reference to the 'd'th positional coordinate of the
       given node */
     static inline __both__
-    typename scalar_type_of<point_t>::type get_coord(const data_t &n, int d)
-    { return cukd::get_coord(get_point(n),d); }
+    scalar_t get_coord(const data_t &n, int d)
+    { return point_traits::get_coord(get_point(n),d); }
+    
+    static inline __both__
+    void set_coord(data_t &n, int d, scalar_t vv)
+    { return point_traits::set_coord(get_point(n),d,vv); }
     
     // ------------------------------------------------------------------
     /* part III : whether the data struct has a way of storing a split
@@ -106,19 +122,19 @@ namespace cukd {
   };
 
 
-  /*! defines default node traits for our own vec_float<N> vector type */
-  template<int N> struct default_data_traits<vec_float<N>> {
-    using data_t   = vec_float<N>;
-    using scalar_t = float;
-    using point_t  = data_t;
+  // /*! defines default node traits for our own vec_float<N> vector type */
+  // template<int N> struct default_data_traits<vec_float<N>> {
+  //   using data_t   = vec_float<N>;
+  //   using scalar_t = float;
+  //   using point_t  = data_t;
     
-    enum { has_explicit_dim = false };
+  //   enum { has_explicit_dim = false };
     
-    static inline __both__ const point_t &get_point(const data_t &n) { return n; }
-    static inline __both__ scalar_t get_coord(const data_t &n, int d) { return n.v[d]; }
-    static inline __both__ int  get_dim(const data_t &n) { return -1; }
-    static inline __both__ void set_dim(data_t &n, int dim) {}
-  };
+  //   static inline __both__ const point_t &get_point(const data_t &n) { return n; }
+  //   static inline __both__ scalar_t get_coord(const data_t &n, int d) { return n.v[d]; }
+  //   static inline __both__ int  get_dim(const data_t &n) { return -1; }
+  //   static inline __both__ void set_dim(data_t &n, int dim) {}
+  // };
   
 }
 

@@ -80,7 +80,9 @@ namespace cukd {
 
     template<typename point_t>
     struct AtomicBox {
-      enum { num_dims = num_dims_of<point_t>::value };
+      using point_traits = ::cukd::point_traits<point_t>;
+      
+      enum { num_dims = point_traits::num_dims };
       
       inline __device__ void set_empty();
       inline __device__ float get_center(int dim) const;
@@ -108,8 +110,8 @@ namespace cukd {
       box_t<point_t> box;
 #pragma unroll
       for (int d=0;d<num_dims;d++) {
-        get_coord(box.lower,d) = decode(lower[d]);
-        get_coord(box.upper,d) = decode(upper[d]);
+        point_traits::set_coord(box.lower,d,decode(lower[d]));
+        point_traits::set_coord(box.upper,d,decode(upper[d]));
       }
       return box;
     }

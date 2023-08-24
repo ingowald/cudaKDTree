@@ -61,6 +61,13 @@ target_link_libraries(cukdTestHostBuilderSimpleInput PRIVATE cudaKDTree)
 add_test(NAME cukdTestHostBuilderSimpleInput COMMAND cukdTestHostBuilderSimpleInput)
 
 
+# tests, for a wide range of input data, whether host, thrust,
+# bitonic, and inplace builders all produce the same tree.
+add_executable(cukdTestBuildersSameResult testBuildersSameResult.cu)
+target_link_libraries(cukdTestBuildersSameResult PRIVATE cudaKDTree)
+add_test(NAME cukdTestBuildersSameResult COMMAND cukdTestBuildersSameResult)
+
+
 
 # make sure all knn variants for a _spatial_ k-d tree will at least compile
 add_executable(cukdTestCompileSpatialKNN compileSpatialKNN.cu)

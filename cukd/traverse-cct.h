@@ -32,10 +32,11 @@ namespace cukd {
                     const data_t *d_nodes,
                     int numPoints)
   {
-    using point_t  = typename data_traits::point_t;
-    using scalar_t = typename scalar_type_of<point_t>::type;
-    enum { num_dims = num_dims_of<point_t>::value };
-    
+    using point_t    = typename data_traits::point_t;
+    using point_traits = ::cukd::point_traits<point_t>;
+    using scalar_t   = typename point_traits::scalar_t;
+    enum { num_dims  = point_traits::num_dims };
+      
     scalar_t cullDist = result.initialCullDist2();
 
     struct
@@ -86,7 +87,7 @@ namespace cukd {
 
       auto farSideCorner = closestPointOnSubtreeBounds;
       const int farChild = leftIsClose?rChild:lChild;
-      get_coord(farSideCorner,dim) = node_dim;
+      point_traits::set_coord(farSideCorner,dim,node_dim);
       if (farChild < numPoints && sqrDistance(farSideCorner,queryPoint) < cullDist) {
         stackPtr->closestCorner = farSideCorner;
         stackPtr->nodeID = farChild;
