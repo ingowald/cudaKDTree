@@ -80,9 +80,9 @@ namespace cukd {
   inline __both__ void set_coord(int3 &v, int d, int vv) { ((d==2)?v.z:(d?v.y:v.x)) = vv; }
   inline __both__ void set_coord(int4 &v, int d, int vv) { ((d>=2)?(d>2?v.w:v.z):(d?v.y:v.x)) = vv; }
   
-  inline __both__ void set_coord(float2 &v, float d, float vv) { (d?v.y:v.x) = vv; }
-  inline __both__ void set_coord(float3 &v, float d, float vv) { ((d==2)?v.z:(d?v.y:v.x)) = vv; }
-  inline __both__ void set_coord(float4 &v, float d, float vv) { ((d>=2)?(d>2?v.w:v.z):(d?v.y:v.x)) = vv; }
+  inline __both__ void set_coord(float2 &v, int d, float vv) { (d?v.y:v.x) = vv; }
+  inline __both__ void set_coord(float3 &v, int d, float vv) { ((d==2)?v.z:(d?v.y:v.x)) = vv; }
+  inline __both__ void set_coord(float4 &v, int d, float vv) { ((d>=2)?(d>2?v.w:v.z):(d?v.y:v.x)) = vv; }
   
   inline __both__ int32_t divRoundUp(int32_t a, int32_t b) { return (a+b-1)/b; }
   inline __both__ uint32_t divRoundUp(uint32_t a, uint32_t b) { return (a+b-1)/b; }
@@ -324,7 +324,8 @@ namespace cukd {
     scalar_t &get_coord(cuda_t &v, int d) { return ::cukd::get_coord(v,d); }
     
     static inline __both__
-    void set_coord(cuda_t &v, int d, scalar_t vv) { ::cukd::set_coord(v,d,vv); }
+    void set_coord(cuda_t &v, int d, scalar_t vv)
+    { ::cukd::set_coord(v,d,vv); }
   };
 
 
