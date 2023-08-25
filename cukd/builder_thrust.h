@@ -213,7 +213,7 @@ namespace cukd {
        the expected sort order described inthe paper - this kernel will
        update each of these tags to either left or right child (or root
        node) of given subtree*/
-    __global__
+    inline __global__
     void updateTags(/*! array of tags we need to update */
                     uint32_t *tag,
                     /*! num elements in the tag[] array */
