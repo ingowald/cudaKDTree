@@ -78,4 +78,15 @@ add_executable(cukdTestCompileKNN compileKNN.cu)
 target_link_libraries(cukdTestCompileKNN PRIVATE cudaKDTree)
 add_test(NAME cukdTestCompileKNN COMMAND cukdTestCompileKNN)
 
+
+
+# add a (compile-only) test to see if we can link two different object
+# files (that both include the same builders) without getting any
+# multiple definition errors.
+add_executable(cukdTestMultipleDefinitions
+  testMultipleDefinitions_a.cu  testMultipleDefinitions_b.cu)
+target_link_libraries(cukdTestMultipleDefinitions PRIVATE cudaKDTree)
+
+
+
 enable_testing()

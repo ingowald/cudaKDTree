@@ -212,8 +212,13 @@ namespace cukd {
        subtree ID on level L, and - assuming all points and tags are in
        the expected sort order described inthe paper - this kernel will
        update each of these tags to either left or right child (or root
-       node) of given subtree*/
-    inline __global__
+       node) of given subtree
+       
+       iw - note this doesn't have to be a template, but if we don't
+       make it a template we get multiple definion errors.
+    */
+    template<typename data_t, typename data_traits>
+    __global__
     void updateTags(/*! array of tags we need to update */
                     uint32_t *tag,
                     /*! num elements in the tag[] array */
@@ -477,7 +482,7 @@ namespace cukd {
           (worldBounds,thrust::raw_pointer_cast(tags.data()),
            d_points,numPoints,level);
       } else {
-        updateTags
+        updateTags<data_t,data_traits>
           <<<divRoundUp(numPoints,blockSize),blockSize,0,stream>>>
           (thrust::raw_pointer_cast(tags.data()),numPoints,level);
       }
