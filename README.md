@@ -354,7 +354,7 @@ during building; all that has to be done is to provide a pointer to
 writeable memory where the builder can store this:
 
 ``` C++
-   cukd::box_t<float3> *d_boundingBox;
-   cudaMalloc(...);
-   cukd::buildTree(data,numData,d_boundingBox);
+cukd::box_t<float3> *d_boundingBox;
+cudaMalloc(...);
+cukd::buildTree(data,numData,d_boundingBox);
 ```
