@@ -234,7 +234,7 @@ namespace cukd {
     FCPResult result;
     result.clear(sqr(params.cutOffRadius));
     traverse_stack_free<FCPResult,data_t,data_traits>
-      (result,queryPoint,d_nodes,N);
+      (result,queryPoint,d_nodes,N,params.eps);
     return result.returnValue();
   }
 

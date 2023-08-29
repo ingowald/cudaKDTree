@@ -25,11 +25,13 @@ namespace cukd {
   void traverse_stack_free(result_t &result,
                            typename data_traits::point_t queryPoint,
                            const data_t *d_nodes,
-                           int N)
+                           int N,
+                           float eps=0.0f)
   {
     using point_t  = typename data_traits::point_t;
     using scalar_t = typename scalar_type_of<point_t>::type;
     enum { num_dims = num_dims_of<point_t>::value };
+    const auto epsErr = 1 + eps;
 
     scalar_t cullDist = result.initialCullDist2();
     
@@ -77,7 +79,7 @@ namespace cukd {
         // the far side - but only if this exists, and if far half of
         // current space if even within search radius.
         next
-          = ((curr_far_child<N) && (curr_dim_dist * curr_dim_dist < cullDist))
+          = ((curr_far_child<N) && (curr_dim_dist * curr_dim_dist * epsErr < cullDist))
           ? curr_far_child
           : parent;
       else if (prev == curr_far_child)
