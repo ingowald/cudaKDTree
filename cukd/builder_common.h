@@ -30,7 +30,30 @@ namespace cukd {
   inline __both__ void cukd_swap(T &a, T &b)
   { T c = a; a = b; b = c; }
 
-
+  
+  /*! helper class to allow for conditionally "dropping" calls to
+    set_dim/get_dim for data that doesn't have those functions */
+  template<typename data_t, typename data_traits, bool has_dim>
+  struct if_has_dims;
+  
+  template<typename data_t, typename data_traits>
+  struct if_has_dims<data_t,data_traits,false> {
+    static inline __both__ void set_dim(data_t &t, int dim) {}
+    static inline __both__ int get_dim(const data_t &t, int value_if_false)
+    { return value_if_false; }
+  };
+  
+  template<typename data_t, typename data_traits>
+  struct if_has_dims<data_t,data_traits,true> {
+    static inline __both__ void set_dim(data_t &t, int dim) {
+      data_traits::set_dim(t,dim);
+    }
+    static inline __both__ int get_dim(const data_t &t, int /* ignore: value_if_false */) {
+      return data_traits::get_dim(t);
+    }
+  };
+  /*! @} */
+  
   /*! helper function that computes the bounding box of a given set of
       points */
   template<typename data_t, 
@@ -171,9 +194,11 @@ namespace cukd {
       const int     parent = (curr+1)/2-1;
       const data_t &parent_node = d_nodes[parent];
       const int     parent_dim
-        = data_traits::has_explicit_dim
-        ? data_traits::get_dim(parent_node)
-        : (BinaryTree::levelOf(parent) % num_dims);
+        = if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
+        ::get_dim(parent_node,/* if not: */BinaryTree::levelOf(parent) % num_dims);
+        // = data_traits::has_explicit_dim
+        // ? data_traits::get_dim(parent_node)
+        // : (BinaryTree::levelOf(parent) % num_dims);
       const scalar_t parent_split_pos
         = data_traits::get_coord(parent_node,parent_dim);
       

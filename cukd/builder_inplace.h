@@ -186,10 +186,10 @@ namespace cukd {
         // other - let's always pick the lower one.
         return;
 
-    using point_t  = typename data_traits::point_t;
-    using point_traits = ::cukd::point_traits<point_t>;
-    using scalar_t = typename point_traits::scalar_t;
-    enum { num_dims = point_traits::num_dims };
+      using point_t  = typename data_traits::point_t;
+      using point_traits = ::cukd::point_traits<point_t>;
+      using scalar_t = typename point_traits::scalar_t;
+      enum { num_dims = point_traits::num_dims };
 
       const int     dim
         = data_traits::has_explicit_dim
@@ -222,10 +222,10 @@ namespace cukd {
     {
       cudaDeviceSynchronize();
 
-    using point_t  = typename data_traits::point_t;
-    using point_traits = ::cukd::point_traits<point_t>;
-    using scalar_t = typename point_traits::scalar_t;
-    enum { num_dims = point_traits::num_dims };
+      using point_t  = typename data_traits::point_t;
+      using point_traits = ::cukd::point_traits<point_t>;
+      using scalar_t = typename point_traits::scalar_t;
+      enum { num_dims = point_traits::num_dims };
 
       for (int L=0;true;L++) {
         int begin = firstNodeOnLevel(L);
@@ -270,15 +270,17 @@ namespace cukd {
         // other - let's always pick the lower one.
         return;
 
-    using point_t  = typename data_traits::point_t;
-    using point_traits = ::cukd::point_traits<point_t>;
-    using scalar_t = typename point_traits::scalar_t;
-    enum { num_dims = point_traits::num_dims };
+      using point_t  = typename data_traits::point_t;
+      using point_traits = ::cukd::point_traits<point_t>;
+      using scalar_t = typename point_traits::scalar_t;
+      enum { num_dims = point_traits::num_dims };
 
       const int     dim
-        = data_traits::has_explicit_dim
-        ? data_traits::get_dim(points[((n+1)>>(L_h-L_b))-1])
-        : (L_b % num_dims);
+        = if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
+        ::get_dim(points[((n+1)>>(L_h-L_b))-1],L_b % num_dims);
+        // = data_traits::has_explicit_dim
+        // ? data_traits::get_dim(points[((n+1)>>(L_h-L_b))-1])
+        // : (L_b % num_dims);
 
       if (data_traits::get_coord(points[partner],dim)
           <
@@ -332,17 +334,21 @@ namespace cukd {
       int n = firstNodeOnLevel(L_b)+tid;
       if (n >= numPoints) return;
                                            
-    using point_t  = typename data_traits::point_t;
-    using point_traits = ::cukd::point_traits<point_t>;
-    using scalar_t = typename point_traits::scalar_t;
-    enum { num_dims = point_traits::num_dims };
+      using point_t  = typename data_traits::point_t;
+      using point_traits = ::cukd::point_traits<point_t>;
+      using scalar_t = typename point_traits::scalar_t;
+      enum { num_dims = point_traits::num_dims };
 
       if (worldBounds) {
         box_t<typename data_traits::point_t> bounds
           = findBounds<data_t,data_traits>(n,worldBounds,points);
-        data_traits::set_dim(points[n],bounds.widestDimension());
+        if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
+          ::set_dim(points[n],bounds.widestDimension());
+        // data_traits::set_dim(points[n],bounds.widestDimension());
       } else {
-        data_traits::set_dim(points[n],L_b % num_dims);
+        if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
+          ::set_dim(points[n],L_b % num_dims);
+        // data_traits::set_dim(points[n],L_b % num_dims);
       }
     }
 
@@ -382,15 +388,14 @@ namespace cukd {
       int r = l+1;
 
 
-    using point_t  = typename data_traits::point_t;
-    using point_traits = ::cukd::point_traits<point_t>;
-    using scalar_t = typename point_traits::scalar_t;
-    enum { num_dims = point_traits::num_dims };
+      using point_t  = typename data_traits::point_t;
+      using point_traits = ::cukd::point_traits<point_t>;
+      using scalar_t = typename point_traits::scalar_t;
+      enum { num_dims = point_traits::num_dims };
     
       const int  dim
-        = data_traits::has_explicit_dim
-        ? data_traits::get_dim(points[n])
-        : (L_b % num_dims);
+        = if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
+        ::get_dim(/* if so: */points[n], /* if not: */L_b % num_dims);
     
       scalar_t s_n = data_traits::get_coord(points[n],dim);
       if (l < numPoints && s_n < data_traits::get_coord(points[l],dim)) {
@@ -400,8 +405,8 @@ namespace cukd {
         cukd::cukd_swap(points[n],points[r]);
         // todo: trckle?
       }
-      if (data_traits::has_explicit_dim) 
-        data_traits::set_dim(points[n],dim);
+      if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
+                      ::set_dim(points[n],dim);
     }
   
     template<typename data_t, typename data_traits>

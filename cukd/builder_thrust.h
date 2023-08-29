@@ -150,8 +150,9 @@ namespace cukd {
       const int tid = threadIdx.x+blockIdx.x*blockDim.x;
       if (tid >= numPoints) return;
 
-      int dim = d_bounds->widestDimension();//arg_max(d_bounds->size());
-      data_traits::set_dim(d_nodes[tid],dim);
+      int dim = d_bounds->widestDimension();
+      if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
+        ::set_dim(d_nodes[tid],dim);
     }
   
     template<typename data_t,typename data_traits>
@@ -161,7 +162,8 @@ namespace cukd {
     {
       for (int tid=0;tid<numPoints;tid++) {
         int dim = d_bounds->widestDimension();//arg_max(d_bounds->size());
-        data_traits::set_dim(d_nodes[tid],dim);
+        if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
+          ::set_dim(d_nodes[tid],dim);
       }
     }
   
@@ -248,7 +250,7 @@ namespace cukd {
         updateTag(gid,tag,numPoints,L);
     }
     
-
+    
     /* performs the L-th step's tag update: each input tag refers to a
        subtree ID on level L, and - assuming all points and tags are in
        the expected sort order described inthe paper - this kernel will
@@ -282,7 +284,12 @@ namespace cukd {
       // given subtree when using our speific array layout.
       const int pivotPos = ArrayLayoutInStep(L,numPoints).pivotPosOf(subtree);
 
-      const int      pivotDim   = data_traits::get_dim(d_nodes[pivotPos]);
+      const int      pivotDim
+        // iw - this function will only get called for data that _has_
+        // explicit dims! (but compiler can't deduce that, so we have
+        // to add this guard here to keep it happy)
+        = if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
+        ::get_dim(d_nodes[pivotPos]/* if not (can't happen here) :*/,-1);
       const scalar_t pivotCoord = data_traits::get_coord(d_nodes[pivotPos],pivotDim);
     
       if (gid < pivotPos) {
@@ -299,8 +306,10 @@ namespace cukd {
         // point is _on_ the pivot position -> it's the root of that
         // subtree, don't change it.
         ;
-      if (gid != pivotPos)
-        data_traits::set_dim(d_nodes[gid],bounds.widestDimension());
+      if (gid != pivotPos) {
+        if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
+          ::set_dim(d_nodes[gid],bounds.widestDimension());
+      }
       tag[gid] = subtree;
     }
   
@@ -382,9 +391,11 @@ namespace cukd {
       const auto pnt_a = thrust::get<1>(a);
       const auto pnt_b = thrust::get<1>(b);
       int dim
-        = data_traits::has_explicit_dim
-        ? data_traits::get_dim(pnt_a)
-        : this->dim;
+        = if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
+        :: get_dim(pnt_a,/* if not: */this->dim);
+        // = data_traits::has_explicit_dim
+        // ? data_traits::get_dim(pnt_a)
+        // : this->dim;
       const auto coord_a = data_traits::get_coord(pnt_a,dim);
       const auto coord_b = data_traits::get_coord(pnt_b,dim);
       const bool less =

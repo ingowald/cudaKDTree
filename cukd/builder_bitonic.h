@@ -122,7 +122,8 @@ namespace cukd {
 
       int dim = d_bounds->widestDimension();
       
-      data_traits::set_dim(d_nodes[tid],dim);
+      if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
+        ::set_dim(d_nodes[tid],dim);
     }
   
     /* performs the L-th step's tag update: each input tag refers to a
@@ -208,7 +209,9 @@ namespace cukd {
       // given subtree when using our speific array layout.
       const int pivotPos = ArrayLayoutInStep(L,numPoints).pivotPosOf(subtree);
 
-      const int      pivotDim   = data_traits::get_dim(d_nodes[pivotPos]);
+      const int      pivotDim//   = data_traits::get_dim(d_nodes[pivotPos]);
+        = if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
+        ::get_dim(/* if so: */d_nodes[pivotPos], /* if not: */-1);
       const scalar_t pivotCoord = data_traits::get_coord(d_nodes[pivotPos],pivotDim);
     
       if (gid < pivotPos) {
@@ -226,7 +229,9 @@ namespace cukd {
         // subtree, don't change it.
         ;
       if (gid != pivotPos)
-        data_traits::set_dim(d_nodes[gid],bounds.widestDimension());
+        if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
+          ::set_dim(d_nodes[gid],bounds.widestDimension());
+        // data_traits::set_dim(d_nodes[gid],bounds.widestDimension());
       tag[gid] = subtree;
     }
   
@@ -326,9 +331,11 @@ namespace cukd {
       const auto &pnt_a = a.v;
       const auto &pnt_b = b.v;
       int dim
-        = data_traits::has_explicit_dim
-        ? data_traits::get_dim(pnt_a)
-        : this->dim;
+        = if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
+        ::get_dim(/* if so: */pnt_a, /* if not: */this->dim);
+        // = data_traits::has_explicit_dim
+        // ? data_traits::get_dim(pnt_a)
+        // : this->dim;
       const auto coord_a = data_traits::get_coord(pnt_a,dim);
       const auto coord_b = data_traits::get_coord(pnt_b,dim);
       return coord_a < coord_b;

@@ -45,7 +45,17 @@ namespace test_photon {
 
   struct Photon_traits {
     using point_t = float3;
+#if 1 
+    enum { has_explicit_dim = false };
+#else
     enum { has_explicit_dim = true };
+    
+    static inline __both__ int  get_dim(const Photon &p)
+    { return p.splitDim; }
+    
+    static inline __both__ void set_dim(Photon &p, int d)
+    { p.splitDim = d; }
+#endif
     
     static inline __both__
     const point_t &get_point(const Photon &p)
@@ -53,12 +63,6 @@ namespace test_photon {
     
     static inline __both__ float get_coord(const Photon &p, int d)
     { return cukd::get_coord(p.position,d); }
-    
-    static inline __both__ int  get_dim(const Photon &p)
-    { return p.splitDim; }
-    
-    static inline __both__ void set_dim(Photon &p, int d)
-    { p.splitDim = d; }
   };
   
   void test_empty()
