@@ -189,8 +189,9 @@ namespace cukd {
                               /*! which step we're in             */
                               int L)
     {
-      using point_t = typename data_traits::point_t;
+      using point_t      = typename data_traits::point_t;
       using point_traits = ::cukd::point_traits<point_t>;
+      using scalar_t     = typename point_traits::scalar_t;
       
       const int gid = threadIdx.x+blockIdx.x*blockDim.x;
       if (gid >= numPoints) return;
@@ -207,8 +208,8 @@ namespace cukd {
       // given subtree when using our speific array layout.
       const int pivotPos = ArrayLayoutInStep(L,numPoints).pivotPosOf(subtree);
 
-      const int   pivotDim   = data_traits::get_dim(d_nodes[pivotPos]);
-      const float pivotCoord = data_traits::get_coord(d_nodes[pivotPos],pivotDim);
+      const int      pivotDim   = data_traits::get_dim(d_nodes[pivotPos]);
+      const scalar_t pivotCoord = data_traits::get_coord(d_nodes[pivotPos],pivotDim);
     
       if (gid < pivotPos) {
         // point is to left of pivot -> must be smaller or equal to

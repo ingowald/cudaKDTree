@@ -102,8 +102,9 @@ size_t computeHash(uint32_t *ptr, size_t numBytes)
 
 
 template<typename T, int D>
-void test_pointOnly(size_t numPoints)
+void test_pointOnly(int numPoints)
 {
+  assert(numPoints > 0);
   std::cout << "testing for " << numPoints
             << " inputs, type = " << typeToString<T>() << D
             << std::endl;
