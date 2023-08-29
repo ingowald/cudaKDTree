@@ -87,12 +87,9 @@ void foo(float3 *data, int numData) {
 
 Once built, a `fcp` query could, for example, be done like this:
 ``` CUDA
-__global__ void myKernel(...)
-{ 
+__global__ void myKernel(...) { 
    float3 queryPoint = ...;
-   int IDofClosestDataPoint
-     = cukd::stackBased::fcp
-     (queryPos,data,numData);
+   int IDofClosestDataPoint = cukd::stackBased::fcp(queryPoint,data,numData);
    ...
 }
 ```
@@ -153,8 +150,8 @@ contains a 3D postion, and a one-int-per-data payload, as follows:
 
 ``` C++
 struct PointPlusPayload {
-	float3 position;
-	int    payload;
+    float3 position;
+    int    payload;
 };
 ```
 To properly describe this to this library, one can define the following
@@ -178,13 +175,13 @@ Using these traits, we can now call our builder on this data by simply
 passing these traits as second template argument:
 
 ``` C++
-void foo(PointPlusPayload *data, int numData)
-...
-   cukd::buildTree
-      </* type of the data: */PointPlusPayload,
-	   /* traits for this data: */PointPlusPayload_traits>
-	   (data,numData);
-...
+void foo(PointPlusPayload *data, int numData) {
+    ...
+    cukd::buildTree
+        </* type of the data: */PointPlusPayload,
+         /* traits for this data: */PointPlusPayload_traits>
+        (data,numData);
+    ...
 ```
 
 ### Example 2: Point plus payload, within existing CUDA type
@@ -208,12 +205,12 @@ struct PackedPointPlusPayload_traits
    { return make_float3(packedPointAndPayload.x,....); }
 };
 
-void foo(float4 *packedPointsAndPayloads, int count)
-...
+void foo(float4 *packedPointsAndPayloads, int count) {
+   ...
    cukd::buildTree
-      </* type of user data */float4,
-	   /* how this actually looks like */PackedPointPlusPayload_traits>
-	   (packedPointsAndPayloads,count)
+       </* type of user data */float4,
+        /* how this actually looks like */PackedPointPlusPayload_traits>
+       (packedPointsAndPayloads,count)
 ```
 
 ### Example 3: Trees with Support "arbitrary dimension" splits
@@ -241,23 +238,24 @@ struct Photon {
    // 1 byte for split dimension
    uint8_t split_dim; 
 };
-	
+
 struct Photon_traits
 : /* inherit scalar_t and num dims from float3 */
   public default_point_traits<float3> 
 {
    enum { has_explicit_dim = true };
-	   
+
    static inline __device__ __host__
    float3 &get_point(Photon &photon) 
    { return photon.position; }
-   
+
    static inline __device__ int  get_dim(const Photon &p) 
    { return p.split_dim }
-	   
+
    static inline __device__ void set_dim(Photon &p, int dim) 
    { p.split_dim = dim; }
 };
+```
 
 ## Support for Non-Default *Point/Vector* Types
 
@@ -309,24 +307,30 @@ For the *fcp* example, you can, for example (assuming that `points[]`
 and `numPoints` describe a balanced k-d tree that was built as described
 above), be done as such
 
-    __global__ void myKernel(float3 *points, int numPoints, ... ) {
-	   ...
-	   float3 queryPoint = ...;
-	   int idOfClosestPoint
-	     = cukd::stackBased::fcp(queryPoint,points,numPoints)
-	   ...
-	   
+``` C++
+__global__ void myKernel(float3 *points, int numPoints, ... ) {
+   ...
+   float3 queryPoint = ...;
+   int idOfClosestPoint
+     = cukd::stackBased::fcp(queryPoint,points,numPoints)
+   ...
+```
+
 Similarly, a knn query for k=4 elements can be done via
 
-     cukd::FixedCandidateList<4> closest(maxRadius);
-	 float sqrDistOfFurthestOneInClosest
-	    = cukd::stackBased::knn(closest,queryPoint,points,numPoints));
+``` C++
+cukd::FixedCandidateList<4> closest(maxRadius);
+float sqrDistOfFurthestOneInClosest
+    = cukd::stackBased::knn(closest,queryPoint,points,numPoints));
+```
 
 ... or for a large number of, for example, k=50 via
 
-     cukd::HeapCandidateList<50> closest(maxRadius);
-	 float sqrDistOfFurthestOneInClosest
-	    = cukd::stackBased::knn(closest,queryPoint,points,numPoints));
+``` C++
+cukd::HeapCandidateList<50> closest(maxRadius);
+float sqrDistOfFurthestOneInClosest
+    = cukd::stackBased::knn(closest,queryPoint,points,numPoints));
+```
 
 As shown in the last two examples, the `knn` code can be templated
 over a "container" used for storing the k-nearest points. One such
@@ -354,5 +358,3 @@ writeable memory where the builder can store this:
    cudaMalloc(...);
    cukd::buildTree(data,numData,d_boundingBox);
 ```
-
-	
