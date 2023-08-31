@@ -44,6 +44,11 @@ namespace cukd {
       down on the number of branches to be visited during
       traversal */
     float cutOffRadius = INFINITY;
+
+    /*! Controls when to go down the far branch: only follow a far branch if
+      (1+eps) * D is within the search radius, where D is the distance to the
+      far node. Similar to FLANN eps parameter. */
+    float eps = 0;
   };
 
   namespace stackBased {
@@ -229,7 +234,7 @@ namespace cukd {
     FCPResult result;
     result.clear(sqr(params.cutOffRadius));
     traverse_stack_free<FCPResult,data_t,data_traits>
-      (result,queryPoint,d_nodes,N);
+      (result,queryPoint,d_nodes,N,params.eps);
     return result.returnValue();
   }
 
