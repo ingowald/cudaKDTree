@@ -15,14 +15,7 @@
 // ======================================================================== //
 
 /*! \file cukd/data.h Describes (abstract) data types (that k-d trees
-    can be built over, and data type traits that describe this data 
-
-    In particular, all the kernels and builders in this library assume
-    that there's the following "things" to interact with whatever data
-    a tree is going to be built over, or traversed traversed for:
-
-    - a `scalar_type_o<
-    
+    can be built over, and data type traits that describe this data.
 */
 
 #pragma once
@@ -32,12 +25,12 @@
 
 namespace cukd {
 
-  
+
   /*! defines an abstract interface to what a 'data point' in a k-d
-    tree is -- which is some ort of actual D-dimensional point of
+    tree is -- which is some sort of actual D-dimensional point of
     scalar coordinates, plus potentially some payload, and potentially
     a means of storing the split dimension). This needs to define the
-    follwing:
+    following:
 
     - data_traits::point_t: the actual point type that stores the
     coordinates of this data point
@@ -45,12 +38,12 @@ namespace cukd {
     - enum data_traits::has_explicit_dim : whether that node type has
     a field to store an explicit split dimension in each node. If not,
     the k-d tree builder and traverse _have_ to use round-robin for
-    split distance; otherwise, it will alwyas split the widest
-    dimension. 
+    split distance; otherwise, it will always split the widest
+    dimension.
 
     - enum data_traits::set_dim(data_t &, int) and
-    data_traits::get_dim(data_t &) to read and write dimensions. For
-    data_t's that don't actually have any explicit split dmensoin
+    data_traits::get_dim(const data_t &) to read and write dimensions. For
+    data_t's that don't actually have any explicit split dimension
     these function may be dummies that don't do anything (they'll
     never get called in that case), but they have to be defined to
     make the compiler happy.
@@ -69,14 +62,14 @@ namespace cukd {
     // ------------------------------------------------------------------
     using point_t      = _point_t;
     using point_traits = _point_traits;
-    
+
     // ------------------------------------------------------------------
     /* part II : describes the type of _data_ (which can be more than
        just a point).   */
     // ------------------------------------------------------------------
-    
+
     using data_t = _point_t;
-    
+
     // ------------------------------------------------------------------
     /* part III : how to extract a point or coordinate from an actual
        data struct */
@@ -90,13 +83,12 @@ namespace cukd {
       given node - for the default simple 'data==point' case we can
       simply return a reference to the point itself */
     static inline __both__ const point_t &get_point(const data_t &n) { return n; }
-    
-    /*! return a reference to the 'd'th positional coordinate of the
-      given node */
+
+    /*! return the 'd'th positional coordinate of the given node */
     static inline __both__
     scalar_t get_coord(const data_t &n, int d)
     { return point_traits::get_coord(get_point(n),d); }
-    
+
     // ------------------------------------------------------------------
     /* part IV : whether the data has a way of storing a split
        dimension for non-round robin paritioning, and if so, how to
@@ -109,9 +101,9 @@ namespace cukd {
        traverse _have_ to use round-robin for split distance;
        otherwise, it will alwyas split the widest dimensoin */
     enum { has_explicit_dim = false };
-    
+
     /*! !{ just defining this for completeness, get/set_dim should never
-      get called for this type becaues we have set has_explicit_dim
+      get called for this type because we have set has_explicit_dim
       set to false. note traversal should ONLY ever call this
       function for data_t's that define has_explicit_dim to true */
     static inline __device__ int  get_dim(const data_t &) { return -1; }
@@ -120,5 +112,4 @@ namespace cukd {
   };
 
 }
-
 
