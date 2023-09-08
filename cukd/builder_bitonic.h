@@ -61,15 +61,15 @@ namespace cukd {
     In this case no data_traits need to be supplied beause these will
     be auto-computed for simple cuda vector types.
       
-    *** Example 2: to build a 1D kd-tree over a data type of float4,
-    where the first coordinate of each point is the dimension we
-    want to build the kd-tree over, and the other three coordinate
+    *** Example 2: to build a 2D kd-tree over a data type of float4,
+    where the first 2 coordinates of each point is the dimension we
+    want to build the kd-tree over, and the other two coordinates
     are arbitrary other payload data:
       
     struct float2_plus_payload_traits {
     using point_t = float2;
-    static inline __both__ const point_t &get_point(const float4 &n) 
-    { return make_float2(n.z,n.w); }
+    static inline __both__ point_t get_point(const float4 &n) 
+    { return make_float2(n.x, n.y); }
     }
     buildTree<float4,float2_plus_payload_traits>(...);
       
