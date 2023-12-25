@@ -114,7 +114,7 @@ namespace cukd {
                      bounding box of all data points. if
                      data_traits::has_explicit_dim is false, this is
                      optionally allowed to be null */
-                 box_t<typename data_traits::point_t> *worldBounds,
+                 box_t<typename data_traits::point_t> *worldBounds=0,
                  /*! cuda stream to use for all kernels and mallocs
                      (the builder_thrust may _also_ do some global
                      device syncs) */

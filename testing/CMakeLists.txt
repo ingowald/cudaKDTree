@@ -51,6 +51,12 @@ target_link_libraries(cukdTestInPlaceSimpleInput PRIVATE cudaKDTree)
 add_test(NAME cukdTestInPlaceSimpleInput COMMAND cukdTestInPlaceSimpleInput)
 
 
+add_executable(cukdTestPayloadSampleFromReadme testPayloadSampleFromReadme.cu)
+target_compile_definitions(cukdTestPayloadSampleFromReadme PUBLIC -DBUILDER_TO_TEST=buildTree_thrust)
+target_link_libraries(cukdTestPayloadSampleFromReadme PRIVATE cudaKDTree)
+add_test(NAME cukdTestPayloadSampleFromReadme COMMAND cukdTestPayloadSampleFromReadme)
+
+
 
 add_executable(cukdTestHostBuilderEmptyInput testHostBuilderEmptyInput.cu)
 target_link_libraries(cukdTestHostBuilderEmptyInput PRIVATE cudaKDTree)

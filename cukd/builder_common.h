@@ -196,9 +196,6 @@ namespace cukd {
       const int     parent_dim
         = if_has_dims<data_t,data_traits,data_traits::has_explicit_dim>
         ::get_dim(parent_node,/* if not: */BinaryTree::levelOf(parent) % num_dims);
-        // = data_traits::has_explicit_dim
-        // ? data_traits::get_dim(parent_node)
-        // : (BinaryTree::levelOf(parent) % num_dims);
       const scalar_t parent_split_pos
         = data_traits::get_coord(parent_node,parent_dim);
       

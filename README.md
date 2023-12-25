@@ -138,10 +138,18 @@ arbitrary user data struct these `data_traits` have to describe:
 
 - how to get the actual k-dimensional position that this data point is located in
 
+- how to get a specific one of the k coordinates of that point 
+
 - whether or not that `data_t` allows for storing and reading a
   per-node split plane dimension (and if so, how to do that)
   
 - how to read a data point's given k'th coordinate
+
+*Note that item '3' - getting a specific coordinate - seems redundant given that the
+preceding item can already deliver all k coordinates (from which we could then select
+one), but for efficiency reasons it's useful to have that (most cases one needs
+only one of the coordiantes, not all k), and I haven't yet found a 'clean' way of 
+having this be declared only optionally, so right now it's required to have this method.*
 
 ### Example: Float3+payload, no explicit split dimension
 
@@ -150,8 +158,8 @@ contains a 3D postion, and a one-int-per-data payload, as follows:
 
 ``` C++
 struct PointPlusPayload {
-    float3 position;
-    int    payload;
+  float3 position;
+  int    payload;
 };
 ```
 To properly describe this to this library, one can define the following
@@ -161,9 +169,13 @@ matching `data_traits` struct:
 struct PointPlusPayload_traits
   : public cukd::default_data_traits<float3>
 {
-   using point_t = float3;
-   static inline __device__ __host__
-   float3 &get_point(PointPlusPayload &data) { return data.position; }
+  using point_t = float3;
+  static inline __device__ __host__
+  float3 &get_point(PointPlusPayload &data) { return data.position; }
+   
+  static inline __device__ __host__
+  float  get_coord(const PointPlusPayload &data, int dim)
+  { return cukd::get_coord(get_point(data),dim); }
 };
 ```
 
@@ -176,12 +188,12 @@ passing these traits as second template argument:
 
 ``` C++
 void foo(PointPlusPayload *data, int numData) {
-    ...
-    cukd::buildTree
-        </* type of the data: */PointPlusPayload,
-         /* traits for this data: */PointPlusPayload_traits>
-        (data,numData);
-    ...
+  ...
+  cukd::buildTree
+    </* type of the data: */PointPlusPayload,
+     /* traits for this data: */PointPlusPayload_traits>
+    (data,numData);
+  ...
 ```
 
 ### Example 2: Point plus payload, within existing CUDA type
