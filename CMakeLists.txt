@@ -38,6 +38,9 @@ option(BUILD_ALL_TESTS "Build entire type/dimension/kernel test matrix?" OFF)
 # ------------------------------------------------------------------
 # general cmake project configs
 # ------------------------------------------------------------------
+set(CUKD_CUDA_ARCHITECTURES "auto" CACHE STRING "CUDA Arch(s) to build against")
+mark_as_advanced(CUKD_CUDA_ARCHITECTURES)
+
 if (NOT CUKD_IS_SUBPROJECT)
   option(CUKD_ENABLE_STATS "Enable Stats tracking?" OFF)
   if(NOT SET_UP_CONFIGURATIONS_DONE)
@@ -61,24 +64,35 @@ if (NOT CUKD_IS_SUBPROJECT)
   SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   SET(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-
-  set(CMAKE_CUDA_ARCHITECTURES "70" CACHE STRING "Specific CUDA Arch(s) to build against")
-  #set(CMAKE_CUDA_ARCHITECTURES 70 75 86)
-  if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.17)
-    # nothing to do, setting CMAKE_CUDA_ARCHITECTURES is the way to go
-  else()
-    foreach (arch IN ITEMS ${CMAKE_CUDA_ARCHITECTURES})
-      #    message("status adding arch=${arch}")
-      set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${arch},code=sm_${arch}")
-    endforeach()
-  endif()
-
-else()
-  if (NOT CMAKE_CUDA_ARCHITECTURES)
-    set(CMAKE_CUDA_ARCHITECTURES 70 75 80 86)
-  endif()
 endif()
 
+
+
+# ------------------------------------------------------------------
+# set cuda architectures, using following rule(s):
+#
+# a) if cmake_cuda_architectures is already set (from a parent project
+# that included this), leave it unchanged.
+#
+# b) if not, but user wants to have a specific one (set via
+# CUKD_CUDA_ARCHITECTURE) then use that;
+#
+# c) otherwise let cmake detect
+# ------------------------------------------------------------------
+if (DEFINED CMAKE_CUDA_ARCHITECTURES)
+  # somebnody else already defined it; leave it as is.
+elseif (NOT (CUKD_CUDA_ARCHITECTURES STREQUAL "auto"))
+  # use has set this variable to something other than auto, let's use that
+  set(CMAKE_CUDA_ARCHITECTURES ${CUKD_CUDA_ARCHITECTURES})
+else()
+  # not previously defined, and no wish to set an explicit one: jsut
+  # make sure cmake is happy:
+  if (NOT CMAKE_VERSION VERSION_LESS "3.17")
+    # newer versions of cmake need to have this to be not undefined;
+    # off then just menas 'autodetect'
+    set(CMAKE_CUDA_ARCHITECTURES OFF)
+  endif()
+endif()
 
 # ==================================================================
 # this builds four variants of this library, that differ in how the
