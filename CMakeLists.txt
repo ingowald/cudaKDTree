@@ -1,5 +1,5 @@
 # ======================================================================== #
-# Copyright 2021-2023 Ingo Wald                                            #
+# Copyright 2021-2024 Ingo Wald                                            #
 #                                                                          #
 # Licensed under the Apache License, Version 2.0 (the "License");          #
 # you may not use this file except in compliance with the License.         #
@@ -15,11 +15,11 @@
 # ======================================================================== #
 
 cmake_policy(SET CMP0048 NEW)
-project(cudaKDTree VERSION 0.0.1 LANGUAGES C CXX CUDA)
+project(cudaKDTree VERSION 1.0.0 LANGUAGES C CXX CUDA)
 
 cmake_minimum_required(VERSION 3.16)
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+#set(CMAKE_CXX_STANDARD 14)
+#set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.18)
   cmake_policy(SET CMP0104 NEW)
@@ -112,19 +112,21 @@ endif()
 # the data points, and/or for highly clustered data. It does however
 # require to allocate and provide (a tiny amount of) memory for the
 # builder to store the world-space bounding box of the input points,
-# as well as to pass aht pointer to the query method.
+# as well as to pass that pointer to the query method.
 #
 # ==================================================================
 add_library(cudaKDTree INTERFACE)
 target_sources(cudaKDTree INTERFACE
   cukd/common.h
-  cukd/math.h
+  # iw, sep 22, 2024 - intentionally renamed from cukd/math.h to cukd/cukd-math.h to 
+  # avoid name conflicts with system math.h if anybody adds cukd/ to include path
+  cukd/cukd-math.h
   cukd/box.h
   cukd/builder.h
   cukd/builder_bitonic.h
   cukd/builder_thrust.h
   cukd/builder_inplace.h
-  # SPATIAL k-d tree, with planes at arbitrary locatoins 
+  # SPATIAL k-d tree, with planes at arbitrary locations 
   cukd/spatial-kdtree.h
   cukd/fcp.h
   cukd/knn.h
@@ -132,6 +134,8 @@ target_sources(cudaKDTree INTERFACE
 target_include_directories(cudaKDTree INTERFACE
   ${PROJECT_SOURCE_DIR}/
   )
+set_property(TARGET cudaKDTree PROPERTY PUBLIC CXX_STANDARD 14)
+
 
 
 # ================================================================== a

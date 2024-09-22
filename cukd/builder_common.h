@@ -85,6 +85,7 @@ namespace cukd {
     d_bounds->lower = d_bounds->upper = point;
   }
 
+#ifdef __CUDA_ARCH__
   inline __device__
   int atomicMin(int *addr, int value)
   { return ::atomicMin(addr,value); }
@@ -118,6 +119,7 @@ namespace cukd {
     } while(old!=assumed);
     return old;
   }
+#endif
 
   template<typename data_t,
            typename data_traits>

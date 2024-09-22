@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2018-2023 Ingo Wald                                            //
+// Copyright 2018-2024 Ingo Wald                                            //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -190,8 +190,10 @@ namespace cukd {
 
   template<typename T> inline __both__ float as_float_rz(T t);
   template<> inline __both__ float as_float_rz(float f) { return f; }
+#ifdef __CUDA_ARCH__
   template<> inline __device__ float as_float_rz(int i) { return __int2float_rz(i); }
-  
+#endif
+
   /*! @] */
 
   
