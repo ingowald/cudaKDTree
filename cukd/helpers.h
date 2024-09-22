@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2019-2021 Ingo Wald                                            //
+// Copyright 2019-2024 Ingo Wald                                            //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -17,7 +17,7 @@
 #pragma once
 
 #include "cukd/common.h"
-#include "cukd/math.h"
+#include "cukd/cukd-math.h"
 
 namespace cukd {
 
