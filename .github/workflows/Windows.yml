@@ -17,18 +17,9 @@ jobs:
       # explicit include-based build matrix, of known valid options
       matrix:
         include:
-          # Windows-2022 & VS 2022 supports 11.6+
+          # Windows-2022 & VS 2022 supports 12.4+
           - os: windows-2022
-            cuda: "12.0.0"
-            visual_studio: "Visual Studio 17 2022"
-          - os: windows-2022
-            cuda: "11.8.0"
-            visual_studio: "Visual Studio 17 2022"
-          - os: windows-2022
-            cuda: "11.7.0"
-            visual_studio: "Visual Studio 17 2022"
-          - os: windows-2022
-            cuda: "11.6.0"
+            cuda: "12.4.0"
             visual_studio: "Visual Studio 17 2022"
           # Windows-2019 & VS 2019 supports 10.1+
           - os: windows-2019
