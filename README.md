@@ -1,37 +1,12 @@
-# cudaKDTree - A Library for Building and Querying Left-Balanced (point-)kd-Trees in CUDA
+# cudaKDTree - A Library for Building and Querying Left-Balanced (point-)k-d Trees in CUDA
 
-Left-balanced kd-trees can be used to store and query k-dimensional
-data points; their main advantage over other data structures is that
-they can be stored without any pointers or other admin data - which
-makes them very useful for large data sets, and/or where you want to
-be able to predict how much memory you are going to use.
+This repository contains a set of CUDA based routines for efficiently
+building and performing queries in k-d trees. It supports building
+over many different (customizable) input data types, and allows for
+buildling on both host and device. For device-side builds we support
+three different builders, with different performance/temporary-memory
+use trade-offs:
 
-This repo contains CUDA code two kinds of operations: *building* such
-trees, and *querying* them.
-
-## Building Left-balanced KD-Trees
-
-This repo contains three different methods for building left-balanced
-and complete k-d trees. All three variants are templated over the data
-type contained in the tree; often this is simply a vector/point type
-like cuda `float3`, `int4`, etc; but the templating mechanism used
-also allow for specify more complex data types such as points carrying
-a certain payload (e.g., `struct { int3 position, int pointID };`), or
-even data points that allow for specifying a split dimensoin (to build
-what Samet calls 'generalized' k-d trees, and what Bentley originally
-called 'optimized' k-dtrees - those where each node can choose which
-dimension it wants to split in).
-
-The three builders all offer exactly the same caller interface, and
-will all build *exactly* the same trees, but they offer differnt
-trade-offs regarding build speed vs temporary memory used during
-building. `cubit/builder_thrust` is the fastest, but relies on
-`thrust`, and requires up to 3x as much memory during building as the
-input data itself. `cubit/builder_bitonic` doesn't need thrust, runs
-better in a stream, and in terms of temp mem during building needs
-only exactly one int per input point. Finally, `cubit/builder_inplace`
-requires zero additional memory during building, but for large arrays
-(> 1M points) will be about an order of magnitude slower: 
 
 ```
   Builder variants "cheat sheet"
@@ -54,136 +29,320 @@ requires zero additional memory during building, but for large arrays
   - temporary memory overhead for N points: nada, nil, zilch.
   - perf 100K float3s (4090) :  ~10ms
   - perf   1M float3s (4090) : ~220ms
-  - perf  10M float3s (4090) : ~4.3ms
+  - perf  10M float3s (4090) : ~4.3s
 
 ```
 
-### Building over `float3` and similar built-in CUDA types
 
-In its simplest way, a k-d tree is just built over a CUDA vector type
-such as float3, float4, etc. In this case, the builder can be called
-as simply as 
+# Introduction
 
-    cukd::buildTree<float3>(points[],numPoints);
-	
-(or in fact, if `points[]` is of type `float3 *` the compiler will
-even be able to auto-deduce that). This simple variant shold work for
-all of `float2`, `float3`, and `float4` (and probably even `int2`
-etc - if not it's trivially simpel to add).
+K-d trees are versatile data structures for organizing (and then
+performing queries in) data sets of k-dimensional point data.  K-d
+trees can come in many forms, including "spatial" k-d trees where
+split planes can be at arbitrary locations; and the more commonly
+"Bentley-"k-d trees, where all split planes have to pass *through* a
+corresponding data point. The reason Bentley-style k-d trees are so
+useful is that when built in a "left-balance and complete" form they
+can be stored very compactly, by simply re-arranding the data points,
+and without any additional memory for storing pointers or other admin
+data.
+
+This library is intended to help with efficiently building and
+traversing such trees. In particular, it supports:
+
+- both GPU- and host-side k-d tree construction
+
+- support for both spatial k-d trees and Bentley-style (balanced) k-d trees
+
+- support for very general types of data, including both point-only
+  and point-plus-payload data
+
+- support for what Samet calls "optimized" trees where each split
+  plane's split dimension is chosen adaptively based on widest extent
+  of that subtree's domain
+  
+- different traversal routines for the different types of trees; and
+  in particular, various exemplary queries for `fcp` (find closest
+  point) and `knn` (k-nearest neighbor) that should be easily
+  adaptable to other types of queries
+
+To make it easier for users to use this library for their own specific
+data types we have made an effort to template all build- and traversal
+routines in a way that they can be used on pretty much any type of
+input data and point/vector types for math. This library has built-in
+support for the regular CUDA vector types `float2/3/4` and `int2/3/4`
+(`double` etc should be easy to add, but hasn't been requested yet);
+for those templates should all default automatically, so building
+a tree over an array of `float3`s is as simple as
+
+``` CUDA
+#include "cukd/builder.h"
+...
+void foo(float3 *data, int numData) {
+  ...
+  cukd::buildTree(data,numData);
+  ...
+}
+```
+
+Once built, a `fcp` query could, for example, be done like this:
+``` CUDA
+__global__ void myKernel(...) { 
+   float3 queryPoint = ...;
+   int IDofClosestDataPoint = cukd::stackBased::fcp(queryPoint,data,numData);
+   ...
+}
+```
 
 
-### Building over user types with payload data
+# *Building* Trees
 
-For data points with 'payload' you can specify a so-called
-`node_traits` struct that desribes how the builder can interact with
-each data item. Note with 'node' we mean _both_ the node of the k-d
-tree, _and_ the type of each item in the input data array---since our
-balanced k-d trees are built by simply re-arranging these elements it
-does not make any sense to differentiate between these types. However,
-this is conceptually different from what we call a `point_t` for the
-given `node_t`: the `node_t` is the struct the user uses for each
-element of his input array/tree, the other is what we call the
-`logical` CUDA type that this would correspond to. For example, a user
-might want to store his points as
+This library makes heavy use of templating to allow users to 
+use pretty much any form of input data, as long as it is properly
+"described" to the builder through what we call "data traits".
 
-    struct my_data {
-       float pos_x, nor_x;
-       float pos_y, nor_y;
-       float pos_z, nor_z;
-    };
+For simple CUDA vector types (e.g., float3), all of templates should
+all default to useful values, so building a tree over an array of
+`float3`s is as simple as
+
+``` CUDA
+#include "cukd/builder.h"
+...
+void foo(float3 *data, int numData) {
+  ...
+  cukd::buildTree(data,numData);
+  ...
+}
+```
+
+A specific builder, such as for example the bitonic-sort based one,
+one also be chosen directly:
+
+``` CUDA
+  cukd::buildTree_bitonic(data,numData);
+```
+
+## Support for Non-Default Data Types
+
+The templating mechanism of this library will automatically handle
+input data for CUDA vector/point data; however, actual data often
+comes with additional "payload" data, in arbitrary user-defined
+types. To support such data all builders are templated over both the
+`data_t` (the user's actual CUDA/C++ struct for that data), and a
+second `data_traits` template parameter that *describes* how to interact with this data.
+
+In particular, to be able to build (and traverse) trees for a given
+arbitrary user data struct these `data_traits` have to describe:
+
+- the logical point/vector type to do math with. 
+
+- how to get the actual k-dimensional position that this data point is located in
+
+- how to get a specific one of the k coordinates of that point 
+
+- whether or not that `data_t` allows for storing and reading a
+  per-node split plane dimension (and if so, how to do that)
+  
+- how to read a data point's given k'th coordinate
+
+*Note that item '3' - getting a specific coordinate - seems redundant given that the
+preceding item can already deliver all k coordinates (from which we could then select
+one), but for efficiency reasons it's useful to have that (most cases one needs
+only one of the coordiantes, not all k), and I haven't yet found a 'clean' way of 
+having this be declared only optionally, so right now it's required to have this method.*
+
+### Example: Float3+payload, no explicit split dimension
+
+As an example, let us consider a simple case where the user's data
+contains a 3D postion, and a one-int-per-data payload, as follows:
+
+``` C++
+struct PointPlusPayload {
+  float3 position;
+  int    payload;
+};
+```
+To properly describe this to this library, one can define the following
+matching `data_traits` struct:
+
+``` C++
+struct PointPlusPayload_traits
+  : public cukd::default_data_traits<float3>
+{
+  using point_t = float3;
+  static inline __device__ __host__
+  float3 &get_point(PointPlusPayload &data) { return data.position; }
    
-and then ask the builder to build a kd-tree over an array of such
-`my_data`s. In that case, the _logical_ point type would be a `float3`
-(because the tree would be built over what is logically 3-dimensional
-floating point data points), but the `node_t would be tihs `my_data`.
+  static inline __device__ __host__
+  float  get_coord(const PointPlusPayload &data, int dim)
+  { return cukd::get_coord(get_point(data),dim); }
+};
+```
 
-To "explain" that to the builder, one would, for this example, define the following:
+In this example we have subclassed `cukd::default_data_traits<float3>`
+to save us from having to define anything about split planes etc that
+we are not using in this simple type. 
 
-    struct my_data_traits : public default_node_traits<float3> {
-	   /* inheriting from default_node_traits will
-	      define scalar_t, node_t, point_t, num_dims ...*/
-		  
-        static inline __device__ 
-		const float3 get_point(const my_data &n) 
-		{ return make_float3(n.pos_x,...); }
-    
-		static inline __device__
-		float get_coord(const my_data &n, int d)
-		{ if (d==0) return n.pos_x; ... }
-	};
+Using these traits, we can now call our builder on this data by simply
+passing these traits as second template argument:
 
-Using this description of how to interact with a node, the builder
-can then be called by
+``` C++
+void foo(PointPlusPayload *data, int numData) {
+  ...
+  cukd::buildTree
+    </* type of the data: */PointPlusPayload,
+     /* traits for this data: */PointPlusPayload_traits>
+    (data,numData);
+  ...
+```
 
-    buildTree<my_data,my_data_traits>(...)
+### Example 2: Point plus payload, within existing CUDA type
 
-### Building with "split-in-widest-dimension"
+To slightly modify the above example consider an application where the
+user also uses 3D float data and a single (float) payload item, but
+for performance/alignment reasons wants to store those in a CUDA
+`float4` vector. If we simply passed a `float4` typed array to
+`buildTree()`, the builder would by default assume this to be 4D float
+positions - which would be wrong - but we can once again use traits to
+properly define this:
+``` C++
+// assume user uses a CUDA float4 in which x,y,z are position, 
+// and w stores a payload
+struct PackedPointPlusPayload_traits
+  : public cukd::default_data_traits<float3>
+{
+   using point_t = float3;
+   static inline __device__ __host__
+   float3 &get_point(float4 &packedPointAndPayload) 
+   { return make_float3(packedPointAndPayload.x,....); }
+};
 
-In particular for photon mapping, it has been shown that faster
-queries can be achieved if for each node in the k-d tree we choose the
-split dimensoin not in a round-robin way, but rather, by always
-splitting in the widest dimension of that node's associated sub-tree.
+void foo(float4 *packedPointsAndPayloads, int count) {
+   ...
+   cukd::buildTree
+       </* type of user data */float4,
+        /* how this actually looks like */PackedPointPlusPayload_traits>
+       (packedPointsAndPayloads,count)
+```
 
-Both our builder and our traversal allow for doing tihs; however,
-since this requires each node to be able to "somehow" store and
-retrieve a split dimension this requires to define one's own node
-type, and then define a `node_traits` for this that also defines some
-`set_dim` and `get_dim` members. For example, for a typical photon
-mapping example one could use:
+### Example 3: Trees with Support "arbitrary dimension" splits
 
-    struct Photon { 
-	   // the actual photon data:
-	   float3  position;
-	   float3  power;
-	   // 3 bytes for quantized normal
-	   uint8_t quantized_normal[3];
-	   // 1 byte for split dimension
-	   uint8_t split_dim; 
-	};
-	
-	struct Photon_traits : public default_point_traits<float3> {
-	   enum { has_explicit_dim = true };
-	   
-       static inline __device__ int  get_dim(const Photon &p) 
-	   { return p.split_dim }
-	   
-       static inline __device__ void set_dim(Photon &p, int dim) 
-	   { p.split_dim = dim; }
-	};
+In many cases the builder can produce better trees if the split
+dimension does not have to be chosen round-robin and can instead be
+chosen to always subdivide the given subtree's domain where it is
+widest (what Samet calls "optimized" k-d trees). To do this, however,
+the builder needs a way of *storing* which dimension it picked for a
+given node (so the traverser can later on retrieve this value and do
+the right thing). To do this, the user's `data_t` has to have some
+bits to store this value, and the corresponding `data_traits` has to
+describe how the builder and traverser can read and write this data.
+
+As an example, consider the following `Photon` data type as it could
+be encountere in photon mapping:
+
+``` C++
+struct Photon { 
+   // the actual photon data:
+   float3  position;
+   float3  power;
+   // 3 bytes for quantized normal
+   uint8_t quantized_normal[3];
+   // 1 byte for split dimension
+   uint8_t split_dim; 
+};
+
+struct Photon_traits
+: /* inherit scalar_t and num dims from float3 */
+  public default_point_traits<float3> 
+{
+   enum { has_explicit_dim = true };
+
+   static inline __device__ __host__
+   float3 &get_point(Photon &photon) 
+   { return photon.position; }
+
+   static inline __device__ int  get_dim(const Photon &p) 
+   { return p.split_dim }
+
+   static inline __device__ void set_dim(Photon &p, int dim) 
+   { p.split_dim = dim; }
+};
+```
+
+## Support for Non-Default *Point/Vector* Types
+
+The main goal of using templates in this library is to allow
+users to support their own data types; preferably this is done by
+using the `data_traits` as described above, and using CUDA vector
+types for the actual point/vector math. E.g., a user could use
+an arbitrary class `Photon`, but still use the builtin `float3`
+type for the actual positions.
+
+It is in fact possible to use one's own vector/point types with this
+library (by defining some suitable `points_traits<>`), 
+and there are some examples and test cases that do this. However,
+this functionality should only be used by users that are quite
+comfortable with templating; we strongly suggest to only customize
+the `data_t` and `data_traits`, and use `float3` etc for point types
+where possible.
 
 
+# *Querying* Trees
 
+Whereas *building* a tree over a given set of data points is very
+well-defined operation, querying is not---different users want
+different queries (fcp, knn, sdf, etcpp), often with different
+variants (different cut-off radius, different k for knn, vaious
+short-cuts or approximations, etc). For that reason we few the two
+queries that come with this library---`fcp` for find-closest-point and
+`knn` for k-nearest-neighbors---more sa *samples* of how to write
+other queries.
 
+Throughout those query routines we use the same `data_traits`
+templating mechanism as above, allowing the query routines to properly
+interpret the data they are operating on. We provide several diferent
+query routines, including the "default" stack-based k-d tree
+traversal, as well as a stack-free variant, and one that is closer to
+Bentley's original "ball-overlaps-domain" variant (which we call
+closest-corner-tracking, or `cct` for short) that is often much(!)
+better for higher-dimensional and/or highly clustered data.
 
 ## Stack-Free Traversal and Querying
 
 This repo also contains both a stack-based and a stack-free traversal
 code for doing "shrinking-radius range-queries" (i.e., radius range
 queries where the radius can shrink during traversal). This traversal
-code is used in two examples: *fcp* (for find-closst-point) and *knn*
+code is used in two examples: *fcp* (for find-closest-point) and *knn*
 (for k-nearest neighbors).
 
-For the *fct* example, you can, for example (assuming that `points[]`
-and `numPoints` describe a balanced kd-tree that was built as described
-abvoe), be done as such
+For the *fcp* example, you can, for example (assuming that `points[]`
+and `numPoints` describe a balanced k-d tree that was built as described
+above), be done as such
 
-    __global__ void myKernel(float3 *points, int numPoints, ... ) {
-	   ...
-	   float3 queryPoint = ...;
-	   int idOfClosestPoint = fcp(queryPoints,points,numPoints)
-	   ...
-	   
+``` C++
+__global__ void myKernel(float3 *points, int numPoints, ... ) {
+   ...
+   float3 queryPoint = ...;
+   int idOfClosestPoint
+     = cukd::stackBased::fcp(queryPoint,points,numPoints)
+   ...
+```
+
 Similarly, a knn query for k=4 elements can be done via
 
-     cukd::FixedCandidateList<4> closest(maxRadius);
-	 float sqrDistOfFuthestOneInClosest
-	    = cukd::knn(closest,queryPoints,points,numPoints));
+``` C++
+cukd::FixedCandidateList<4> closest(maxRadius);
+float sqrDistOfFurthestOneInClosest
+    = cukd::stackBased::knn(closest,queryPoint,points,numPoints));
+```
 
 ... or for a large number of, for example, k=50 via
 
-     cukd::HeapCandidateList<50> closest(maxRadius);
-	 float sqrDistOfFuthestOneInClosest
-	    = cukd::knn(closest,queryPoints,points,numPoints));
+``` C++
+cukd::HeapCandidateList<50> closest(maxRadius);
+float sqrDistOfFurthestOneInClosest
+    = cukd::stackBased::knn(closest,queryPoint,points,numPoints));
+```
 
 As shown in the last two examples, the `knn` code can be templated
 over a "container" used for storing the k-nearest points. One such
@@ -200,6 +359,14 @@ the fixed list all k elements will always be stored in ascending
 order, in the heap list this is not the case.
 
 
+For some query routines it is required to also pass a
+`cukd::box_t<point_t>` that contains the world-space bounding box of
+the data. All builders provide a means of computing this "on the fly"
+during building; all that has to be done is to provide a pointer to
+writeable memory where the builder can store this:
 
-
-	
+``` C++
+cukd::box_t<float3> *d_boundingBox;
+cudaMalloc(...);
+cukd::buildTree(data,numData,d_boundingBox);
+```

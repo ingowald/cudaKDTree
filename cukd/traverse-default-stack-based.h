@@ -22,15 +22,15 @@ namespace cukd {
 
   /*! traverse k-d tree with default, stack-based (sb) traversal */
   template<typename result_t,
-           typename node_t,
-           typename node_traits=default_node_traits<node_t>>
+           typename data_t,
+           typename data_traits=default_data_traits<data_t>>
   inline __device__
   void traverse_default(result_t &result,
-                        typename node_traits::point_t queryPoint,
-                        const node_t *d_nodes,
+                        typename data_traits::point_t queryPoint,
+                        const data_t *d_nodes,
                         int numPoints)
   {
-    using point_t  = typename node_traits::point_t;
+    using point_t  = typename data_traits::point_t;
     using scalar_t = typename scalar_type_of<point_t>::type;
     enum { num_dims = num_dims_of<point_t>::value };
     
@@ -50,16 +50,16 @@ namespace cukd {
     while (true) {
       while (curr < numPoints) {
         const int  curr_dim
-          = node_traits::has_explicit_dim
-          ? node_traits::get_dim(d_nodes[curr])
+          = data_traits::has_explicit_dim
+          ? data_traits::get_dim(d_nodes[curr])
           : (BinaryTree::levelOf(curr) % num_dims);
         CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
-        const node_t &curr_node  = d_nodes[curr];
-        const auto sqrDist = sqrDistance(node_traits::get_point(curr_node),queryPoint);
+        const data_t &curr_node  = d_nodes[curr];
+        const auto sqrDist = sqrDistance(data_traits::get_point(curr_node),queryPoint);
         
         cullDist = result.processCandidate(curr,sqrDist);
 
-        const auto node_coord   = node_traits::get_coord(curr_node,curr_dim);
+        const auto node_coord   = data_traits::get_coord(curr_node,curr_dim);
         const auto query_coord  = get_coord(queryPoint,curr_dim);
         const bool  leftIsClose = query_coord < node_coord;
         const int   lChild = 2*curr+1;

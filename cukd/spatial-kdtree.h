@@ -24,9 +24,9 @@
 namespace cukd {
 
   template<typename data_t,
-           typename node_traits=default_node_traits<data_t>>
+           typename data_traits=default_data_traits<data_t>>
   struct SpatialKDTree {
-    using point_t  = typename node_traits::point_t;
+    using point_t  = typename data_traits::point_t;
     using scalar_t = typename scalar_type_of<point_t>::type;
     using box_t = cukd::box_t<point_t>;
 
@@ -62,8 +62,8 @@ namespace cukd {
   };
   
   template<typename data_t,
-           typename node_traits=default_node_traits<data_t>>
-  void buildTree(SpatialKDTree<data_t,node_traits> &tree,
+           typename data_traits=default_data_traits<data_t>>
+  void buildTree(SpatialKDTree<data_t,data_traits> &tree,
                  data_t *d_points,
                  int numPrims,
                  BuildConfig buildConfig = {},
@@ -80,7 +80,9 @@ namespace cukd {
 
     template<typename point_t>
     struct AtomicBox {
-      enum { num_dims = num_dims_of<point_t>::value };
+      using point_traits = ::cukd::point_traits<point_t>;
+      
+      enum { num_dims = point_traits::num_dims };
       
       inline __device__ void set_empty();
       inline __device__ float get_center(int dim) const;
@@ -108,8 +110,8 @@ namespace cukd {
       box_t<point_t> box;
 #pragma unroll
       for (int d=0;d<num_dims;d++) {
-        get_coord(box.lower,d) = decode(lower[d]);
-        get_coord(box.upper,d) = decode(upper[d]);
+        point_traits::set_coord(box.lower,d,decode(lower[d]));
+        point_traits::set_coord(box.upper,d,decode(upper[d]));
       }
       return box;
     }
@@ -217,11 +219,11 @@ namespace cukd {
     };
 
     template<typename data_t,
-             typename node_traits>
+             typename data_traits>
     __global__
     void initState(BuildState      *buildState,
                    NodeState       *nodeStates,
-                   TempNode<typename node_traits::point_t> *nodes)
+                   TempNode<typename data_traits::point_t> *nodes)
     {
       buildState->numNodes = 2;
       
@@ -235,9 +237,9 @@ namespace cukd {
     }
 
     template<typename data_t,
-             typename node_traits>
+             typename data_traits>
     __global__
-    void initPrims(TempNode<typename node_traits::point_t> *nodes,
+    void initPrims(TempNode<typename data_traits::point_t> *nodes,
                    PrimState       *primState,
                    const data_t    *prims,
                    uint32_t         numPrims)
@@ -253,19 +255,19 @@ namespace cukd {
       me.done   = false;
       // this could be made faster by block-reducing ...
       atomicAdd(&nodes[0].openBranch.count,1);
-      atomic_grow(nodes[0].openBranch.centBounds,node_traits::get_point(prim));
+      atomic_grow(nodes[0].openBranch.centBounds,data_traits::get_point(prim));
     }
 
     template<typename data_t,
-             typename node_traits>
+             typename data_traits>
     __global__
     void selectSplits(BuildState      *buildState,
                       NodeState       *nodeStates,
-                      TempNode<typename node_traits::point_t> *nodes,
+                      TempNode<typename data_traits::point_t> *nodes,
                       uint32_t         numNodes,
                       BuildConfig      buildConfig)
     {
-      enum { num_dims = num_dims_of<typename node_traits::point_t>::value };
+      enum { num_dims = num_dims_of<typename data_traits::point_t>::value };
       
       const int nodeID = threadIdx.x+blockIdx.x*blockDim.x;
       if (nodeID >= numNodes) return;
@@ -339,10 +341,10 @@ namespace cukd {
     }
 
     template<typename data_t,
-             typename node_traits>
+             typename data_traits>
     __global__
     void updatePrims(NodeState       *nodeStates,
-                     TempNode<typename node_traits::point_t> *nodes,
+                     TempNode<typename data_traits::point_t> *nodes,
                      PrimState       *primStates,
                      const data_t    *prims,
                      int numPrims)
@@ -362,7 +364,7 @@ namespace cukd {
 
       auto &split = nodes[me.nodeID].openNode;
       // const box_t<T,D> primBox = primBoxes[me.primID];
-      const typename node_traits::point_t point = node_traits::get_point(prims[me.primID]);
+      const typename data_traits::point_t point = data_traits::get_point(prims[me.primID]);
       int side = 0;
       if (split.dim == -1) {
         // could block-reduce this, but will likely not happen often, anyway
@@ -385,9 +387,9 @@ namespace cukd {
        the nodes[] array, the node.offset value to point to the first
        of this nodes' items in that bvh.primIDs[] list. */
     template<typename data_t,
-             typename node_traits>
+             typename data_traits>
     __global__
-    void writePrimsAndLeafOffsets(TempNode<typename node_traits::point_t> *nodes,
+    void writePrimsAndLeafOffsets(TempNode<typename data_traits::point_t> *nodes,
                                   uint32_t        *bvhItemList,
                                   PrimState       *primStates,
                                   int              numPrims)
@@ -407,10 +409,10 @@ namespace cukd {
 
 
     template<typename data_t,
-             typename node_traits>
+             typename data_traits>
     __global__
-    void saveBounds(box_t<typename node_traits::point_t> *returnedBounds,
-                    TempNode<typename node_traits::point_t> *nodes)
+    void saveBounds(box_t<typename data_traits::point_t> *returnedBounds,
+                    TempNode<typename data_traits::point_t> *nodes)
     {
       const int tid = threadIdx.x+blockIdx.x*blockDim.x;
       if (tid > 0) return;
@@ -420,10 +422,10 @@ namespace cukd {
     /* writes main phase's temp nodes into final bvh.nodes[]
        layout. actual bounds of that will NOT yet bewritten */
     template<typename data_t,
-             typename node_traits>
+             typename data_traits>
     __global__
-    void writeNodes(typename SpatialKDTree<data_t,node_traits>::Node *finalNodes,
-                    TempNode<typename node_traits::point_t>  *tempNodes,
+    void writeNodes(typename SpatialKDTree<data_t,data_traits>::Node *finalNodes,
+                    TempNode<typename data_traits::point_t>  *tempNodes,
                     int        numNodes)
     {
       const int nodeID = threadIdx.x+blockIdx.x*blockDim.x;
@@ -439,8 +441,8 @@ namespace cukd {
     }
     
     template<typename data_t,
-             typename node_traits>
-    void builder(SpatialKDTree<data_t,node_traits> &tree,
+             typename data_traits>
+    void builder(SpatialKDTree<data_t,data_traits> &tree,
                  const data_t *prims,
                  int numPrims,
                  BuildConfig buildConfig,
@@ -455,7 +457,7 @@ namespace cukd {
       // ==================================================================
       // do build on temp nodes
       // ==================================================================
-      TempNode<typename node_traits::point_t>   *tempNodes = 0;
+      TempNode<typename data_traits::point_t>   *tempNodes = 0;
       NodeState  *nodeStates = 0;
       PrimState  *primStates = 0;
       BuildState *buildState = 0;
@@ -463,20 +465,20 @@ namespace cukd {
       _ALLOC(nodeStates,2*numPrims,s);
       _ALLOC(primStates,numPrims,s);
       _ALLOC(buildState,1,s);
-      initState<data_t,node_traits>
+      initState<data_t,data_traits>
         <<<1,1,0,s>>>(buildState,
                       nodeStates,
                       tempNodes);
       printf("init prims, numprims = %i\n",numPrims);
-      initPrims<data_t,node_traits>
+      initPrims<data_t,data_traits>
         <<<divRoundUp(numPrims,1024),1024,0,s>>>
         (tempNodes,
          primStates,prims,numPrims);
       CUKD_CUDA_CALL(StreamSynchronize(s));
-      box_t<typename node_traits::point_t> *savedBounds;
+      box_t<typename data_traits::point_t> *savedBounds;
       _ALLOC(savedBounds,sizeof(*savedBounds),s);
       
-      saveBounds<data_t,node_traits>
+      saveBounds<data_t,data_traits>
         <<<divRoundUp(numPrims,1024),1024,0,s>>>
         (savedBounds,tempNodes);
       CUKD_CUDA_CALL(StreamSynchronize(s));
@@ -500,7 +502,7 @@ namespace cukd {
 
         // printf("selecting splits, numnodes = %i\n",numNodes);
       PING;
-        selectSplits<data_t,node_traits>
+        selectSplits<data_t,data_traits>
           <<<divRoundUp(numNodes,1024),1024,0,s>>>
           (buildState,
            nodeStates,tempNodes,numNodes,
@@ -512,7 +514,7 @@ namespace cukd {
       PING;
         numDone = numNodes;
         // printf("updating prims, numnodes = %i\n",numNodes);
-        updatePrims<data_t,node_traits>
+        updatePrims<data_t,data_traits>
           <<<divRoundUp(numPrims,1024),1024,0,s>>>
           (nodeStates,tempNodes,
            primStates,prims,numPrims);
@@ -547,7 +549,7 @@ namespace cukd {
 
       tree.numPrims = numPrims;
       _ALLOC(tree.primIDs,numPrims,s);
-      writePrimsAndLeafOffsets<data_t,node_traits>
+      writePrimsAndLeafOffsets<data_t,data_traits>
         <<<divRoundUp(numPrims,1024),1024,0,s>>>
         (tempNodes,tree.primIDs,sortedPrimStates,numPrims);
 
@@ -556,7 +558,7 @@ namespace cukd {
       // ==================================================================
       tree.numNodes = numNodes;
       _ALLOC(tree.nodes,numNodes,s);
-      writeNodes<data_t,node_traits>
+      writeNodes<data_t,data_traits>
         <<<divRoundUp(numNodes,1024),1024,0,s>>>
         (tree.nodes,tempNodes,numNodes);
       CUKD_CUDA_CALL(StreamSynchronize(s));
@@ -569,14 +571,14 @@ namespace cukd {
   } // ::cukd::spatial
 
   template<typename data_t,
-           typename node_traits>
-  void buildTree(SpatialKDTree<data_t,node_traits> &tree,
+           typename data_traits>
+  void buildTree(SpatialKDTree<data_t,data_traits> &tree,
                  data_t *d_points,
                  int numPrims,
                  BuildConfig buildConfig,
                  cudaStream_t s)
   {
-    spatial::builder<data_t,node_traits>
+    spatial::builder<data_t,data_traits>
       (tree,d_points,numPrims,buildConfig,s);
     CUKD_CUDA_CALL(StreamSynchronize(s));
     

@@ -64,7 +64,7 @@ void d_fcp(float   *d_results,
   FcpSearchParams params;
   params.cutOffRadius = cutOffRadius;
   int closestID
-    = cukd::fcp
+    = cukd::cct::fcp
     (queryPos,*d_bounds,d_nodes,numNodes,params);
   
   d_results[tid]

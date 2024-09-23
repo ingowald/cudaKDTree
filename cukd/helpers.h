@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2019-2021 Ingo Wald                                            //
+// Copyright 2019-2024 Ingo Wald                                            //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -17,9 +17,58 @@
 #pragma once
 
 #include "cukd/common.h"
-#include "cukd/math.h"
+#include "cukd/cukd-math.h"
 
 namespace cukd {
+
+  // ------------------------------------------------------------------
+  /*! defines a 'memory resource' that can be used for allocating gpu
+      memory; this allows the user to switch between usign
+      cudaMallocAsync (where avialble) vs regular cudaMalloc (where
+      not), or to use their own memory pool, to use managed memory,
+      etc. All memory allocatoins done during construction will use
+      the memory resource passed to the respective build function. */
+  struct GpuMemoryResource {
+    virtual cudaError_t malloc(void** ptr, size_t size, cudaStream_t s) = 0;
+    virtual cudaError_t free(void* ptr, cudaStream_t s) = 0;
+  };
+
+  struct ManagedMemMemoryResource : public GpuMemoryResource {
+    cudaError_t malloc(void** ptr, size_t size, cudaStream_t s) override
+    {
+      cudaStreamSynchronize(s);
+      return cudaMallocManaged(ptr,size);
+    }
+    cudaError_t free(void* ptr, cudaStream_t s) override
+    {
+      cudaStreamSynchronize(s);
+      return cudaFree(ptr);
+    }
+  };
+
+  /* by default let's use cuda malloc async, which is much better and
+     faster than regular malloc; but that's available on cuda 11, so
+     let's add a fall back for older cuda's, too */
+#if CUDART_VERSION >= 11020
+  struct AsyncGpuMemoryResource final : GpuMemoryResource {
+    cudaError_t malloc(void** ptr, size_t size, cudaStream_t s) override {
+      return cudaMallocAsync(ptr, size, s);
+    }
+    cudaError_t free(void* ptr, cudaStream_t s) override {
+      return cudaFreeAsync(ptr, s);
+    }
+  };
+
+  inline GpuMemoryResource &defaultGpuMemResource() {
+    static AsyncGpuMemoryResource memResource;
+    return memResource;
+  }
+#else
+  inline GpuMemoryResource &defaultGpuMemResource() {
+    static ManagedMemMemoryResource memResource;
+    return memResource;
+  }
+#endif
 
   /*! helper functions for a generic, arbitrary-size binary tree -
     mostly to compute level of a given node in that tree, and child
@@ -36,6 +85,10 @@ namespace cukd {
     {
 #ifdef __CUDA_ARCH__
       int k = 63 - __clzll(nodeID+1);
+#elif defined(_MSC_VER)
+      unsigned long bs;
+      _BitScanReverse(&bs, nodeID + 1);
+      int k = bs;
 #else
       int k = 63 - __builtin_clzll(nodeID+1);
 #endif

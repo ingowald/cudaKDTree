@@ -1,17 +1,33 @@
+// ======================================================================== //
+// Copyright 2018-2022 Ingo Wald                                            //
+//                                                                          //
+// Licensed under the Apache License, Version 2.0 (the "License");          //
+// you may not use this file except in compliance with the License.         //
+// You may obtain a copy of the License at                                  //
+//                                                                          //
+//     http://www.apache.org/licenses/LICENSE-2.0                           //
+//                                                                          //
+// Unless required by applicable law or agreed to in writing, software      //
+// distributed under the License is distributed on an "AS IS" BASIS,        //
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. //
+// See the License for the specific language governing permissions and      //
+// limitations under the License.                                           //
+// ======================================================================== //
+
 #pragma once
 
 namespace cukd {
 
-  template<typename node_t,
-           typename node_traits=default_node_traits<node_t>>
+  template<typename data_t,
+           typename data_traits=default_data_traits<data_t>>
   inline __device__
-  box_t<typename node_traits::point_t>
+  box_t<typename data_traits::point_t>
   recomputeBounds(int curr,
-                  box_t<typename node_traits::point_t> bounds,
-                  const node_t *d_nodes
+                  box_t<typename data_traits::point_t> bounds,
+                  const data_t *d_nodes
                   )
   {
-    using point_t  = typename node_traits::point_t;
+    using point_t  = typename data_traits::point_t;
     using scalar_t = typename scalar_type_of<point_t>::type;
     enum { num_dims = num_dims_of<point_t>::value };
     
@@ -22,10 +38,10 @@ namespace cukd {
       const auto &parent_node = d_nodes[parent];
       CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
       const int   parent_dim
-        = node_traits::has_explicit_dim
-        ? node_traits::get_dim(parent_node)
+        = data_traits::has_explicit_dim
+        ? data_traits::get_dim(parent_node)
         : (BinaryTree::levelOf(parent) % num_dims);
-      const float parent_split_pos = node_traits::get_coord(parent_node,parent_dim);
+      const float parent_split_pos = data_traits::get_coord(parent_node,parent_dim);
       
       if (curr & 1) {
         // curr is left child, set upper
@@ -45,16 +61,16 @@ namespace cukd {
   }
   
   template<typename result_t,
-           typename node_t,
-           typename node_traits=default_node_traits<node_t>>
+           typename data_t,
+           typename data_traits=default_data_traits<data_t>>
   inline __device__
   void traverse_sf_imp(result_t &result,
-                       typename node_traits::point_t queryPoint,
-                       const box_t<typename node_traits::point_t> worldBounds,
-                       const node_t *d_nodes,
+                       typename data_traits::point_t queryPoint,
+                       const box_t<typename data_traits::point_t> worldBounds,
+                       const data_t *d_nodes,
                        int numPoints)
   {
-    using point_t  = typename node_traits::point_t;
+    using point_t  = typename data_traits::point_t;
     using scalar_t = typename scalar_type_of<point_t>::type;
     enum { num_dims = num_dims_of<point_t>::value };
 
@@ -73,7 +89,7 @@ namespace cukd {
         // the root ... while means we're done.
         return;// closest_found_so_far;
 
-      bounds = recomputeBounds<node_t,node_traits>
+      bounds = recomputeBounds<data_t,data_traits>
         (curr,worldBounds,d_nodes);
       const int parent = (curr+1)/2-1;
       
@@ -103,19 +119,15 @@ namespace cukd {
       const bool from_child = (prev >= child);
       if (!from_child) {
         const auto dist_sqr =
-          sqrDistance(queryPoint,node_traits::get_point(curr_node));
+          sqrDistance(queryPoint,data_traits::get_point(curr_node));
         cullDist = result.processCandidate(curr,dist_sqr);
-        // if (dist_sqr < cullDist) {
-        //   cullDist = dist_sqr;
-        //   closest_found_so_far          = curr;
-        // }
       }
 
       const int  curr_dim
-        = node_traits::has_explicit_dim
-        ? node_traits::get_dim(d_nodes[curr])
+        = data_traits::has_explicit_dim
+        ? data_traits::get_dim(d_nodes[curr])
         : (BinaryTree::levelOf(curr) % num_dims);
-      const float curr_split_pos = node_traits::get_coord(curr_node,curr_dim);
+      const float curr_split_pos = data_traits::get_coord(curr_node,curr_dim);
       const float curr_dim_dist = get_coord(queryPoint,curr_dim) - curr_split_pos;
       const int   curr_side = curr_dim_dist > 0.f;
       const int   curr_close_child = 2*curr + 1 + curr_side;
@@ -126,15 +138,9 @@ namespace cukd {
         // if we came from the close child, we may still have to check
         // the far side - but only if this exists, and if far half of
         // current space if even within search radius.
-        // next
-        //   = ((curr_far_child<N) && ((curr_dim_dist * curr_dim_dist) * epsErr < min(max_far_node_search_radius_sqr, cullDist)) && (--params.far_node_inspect_budget>=0))
-        //   ? curr_far_child
-        //   : parent;
-
         if ((curr_far_child<numPoints)
             &&
             (curr_dim_dist * curr_dim_dist < cullDist)
-            // && (--params.far_node_inspect_budget>=0))
             )
           {
             next = curr_far_child;

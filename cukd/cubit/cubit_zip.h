@@ -727,30 +727,7 @@ namespace cubit {
       }
     }
   
-    // template<typename U>
-    // inline void sort(U *const __restrict__ d_values,
-    //                  size_t numValues,
-    //                  cudaStream_t stream=0)
-
-    // {
-    //   int bs = 1024;
-    //   int numValuesPerBlock = 2*bs;
-
-    //   // ==================================================================
-    //   // first - sort all blocks of 2x1024 using per-block sort
-    //   // ==================================================================
-    //   int nb = divRoundUp((int)numValues,numValuesPerBlock);
-    //   block_sort_up<<<nb,bs,0,stream>>>(d_values,numValues);
-
-    //   int _nb = divRoundUp(int(numValues),1024);
-    //   for (int upLen=numValuesPerBlock;upLen<numValues;upLen+=upLen) {
-    //     big_up<<<_nb,bs,0,stream>>>(d_values,numValues,upLen);
-    //     for (int downLen=upLen/2;downLen>1024;downLen/=2) {
-    //       big_down<<<_nb,bs,0,stream>>>(d_values,numValues,downLen);
-    //     }
-    //     block_sort_down<<<nb,bs,0,stream>>>(d_values,numValues);
-    //   }
-    // }
+   
   }
 
 
@@ -772,18 +749,18 @@ namespace cubit {
     // ==================================================================
     int nb = divRoundUp((int)numValues,numValuesPerBlock);
     zip::block_sort_up<U,V,Less,BLOCK_SIZE>
-      <<<nb,bs,0,stream>>>(us,vs,numValues,less);
+      <<<nb,bs,0,stream>>>(us,vs,(uint32_t)numValues,less);
 
     int _nb = divRoundUp(int(numValues),BLOCK_SIZE);
     for (int upLen=numValuesPerBlock;upLen<numValues;upLen+=upLen) {
       zip::big_up
-        <<<_nb,bs,0,stream>>>(us,vs,numValues,upLen,less);
+        <<<_nb,bs,0,stream>>>(us,vs,(uint32_t)numValues,upLen,less);
       for (int downLen=upLen/2;downLen>BLOCK_SIZE;downLen/=2) {
         zip::big_down
-          <<<_nb,bs,0,stream>>>(us,vs,numValues,downLen,less);
+          <<<_nb,bs,0,stream>>>(us,vs,(uint32_t)numValues,downLen,less);
       }
       zip::block_sort_down<U,V,Less,BLOCK_SIZE>
-        <<<nb,bs,0,stream>>>(us,vs,numValues,less);
+        <<<nb,bs,0,stream>>>(us,vs,(uint32_t)numValues,less);
     }
   }
 }

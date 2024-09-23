@@ -23,22 +23,23 @@
 namespace cukd {
   
   template<typename result_t,
-           typename node_t,
-           typename node_traits=default_node_traits<node_t>>
+           typename data_t,
+           typename data_traits=default_data_traits<data_t>>
   inline __device__
   void traverse_cct(result_t &result,
-                    typename node_traits::point_t queryPoint,
-                    const box_t<typename node_traits::point_t> d_bounds,
-                    const node_t *d_nodes,
+                    typename data_traits::point_t queryPoint,
+                    const box_t<typename data_traits::point_t> d_bounds,
+                    const data_t *d_nodes,
                     int numPoints)
   {
-    using point_t  = typename node_traits::point_t;
-    using scalar_t = typename scalar_type_of<point_t>::type;
-    enum { num_dims = num_dims_of<point_t>::value };
-    
+    using point_t    = typename data_traits::point_t;
+    using point_traits = ::cukd::point_traits<point_t>;
+    using scalar_t   = typename point_traits::scalar_t;
+    enum { num_dims  = point_traits::num_dims };
+      
     scalar_t cullDist = result.initialCullDist2();
 
-    struct// __align__(_MAX(alignof(point_t),auto_align<sizeof(int)+sizeof(point_t)>::value))
+    struct
       StackEntry {
       int     nodeID;
       point_t closestCorner;
@@ -68,15 +69,15 @@ namespace cukd {
       }
       const auto &node  = d_nodes[nodeID];
       CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
-      const point_t nodePoint = node_traits::get_point(node);
+      const point_t nodePoint = data_traits::get_point(node);
       {
         const auto sqrDist = sqrDistance(nodePoint,queryPoint);
         cullDist = result.processCandidate(nodeID,sqrDist);
       }
       
       const int  dim
-        = node_traits::has_explicit_dim
-        ? node_traits::get_dim(d_nodes[nodeID])
+        = data_traits::has_explicit_dim
+        ? data_traits::get_dim(d_nodes[nodeID])
         : (BinaryTree::levelOf(nodeID) % num_dims);
       const auto node_dim   = get_coord(nodePoint,dim);
       const auto query_dim  = get_coord(queryPoint,dim);
@@ -86,8 +87,7 @@ namespace cukd {
 
       auto farSideCorner = closestPointOnSubtreeBounds;
       const int farChild = leftIsClose?rChild:lChild;
-      get_coord(farSideCorner,dim) = node_dim;
-      // set_coord(farSideCorner,dim,node_dim);
+      point_traits::set_coord(farSideCorner,dim,node_dim);
       if (farChild < numPoints && sqrDistance(farSideCorner,queryPoint) < cullDist) {
         stackPtr->closestCorner = farSideCorner;
         stackPtr->nodeID = farChild;
