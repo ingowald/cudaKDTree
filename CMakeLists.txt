@@ -14,17 +14,13 @@
 # limitations under the License.                                           #
 # ======================================================================== #
 
+cmake_minimum_required(VERSION 3.18)
 cmake_policy(SET CMP0048 NEW)
-project(cudaKDTree VERSION 1.0.0 LANGUAGES C CXX CUDA)
+cmake_policy(SET CMP0104 NEW)
+set(CMAKE_BUILD_TYPE_INIT "Release")
+project(cudaKDTree VERSION 1.0.1 LANGUAGES C CXX CUDA)
 
-cmake_minimum_required(VERSION 3.16)
-#set(CMAKE_CXX_STANDARD 14)
-#set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.18)
-  cmake_policy(SET CMP0104 NEW)
-endif()
-
+  
 if (NOT (${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_SOURCE_DIR}))
   set(CUKD_IS_SUBPROJECT ON)
 else()
@@ -38,61 +34,32 @@ option(BUILD_ALL_TESTS "Build entire type/dimension/kernel test matrix?" OFF)
 # ------------------------------------------------------------------
 # general cmake project configs
 # ------------------------------------------------------------------
-set(CUKD_CUDA_ARCHITECTURES "auto" CACHE STRING "CUDA Arch(s) to build against")
-mark_as_advanced(CUKD_CUDA_ARCHITECTURES)
-
-if (NOT CUKD_IS_SUBPROJECT)
-  option(CUKD_ENABLE_STATS "Enable Stats tracking?" OFF)
-  if(NOT SET_UP_CONFIGURATIONS_DONE)
-    set(SET_UP_CONFIGURATIONS_DONE 1)
-
-    # No reason to set CMAKE_CONFIGURATION_TYPES if it's not a multiconfig generator
-    # Also no reason mess with CMAKE_BUILD_TYPE if it's a multiconfig generator.
-    if(CMAKE_CONFIGURATION_TYPES) # multiconfig generator?
-      set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "" FORCE) 
-    else()
-      if(NOT CMAKE_BUILD_TYPE)
-	#            message("Defaulting to release build.")
-        set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
-      endif()
-      set_property(CACHE CMAKE_BUILD_TYPE PROPERTY HELPSTRING "Choose the type of build")
-      # set the valid options for cmake-gui drop-down list
-      set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug;Release")
-    endif()
+if (CUKD_IS_SUBPROJECT)
+  # we're used as a subproject (as we should be!) - parent HAS to have
+  # set CMAKE_CUDA_ARCHITECTURES. check if it did, and error out of not
+  if (NOT (DEFINED CMAKE_CUDA_ARCHITECTURES))
+    message(FATAL_ERROR "#cudaKDTree: no CMAKE_CUDA_ARCHITECTURES defined. Please define before doing add_subproject<thisLibrary>. If in doubt, do 'set(CMAKE_CUDA_ARCHITECTURES all-major)' or 'set(CMAKE_CUDA_ARCHITECTURES native)'")
+    return()
   endif()
-
+else()
+  set(CUKD_CUDA_ARCHITECTURES "native" CACHE STRING "CUDA Arch(s) to build against")
+  mark_as_advanced(CUKD_CUDA_ARCHITECTURES)
+  
+  option(CUKD_ENABLE_STATS "Enable Stats tracking?" OFF)
   SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   SET(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-endif()
 
-
-
-# ------------------------------------------------------------------
-# set cuda architectures, using following rule(s):
-#
-# a) if cmake_cuda_architectures is already set (from a parent project
-# that included this), leave it unchanged.
-#
-# b) if not, but user wants to have a specific one (set via
-# CUKD_CUDA_ARCHITECTURE) then use that;
-#
-# c) otherwise let cmake detect
-# ------------------------------------------------------------------
-if (DEFINED CMAKE_CUDA_ARCHITECTURES)
-  # somebnody else already defined it; leave it as is.
-elseif (NOT (CUKD_CUDA_ARCHITECTURES STREQUAL "auto"))
-  # use has set this variable to something other than auto, let's use that
-  set(CMAKE_CUDA_ARCHITECTURES ${CUKD_CUDA_ARCHITECTURES})
-else()
-  # not previously defined, and no wish to set an explicit one: jsut
-  # make sure cmake is happy:
-  if (NOT CMAKE_VERSION VERSION_LESS "3.17")
-    # newer versions of cmake need to have this to be not undefined;
-    # off then just menas 'autodetect'
-    set(CMAKE_CUDA_ARCHITECTURES OFF)
+  # ------------------------------------------------------------------
+  # set cuda architectures, for our own local build
+  # ------------------------------------------------------------------
+  if (DEFINED CMAKE_CUDA_ARCHITECTURES)
+    # somebody else already defined it; leave it as is.
+  else()
+    set(CMAKE_CUDA_ARCHITECTURES ${CUKD_CUDA_ARCHITECTURES})
   endif()
 endif()
+
 
 # ==================================================================
 # this builds four variants of this library, that differ in how the
@@ -115,6 +82,13 @@ endif()
 # as well as to pass that pointer to the query method.
 #
 # ==================================================================
+if (${CMAKE_CUDA_ARCHITECTURES} STREQUAL "50")
+  if (CUKD_ALLOW_ARCH_50)
+    # oh-kay... i assume you know what you're doing ..."
+  else()
+    message(FATAL_ERROR "#cudaKDTree: CMAKE_CUDA_ARCHITECTURES is set to '50'; this is almost certainly a default value that you won't actually want to use (and which may actually cause issues on newer GPUs). If you are absoltely sure that this is what you want to use, add `set(CUKD_ALLOW_ARCH_50 ON)` before including cudaKDTree to make this error messag go away.")
+  endif()
+endif()
 add_library(cudaKDTree INTERFACE)
 target_sources(cudaKDTree INTERFACE
   cukd/common.h
@@ -134,7 +108,11 @@ target_sources(cudaKDTree INTERFACE
 target_include_directories(cudaKDTree INTERFACE
   ${PROJECT_SOURCE_DIR}/
   )
-set_property(TARGET cudaKDTree PROPERTY PUBLIC CXX_STANDARD 14)
+set_property(TARGET cudaKDTree PROPERTY PUBLIC
+  CXX_STANDARD 14)
+# 'attach' current cmake_cuda_architectures to this library
+set_property(TARGET cudaKDTree PROPERTY PUBLIC 
+  CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
 
 
 

@@ -20,9 +20,19 @@
 #include <cub/cub.cuh>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
+#include <cmath>
+#include <limits.h>
+#include <float.h>
 
 namespace cukd {
 
+  /*! A _spatial_ kd-tree that stores actual (axis-aligned) split
+    planes, and leaves of primitives. This needs somewhat more memory
+    than the other k-d tree variants because it does need to store
+    arrays of explicit planes and primitives IDs (regular balanced
+    k-tree, in contrast, only re-order points), but is often
+    faster. Also unlike the non-spatial k-d trees this will _not_
+    modifiy the points[] array */
   template<typename data_t,
            typename data_traits=default_data_traits<data_t>>
   struct SpatialKDTree {
@@ -60,15 +70,28 @@ namespace cukd {
       means "leave it to the builder" */
     int makeLeafThreshold = 0;
   };
-  
+
+  /*! builds a _spatial_ kd-tree (ie, one that allocates and stores
+      explicit planes and leaves, not the kind of balanced k-tree that
+      only re-orders points). Unlike a balanced k-d tree this variant
+      does have to allocate gpu memory for nodes and primID lists, and
+      thus the user _has_ to 'free()' this tree after use. (Also, it's
+      memory usage will obviously be higher!) */
   template<typename data_t,
            typename data_traits=default_data_traits<data_t>>
   void buildTree(SpatialKDTree<data_t,data_traits> &tree,
                  data_t *d_points,
                  int numPrims,
                  BuildConfig buildConfig = {},
-                 cudaStream_t stream = 0);
+                 cudaStream_t stream = 0,
+                 GpuMemoryResource &memResource=defaultGpuMemResource());
 
+  template<typename data_t,
+           typename data_traits=default_data_traits<data_t>>
+  void free(SpatialKDTree<data_t,data_traits> &tree,
+            cudaStream_t stream = 0,
+            GpuMemoryResource &memResource=defaultGpuMemResource());
+  
 
   // ==================================================================
   // IMPLEMENTATION
@@ -171,12 +194,16 @@ namespace cukd {
     };
     
     template<typename T, typename count_t>
-    inline void _ALLOC(T *&ptr, count_t count, cudaStream_t s)
-    { CUKD_CUDA_CALL(MallocManaged((void**)&ptr,count*sizeof(T))); }
+    inline void _ALLOC(GpuMemoryResource &memResource,
+                       T *&ptr, count_t count, cudaStream_t s)
+    // { CUKD_CUDA_CALL(MallocManaged((void**)&ptr,count*sizeof(T))); }
+    { memResource.malloc(&ptr,count*sizeof(T),s); }
     
     template<typename T>
-    inline void _FREE(T *&ptr, cudaStream_t s)
-    { CUKD_CUDA_CALL(Free((void*)ptr)); ptr = 0; }
+    inline void _FREE(GpuMemoryResource &memResource,
+                      T *&ptr, cudaStream_t s)
+    { memResource.free(ptr,s); }
+    // { CUKD_CUDA_CALL(Free((void*)ptr)); ptr = 0; }
     
     typedef enum : int8_t { OPEN_BRANCH, OPEN_NODE, DONE_NODE } NodeState;
 
@@ -446,7 +473,8 @@ namespace cukd {
                  const data_t *prims,
                  int numPrims,
                  BuildConfig buildConfig,
-                 cudaStream_t s)
+                 cudaStream_t s,
+                 GpuMemoryResource &memResource)
     {
       if (buildConfig.makeLeafThreshold == 0)
         buildConfig.makeLeafThreshold = 8;
@@ -461,10 +489,10 @@ namespace cukd {
       NodeState  *nodeStates = 0;
       PrimState  *primStates = 0;
       BuildState *buildState = 0;
-      _ALLOC(tempNodes,2*numPrims,s);
-      _ALLOC(nodeStates,2*numPrims,s);
-      _ALLOC(primStates,numPrims,s);
-      _ALLOC(buildState,1,s);
+      _ALLOC(memResource,tempNodes,2*numPrims,s);
+      _ALLOC(memResource,nodeStates,2*numPrims,s);
+      _ALLOC(memResource,primStates,numPrims,s);
+      _ALLOC(memResource,buildState,1,s);
       initState<data_t,data_traits>
         <<<1,1,0,s>>>(buildState,
                       nodeStates,
@@ -476,7 +504,7 @@ namespace cukd {
          primStates,prims,numPrims);
       CUKD_CUDA_CALL(StreamSynchronize(s));
       box_t<typename data_traits::point_t> *savedBounds;
-      _ALLOC(savedBounds,sizeof(*savedBounds),s);
+      _ALLOC(memResource,savedBounds,sizeof(*savedBounds),s);
       
       saveBounds<data_t,data_traits>
         <<<divRoundUp(numPrims,1024),1024,0,s>>>
@@ -484,7 +512,7 @@ namespace cukd {
       CUKD_CUDA_CALL(StreamSynchronize(s));
       CUKD_CUDA_CALL(Memcpy(&tree.bounds,savedBounds,sizeof(tree.bounds),cudaMemcpyDefault));
       CUKD_CUDA_CALL(StreamSynchronize(s));
-      _FREE(savedBounds,s);
+      _FREE(memResource,savedBounds,s);
       
       int numDone = 0;
       int numNodes;
@@ -530,25 +558,25 @@ namespace cukd {
       size_t temp_storage_bytes = 0;
       PrimState *sortedPrimStates;
       PING;
-      _ALLOC(sortedPrimStates,numPrims,s);
+      _ALLOC(memResource,sortedPrimStates,numPrims,s);
       cub::DeviceRadixSort::SortKeys((void*&)d_temp_storage, temp_storage_bytes,
                                      (uint64_t*)primStates,
                                      (uint64_t*)sortedPrimStates,
                                      numPrims,32,64,s);
-      _ALLOC(d_temp_storage,temp_storage_bytes,s);
+      _ALLOC(memResource,d_temp_storage,temp_storage_bytes,s);
       cub::DeviceRadixSort::SortKeys((void*&)d_temp_storage, temp_storage_bytes,
                                      (uint64_t*)primStates,
                                      (uint64_t*)sortedPrimStates,
                                      numPrims,32,64,s);
       CUKD_CUDA_CALL(StreamSynchronize(s));
       PING;
-      _FREE(d_temp_storage,s);
+      _FREE(memResource,d_temp_storage,s);
       // ==================================================================
       // allocate and write BVH item list, and write offsets of leaf nodes
       // ==================================================================
 
       tree.numPrims = numPrims;
-      _ALLOC(tree.primIDs,numPrims,s);
+      _ALLOC(memResource,tree.primIDs,numPrims,s);
       writePrimsAndLeafOffsets<data_t,data_traits>
         <<<divRoundUp(numPrims,1024),1024,0,s>>>
         (tempNodes,tree.primIDs,sortedPrimStates,numPrims);
@@ -557,29 +585,47 @@ namespace cukd {
       // allocate and write final nodes
       // ==================================================================
       tree.numNodes = numNodes;
-      _ALLOC(tree.nodes,numNodes,s);
+      _ALLOC(memResource,tree.nodes,numNodes,s);
       writeNodes<data_t,data_traits>
         <<<divRoundUp(numNodes,1024),1024,0,s>>>
         (tree.nodes,tempNodes,numNodes);
       CUKD_CUDA_CALL(StreamSynchronize(s));
-      _FREE(sortedPrimStates,s);
-      _FREE(tempNodes,s);
-      _FREE(nodeStates,s);
-      _FREE(primStates,s);
-      _FREE(buildState,s);
+      _FREE(memResource,sortedPrimStates,s);
+      _FREE(memResource,tempNodes,s);
+      _FREE(memResource,nodeStates,s);
+      _FREE(memResource,primStates,s);
+      _FREE(memResource,buildState,s);
     }
   } // ::cukd::spatial
 
+
+
+
+  template<typename data_t,
+           typename data_traits>
+  void free(SpatialKDTree<data_t,data_traits> &tree,
+            cudaStream_t stream,
+            GpuMemoryResource &memResource)
+  {
+    memResource.free(tree.nodes,stream);
+    tree.nodes = 0;
+    tree.numNodes = 0;
+    memResource.free(tree.primIDs,stream);
+    tree.primIDs = 0;
+    tree.numPrims = 0;
+  }
+    
   template<typename data_t,
            typename data_traits>
   void buildTree(SpatialKDTree<data_t,data_traits> &tree,
                  data_t *d_points,
                  int numPrims,
                  BuildConfig buildConfig,
-                 cudaStream_t s)
+                 cudaStream_t s,
+                 GpuMemoryResource &memResource)
   {
     spatial::builder<data_t,data_traits>
-      (tree,d_points,numPrims,buildConfig,s);
+      (tree,d_points,numPrims,buildConfig,s,memResource);
     CUKD_CUDA_CALL(StreamSynchronize(s));
     
   }

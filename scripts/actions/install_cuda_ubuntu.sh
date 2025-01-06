@@ -120,7 +120,7 @@ CPU_ARCH="x86_64"
 PIN_FILENAME="cuda-ubuntu${UBUNTU_VERSION}.pin"
 PIN_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${UBUNTU_VERSION}/${CPU_ARCH}/${PIN_FILENAME}"
 # apt keyring package now available https://developer.nvidia.com/blog/updating-the-cuda-linux-gpg-repository-key/
-KERYRING_PACKAGE_FILENAME="cuda-keyring_1.0-1_all.deb"
+KERYRING_PACKAGE_FILENAME="cuda-keyring_1.1-1_all.deb"
 KEYRING_PACKAGE_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${UBUNTU_VERSION}/${CPU_ARCH}/${KERYRING_PACKAGE_FILENAME}"
 REPO_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${UBUNTU_VERSION}/${CPU_ARCH}/"
 
