@@ -15,6 +15,7 @@
 # ======================================================================== #
 
 cmake_policy(SET CMP0048 NEW)
+set(CMAKE_BUILD_TYPE_INIT "Release")
 project(cudaKDTree VERSION 1.0.0 LANGUAGES C CXX CUDA)
 
 cmake_minimum_required(VERSION 3.16)
@@ -41,58 +42,30 @@ option(BUILD_ALL_TESTS "Build entire type/dimension/kernel test matrix?" OFF)
 set(CUKD_CUDA_ARCHITECTURES "auto" CACHE STRING "CUDA Arch(s) to build against")
 mark_as_advanced(CUKD_CUDA_ARCHITECTURES)
 
-if (NOT CUKD_IS_SUBPROJECT)
-  option(CUKD_ENABLE_STATS "Enable Stats tracking?" OFF)
-  if(NOT SET_UP_CONFIGURATIONS_DONE)
-    set(SET_UP_CONFIGURATIONS_DONE 1)
-
-    # No reason to set CMAKE_CONFIGURATION_TYPES if it's not a multiconfig generator
-    # Also no reason mess with CMAKE_BUILD_TYPE if it's a multiconfig generator.
-    if(CMAKE_CONFIGURATION_TYPES) # multiconfig generator?
-      set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "" FORCE) 
-    else()
-      if(NOT CMAKE_BUILD_TYPE)
-	#            message("Defaulting to release build.")
-        set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
-      endif()
-      set_property(CACHE CMAKE_BUILD_TYPE PROPERTY HELPSTRING "Choose the type of build")
-      # set the valid options for cmake-gui drop-down list
-      set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug;Release")
-    endif()
+if (CUKD_IS_SUBPROJECT)
+  # we're used as a subproject (as we should be!) - parent HAS to have
+  # set CMAKE_CUDA_ARCHITECTURES. check if it did, and error out of not
+  if (NOT (DEFINED CMAKE_CUDA_ARCHITECTURES))
+    message(ERROR "#cudaKDTree: no CMAKE_CUDA_ARCHITECTURES defined. Please define before doing add_subproject<thisLibrary>. If in doubt, do 'set(CMAKE_CUDA_ARCHITECTURES all-major)' or 'set(CMAKE_CUDA_ARCHITECTURES native)'")
+    return()
   endif()
-
+else()
+  option(CUKD_ENABLE_STATS "Enable Stats tracking?" OFF)
   SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   SET(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-endif()
 
-
-
-# ------------------------------------------------------------------
-# set cuda architectures, using following rule(s):
-#
-# a) if cmake_cuda_architectures is already set (from a parent project
-# that included this), leave it unchanged.
-#
-# b) if not, but user wants to have a specific one (set via
-# CUKD_CUDA_ARCHITECTURE) then use that;
-#
-# c) otherwise let cmake detect
-# ------------------------------------------------------------------
-if (DEFINED CMAKE_CUDA_ARCHITECTURES)
-  # somebnody else already defined it; leave it as is.
-elseif (NOT (CUKD_CUDA_ARCHITECTURES STREQUAL "auto"))
-  # use has set this variable to something other than auto, let's use that
-  set(CMAKE_CUDA_ARCHITECTURES ${CUKD_CUDA_ARCHITECTURES})
-else()
-  # not previously defined, and no wish to set an explicit one: jsut
-  # make sure cmake is happy:
-  if (NOT CMAKE_VERSION VERSION_LESS "3.17")
-    # newer versions of cmake need to have this to be not undefined;
-    # off then just menas 'autodetect'
-    set(CMAKE_CUDA_ARCHITECTURES OFF)
+  # ------------------------------------------------------------------
+  # set cuda architectures, for our own local build
+  # ------------------------------------------------------------------
+  if (DEFINED CMAKE_CUDA_ARCHITECTURES)
+    # somebody else already defined it; leave it as is.
+  else()
+#    set(CMAKE_CUDA_ARCHITECTURES all-major)
+    set(CMAKE_CUDA_ARCHITECTURES native)
   endif()
 endif()
+
 
 # ==================================================================
 # this builds four variants of this library, that differ in how the
@@ -134,7 +107,11 @@ target_sources(cudaKDTree INTERFACE
 target_include_directories(cudaKDTree INTERFACE
   ${PROJECT_SOURCE_DIR}/
   )
-set_property(TARGET cudaKDTree PROPERTY PUBLIC CXX_STANDARD 14)
+set_property(TARGET cudaKDTree PROPERTY PUBLIC
+  CXX_STANDARD 14)
+# 'attach' current cmake_cuda_architectures to this library
+set_property(TARGET cudaKDTree PROPERTY PUBLIC 
+  CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
 
 
 
