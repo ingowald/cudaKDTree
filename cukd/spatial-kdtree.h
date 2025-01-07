@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2018-2023 Ingo Wald                                            //
+// Copyright 2018-2024 Ingo Wald                                            //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -97,8 +97,6 @@ namespace cukd {
   // IMPLEMENTATION
   // ==================================================================
 
-
-
   namespace spatial {
 
     template<typename point_t>
@@ -179,11 +177,10 @@ namespace cukd {
 
     template<typename point_t> inline __device__
     void atomic_grow(AtomicBox<point_t> &abox, const point_t &other)
-    // inline __device__ void atomic_grow(AtomicBox<point_t> &abox, const float3 &other)
     {
 #pragma unroll
       for (int d=0;d<abox.num_dims;d++) {
-        const int32_t enc = AtomicBox<point_t>::encode(get_coord(other,d));//get(other,d));
+        const int32_t enc = AtomicBox<point_t>::encode(get_coord(other,d));
         if (enc < abox.lower[d]) ::atomicMin(&abox.lower[d],enc);
         if (enc > abox.upper[d]) ::atomicMax(&abox.upper[d],enc);
       }
@@ -196,14 +193,12 @@ namespace cukd {
     template<typename T, typename count_t>
     inline void _ALLOC(GpuMemoryResource &memResource,
                        T *&ptr, count_t count, cudaStream_t s)
-    // { CUKD_CUDA_CALL(MallocManaged((void**)&ptr,count*sizeof(T))); }
     { memResource.malloc((void **)&ptr,count*sizeof(T),s); }
     
     template<typename T>
     inline void _FREE(GpuMemoryResource &memResource,
                       T *&ptr, cudaStream_t s)
     { memResource.free(ptr,s); }
-    // { CUKD_CUDA_CALL(Free((void*)ptr)); ptr = 0; }
     
     typedef enum : int8_t { OPEN_BRANCH, OPEN_NODE, DONE_NODE } NodeState;
 
@@ -398,8 +393,6 @@ namespace cukd {
         side = (atomicAdd(&split.tieBreaker,1) & 1);
       } else {
         const float center = get_coord(point,split.dim);
-        // 0.5f*(primBox.get_lower(split.dim)+
-        //                            primBox.get_upper(split.dim));
         side = (center >= split.pos);
       }
       int newNodeID = split.offset+side;
@@ -497,7 +490,6 @@ namespace cukd {
         <<<1,1,0,s>>>(buildState,
                       nodeStates,
                       tempNodes);
-      printf("init prims, numprims = %i\n",numPrims);
       initPrims<data_t,data_traits>
         <<<divRoundUp(numPrims,1024),1024,0,s>>>
         (tempNodes,
@@ -521,11 +513,9 @@ namespace cukd {
         CUKD_CUDA_CALL(MemcpyAsync(&numNodes,&buildState->numNodes,
                                    sizeof(numNodes),cudaMemcpyDeviceToHost,s));
         CUKD_CUDA_CALL(StreamSynchronize(s));
-        // printf("got numdone = %i\n",numDone);
         if (numNodes == numDone)
           break;
 
-        // printf("selecting splits, numnodes = %i\n",numNodes);
         selectSplits<data_t,data_traits>
           <<<divRoundUp(numNodes,1024),1024,0,s>>>
           (buildState,
@@ -535,7 +525,6 @@ namespace cukd {
         CUKD_CUDA_CALL(StreamSynchronize(s));
         
         numDone = numNodes;
-        // printf("updating prims, numnodes = %i\n",numNodes);
         updatePrims<data_t,data_traits>
           <<<divRoundUp(numPrims,1024),1024,0,s>>>
           (nodeStates,tempNodes,
