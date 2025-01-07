@@ -18,9 +18,8 @@ cmake_minimum_required(VERSION 3.18)
 cmake_policy(SET CMP0048 NEW)
 cmake_policy(SET CMP0104 NEW)
 set(CMAKE_BUILD_TYPE_INIT "Release")
-project(cudaKDTree VERSION 1.0.1 LANGUAGES C CXX CUDA)
+project(cudaKDTree VERSION 1.0.1 LANGUAGES C CXX)
 
-  
 if (NOT (${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_SOURCE_DIR}))
   set(CUKD_IS_SUBPROJECT ON)
 else()
@@ -36,30 +35,35 @@ option(BUILD_ALL_TESTS "Build entire type/dimension/kernel test matrix?" OFF)
 # ------------------------------------------------------------------
 if (CUKD_IS_SUBPROJECT)
   # we're used as a subproject (as we should be!) - parent HAS to have
-  # set CMAKE_CUDA_ARCHITECTURES. check if it did, and error out of not
-  if (NOT (DEFINED CMAKE_CUDA_ARCHITECTURES))
-    message(FATAL_ERROR "#cudaKDTree: no CMAKE_CUDA_ARCHITECTURES defined. Please define before doing add_subproject<thisLibrary>. If in doubt, do 'set(CMAKE_CUDA_ARCHITECTURES all-major)' or 'set(CMAKE_CUDA_ARCHITECTURES native)'")
-    return()
+  # set CMAKE_CUDA_ARCHITECTURES for our code to compile
+  # properly. check if it did, and error out of not
+  if ((NOT CMAKE_CUDA_ARCHITECTURES)
+      OR
+      ((${CMAKE_VERSION} VERSION_LESS 3.24)
+	AND
+	("${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "52")))
+    message(FATAL_ERROR "#cudaKDTree: no CMAKE_CUDA_ARCHITECTURES defined, or left for cmake to default to arch 5.2. This is almost certainly a configuration problem that will cause you some grief. Please define CMAKE_CUDA_ARCHITECTURES to the (list of) arch(s) you want to be building for, and do that before the `add_subdirectory()` call that includes cudaKDTree. If in doubt as to what arch to use, for cmake version >= 3.24 you can also set it to 'all-major' or 'native'")
   endif()
 else()
-  set(CUKD_CUDA_ARCHITECTURES "native" CACHE STRING "CUDA Arch(s) to build against")
-  mark_as_advanced(CUKD_CUDA_ARCHITECTURES)
-  
+  if (CMAKE_CUDA_ARCHITECTURES)
+    # set on the cmdline
+    set (CUKD_INIT_ARCHS "${CMAKE_CUDA_ARCHITECTURES}")
+  elseif (${CMAKE_VERSION} VERSION_LESS 3.24)
+    set (CUKD_INIT_ARCHS "70;80")
+  else()
+    set (CUKD_INIT_ARCHS "native")
+  endif()
+  set(CUKD_CUDA_ARCHITECTURES "${CUKD_INIT_ARCHS}"
+    CACHE STRING "CUDA Arch(s) to build against")
+
+  set(CMAKE_CUDA_ARCHITECTURES ${CUKD_CUDA_ARCHITECTURES})
+
   option(CUKD_ENABLE_STATS "Enable Stats tracking?" OFF)
   SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   SET(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-
-  # ------------------------------------------------------------------
-  # set cuda architectures, for our own local build
-  # ------------------------------------------------------------------
-  if (DEFINED CMAKE_CUDA_ARCHITECTURES)
-    # somebody else already defined it; leave it as is.
-  else()
-    set(CMAKE_CUDA_ARCHITECTURES ${CUKD_CUDA_ARCHITECTURES})
-  endif()
 endif()
-
+enable_language(CUDA)
 
 # ==================================================================
 # this builds four variants of this library, that differ in how the
@@ -82,13 +86,6 @@ endif()
 # as well as to pass that pointer to the query method.
 #
 # ==================================================================
-if (${CMAKE_CUDA_ARCHITECTURES} STREQUAL "50")
-  if (CUKD_ALLOW_ARCH_50)
-    # oh-kay... i assume you know what you're doing ..."
-  else()
-    message(FATAL_ERROR "#cudaKDTree: CMAKE_CUDA_ARCHITECTURES is set to '50'; this is almost certainly a default value that you won't actually want to use (and which may actually cause issues on newer GPUs). If you are absoltely sure that this is what you want to use, add `set(CUKD_ALLOW_ARCH_50 ON)` before including cudaKDTree to make this error messag go away.")
-  endif()
-endif()
 add_library(cudaKDTree INTERFACE)
 target_sources(cudaKDTree INTERFACE
   cukd/common.h
