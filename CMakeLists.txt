@@ -46,8 +46,15 @@ if (CUKD_IS_SUBPROJECT)
   endif()
 else()
   if (CMAKE_CUDA_ARCHITECTURES)
+    # CI test set this to 'all-major', but older cmake's do not have this.
+    if ((${CMAKE_VERSION} VERSION_LESS 3.24)
+	AND
+	(${CMAKE_CUDA_ARCHITECTURES} STREQUAL "all-major"))
+      set (CUKD_INIT_ARCHS "70;80")
+    else()
+      set (CUKD_INIT_ARCHS "${CMAKE_CUDA_ARCHITECTURES}")
+    endif()
     # set on the cmdline
-    set (CUKD_INIT_ARCHS "${CMAKE_CUDA_ARCHITECTURES}")
   elseif (${CMAKE_VERSION} VERSION_LESS 3.24)
     set (CUKD_INIT_ARCHS "70;80")
   else()
