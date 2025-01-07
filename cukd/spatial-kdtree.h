@@ -197,7 +197,7 @@ namespace cukd {
     inline void _ALLOC(GpuMemoryResource &memResource,
                        T *&ptr, count_t count, cudaStream_t s)
     // { CUKD_CUDA_CALL(MallocManaged((void**)&ptr,count*sizeof(T))); }
-    { memResource.malloc(&ptr,count*sizeof(T),s); }
+    { memResource.malloc((void **)&ptr,count*sizeof(T),s); }
     
     template<typename T>
     inline void _FREE(GpuMemoryResource &memResource,
@@ -516,30 +516,24 @@ namespace cukd {
       
       int numDone = 0;
       int numNodes;
-      PING;
       // ------------------------------------------------------------------      
       while (true) {
-      PING;
         CUKD_CUDA_CALL(MemcpyAsync(&numNodes,&buildState->numNodes,
                                    sizeof(numNodes),cudaMemcpyDeviceToHost,s));
-      PING;
         CUKD_CUDA_CALL(StreamSynchronize(s));
         // printf("got numdone = %i\n",numDone);
         if (numNodes == numDone)
           break;
 
         // printf("selecting splits, numnodes = %i\n",numNodes);
-      PING;
         selectSplits<data_t,data_traits>
           <<<divRoundUp(numNodes,1024),1024,0,s>>>
           (buildState,
            nodeStates,tempNodes,numNodes,
            buildConfig);
 
-      PING;
         CUKD_CUDA_CALL(StreamSynchronize(s));
         
-      PING;
         numDone = numNodes;
         // printf("updating prims, numnodes = %i\n",numNodes);
         updatePrims<data_t,data_traits>
@@ -557,7 +551,6 @@ namespace cukd {
       uint8_t *d_temp_storage = NULL;
       size_t temp_storage_bytes = 0;
       PrimState *sortedPrimStates;
-      PING;
       _ALLOC(memResource,sortedPrimStates,numPrims,s);
       cub::DeviceRadixSort::SortKeys((void*&)d_temp_storage, temp_storage_bytes,
                                      (uint64_t*)primStates,
@@ -569,7 +562,6 @@ namespace cukd {
                                      (uint64_t*)sortedPrimStates,
                                      numPrims,32,64,s);
       CUKD_CUDA_CALL(StreamSynchronize(s));
-      PING;
       _FREE(memResource,d_temp_storage,s);
       // ==================================================================
       // allocate and write BVH item list, and write offsets of leaf nodes
