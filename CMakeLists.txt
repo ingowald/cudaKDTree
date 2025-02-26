@@ -218,7 +218,13 @@ endif()
 
 
 if (NOT CUKD_IS_SUBPROJECT)
+  add_subdirectory(samples)
+endif()
+
+if (BUILD_ALL_TESTS)
   # add some unit tests
   include(CTest) 
   add_subdirectory(testing)
 endif()
+
+
