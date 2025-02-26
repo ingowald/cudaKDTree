@@ -14,7 +14,7 @@
 // limitations under the License.                                           //
 // ======================================================================== //
 
-#define CUKD_ENABLE_STATS 1
+// #define CUKD_ENABLE_STATS 1
 
 #include "cukd/builder.h"
 #include "cukd/spatial-kdtree.h"
@@ -77,7 +77,7 @@ floatN *generatePoints(int N)
   // std::random_device rd(seq());  // Will be used to obtain a seed for the random number engine
   std::default_random_engine rd(seq);
   std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
-  std::uniform_int_distribution<> dist(0,N);
+  std::uniform_int_distribution<> dist(0,1000000);
 
   std::cout << "generating " << N << " uniform random points" << std::endl;
   floatN *d_points = 0;
@@ -90,6 +90,54 @@ floatN *generatePoints(int N)
     for (int d=0;d<num_dims;d++) {
       ((float *)&d_points[i])[d] = (float)dist(gen);
     }
+  return d_points;
+}
+
+floatN *generatePoints_clustered(int N)
+{
+  enum { num_dims = num_dims_of<floatN>::value };
+  static int g_seed = 3214567;
+  std::seed_seq seq{g_seed++};
+
+  int Nclusters = int(sqrtf(N));
+
+  std::default_random_engine rd(seq);
+  std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
+  std::uniform_int_distribution<> dist(0,1000000);
+  
+  std::cout << "generating " << N << " random points clustered into "
+            << Nclusters << " clusters" << std::endl;
+
+  std::vector<floatN> cellOfCluster(Nclusters);
+  for (int i=0;i<Nclusters;i++)
+    for (int d=0;d<num_dims;d++)
+      ((float*)&cellOfCluster[i])[d] = i;
+  for (int d=1;d<num_dims;d++)
+    // permute the d'th dim
+    for (int i=Nclusters-1;i>0;--i) {
+      int j = dist(gen) % i;
+      if (i != j)
+        std::swap(((float*)&cellOfCluster[i])[d],
+                  ((float*)&cellOfCluster[j])[d]);
+    }
+  
+  floatN *d_points = 0;
+  cudaMallocManaged((char **)&d_points,N*sizeof(*d_points));
+  if (!d_points)
+    throw std::runtime_error("could not allocate points mem...");
+  
+  for (int i=0;i<N;i++) {
+    int cluster = i % Nclusters;
+    for (int d=0;d<num_dims;d++) {
+      int cell_d = ((float*)&cellOfCluster[cluster])[d];
+      int cell_begin = int(cell_d * N) / Nclusters;
+      int cell_end = int((cell_d+1) * N) / Nclusters;
+      int cell_size = cell_end-cell_begin;
+      int r = dist(gen);
+      float coord = cell_begin + r % cell_size;
+      ((float *)&d_points[i])[d] = coord;
+    }
+  }
   return d_points;
 }
 
@@ -264,14 +312,16 @@ void run_kernel(float  *d_results,
   CUKD_CUDA_SYNC_CHECK();
   if (firstTime) {
     cudaDeviceSynchronize();
-    CUKD_STATS(
-               double checkSum = 0.;
-               for (int i=0;i<numQueries;i++)
-                 checkSum += d_results[i];
-               std::cout << "CHECKSUM " << checkSum << std::endl;
-               std::cout << "KDTREE_STATS " << *d_stats << " CHECKSUM " << checkSum << std::endl;
-               std::cout << "NICE_STATS " << common::prettyNumber(*d_stats) << std::endl;
-               );
+#if CUKD_ENABLE_STATS
+    double checkSum = 0.;
+    for (int i=0;i<numQueries;i++)
+      checkSum += d_results[i];
+    std::cout << "CHECKSUM " << checkSum << std::endl;
+    std::cout << "KDTREE_STATS " << *d_stats << std::endl;
+    std::cout << "NICE_STATS " << common::prettyNumber(*d_stats) << std::endl;
+#else
+    std::cout << "NICE_STATS 0"  << std::endl;
+#endif
     cudaFree(d_stats);
     firstTime = false;
   }
@@ -470,6 +520,7 @@ int main(int ac, const char **av)
   int    nRepeats = 1;
   size_t numQueries = 1000000;
   float  cutOffRadius = std::numeric_limits<float>::infinity();
+  bool   clustered = false;
 #if SPATIAL
   cukd::BuildConfig buildConfig = {};
 #endif
@@ -486,6 +537,8 @@ int main(int ac, const char **av)
       numQueries = atoi(av[++i]);
     else if (arg == "-nr")
       nRepeats = atoi(av[++i]);
+    else if (arg == "--clustered")
+      clustered = true;
 #if SPATIAL
     else if (arg == "-lt")
       buildConfig.makeLeafThreshold = std::stoi(av[++i]);
@@ -506,7 +559,7 @@ int main(int ac, const char **av)
   
   floatN *d_inputs
     = numPoints
-    ? generatePoints(numPoints)
+    ? (clustered?generatePoints_clustered(numPoints):generatePoints(numPoints))
     : loadPoints<floatN>("data_points",numPoints);
 #if EXPLICIT_DIM
   PointAndDim *d_points;
@@ -580,7 +633,12 @@ int main(int ac, const char **av)
     double t1 = getCurrentTime();
     std::cout << "done " << nRepeats
               << " iterations of " << numQueries
-              << " fcp queries, took " << prettyDouble(t1-t0)
+#if USE_KNN
+              << "knn "
+#else
+              << "fcp "
+#endif
+              << " queries, took " << prettyDouble(t1-t0)
               << "s" << std::endl;
     std::cout << "that is " << prettyDouble(numQueries*nRepeats/(t1-t0))
               << " queries/s" << std::endl;

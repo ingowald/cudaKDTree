@@ -36,6 +36,14 @@ namespace cukd {
     
     scalar_t cullDist = result.initialCullDist2();
 
+    bool dbg = 0; //threadIdx.x==0 && blockIdx.x == 0;
+    
+    if (dbg) printf("stackbased %f %f\n",
+                    get_coord(queryPoint,0),
+                    get_coord(queryPoint,1)
+                    );
+    
+    
     /* can do at most 2**30 points... */
     struct StackEntry {
       int   nodeID;
@@ -55,9 +63,17 @@ namespace cukd {
           : (BinaryTree::levelOf(curr) % num_dims);
         CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
         const data_t &curr_node  = d_nodes[curr];
-        const auto sqrDist = sqrDistance(data_traits::get_point(curr_node),queryPoint);
+        const auto sqrDist = sqrDistance(data_traits::get_point(curr_node),
+                                         queryPoint);
+        if (dbg) printf("=== %i dim %i sqrDist %f\n",curr,curr_dim,sqrDist);
         
         cullDist = result.processCandidate(curr,sqrDist);
+        if (dbg)
+          printf("node %i pt %f %f sqrDist %f cullDist %f\n",
+                 curr,
+                 get_coord(data_traits::get_point(curr_node),0),
+                 get_coord(data_traits::get_point(curr_node),1),
+                 sqrDist,cullDist);
 
         const auto node_coord   = data_traits::get_coord(curr_node,curr_dim);
         const auto query_coord  = get_coord(queryPoint,curr_dim);
@@ -69,6 +85,8 @@ namespace cukd {
         const int farChild   = leftIsClose?rChild:lChild;
         
         const float sqrDistToPlane = sqr(query_coord - node_coord);
+        if (dbg) printf("sqrDist %f cullDist %f\n",
+                        sqrDistToPlane,cullDist);    
         if (sqrDistToPlane < cullDist && farChild < numPoints) {
           stackPtr->nodeID  = farChild;
           stackPtr->sqrDist = sqrDistToPlane;

@@ -64,7 +64,6 @@ else()
     CACHE STRING "CUDA Arch(s) to build against")
 
   set(CMAKE_CUDA_ARCHITECTURES ${CUKD_CUDA_ARCHITECTURES})
-  option(CUKD_ENABLE_STATS "Enable Stats tracking?" OFF)
   SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   SET(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -138,6 +137,12 @@ if (BUILD_ALL_TESTS)
   # test 2, 3, 4, and 8-dimensoinal data; the latter should - if it
   # works for N=8, work for any other N>4
   #  set(DIMS_TO_BUILD 3)
+  option(CUKD_ENABLE_STATS "Enable Stats tracking?" OFF)
+  if (CUKD_ENABLE_STATS)
+    set(CUKD_ENABLE_STATS_VALUE 1)
+  else()
+    set(CUKD_ENABLE_STATS_VALUE 0)
+  endif()
   set(DIMS_TO_BUILD 2 3 4 8)
   foreach (D IN ITEMS ${DIMS_TO_BUILD})
     # test all four possible traversal methosds
@@ -147,15 +152,17 @@ if (BUILD_ALL_TESTS)
       target_link_libraries(cukd_float${D}-knn-${method} cudaKDTree)
       target_compile_definitions(cukd_float${D}-knn-${method}
 	PUBLIC
+	-DCUKD_ENABLE_STATS=${CUKD_ENABLE_STATS_VALUE}
 	-DD_FROM_CMAKE=${D}
 	-DUSE_KNN=1
 	-DTRAVERSAL_METHOD=${method})
-
+	
       # test knn queries, with 'explicit-dim' trees
       add_executable(cukd_float${D}-knn-${method}-xd testing/floatN-knn-and-fcp.cu)
       target_link_libraries(cukd_float${D}-knn-${method}-xd cudaKDTree)
       target_compile_definitions(cukd_float${D}-knn-${method}-xd
 	PUBLIC
+	-DCUKD_ENABLE_STATS=${CUKD_ENABLE_STATS_VALUE}
 	-DD_FROM_CMAKE=${D}
 	-DEXPLICIT_DIM=1
 	-DUSE_KNN=1
@@ -166,6 +173,7 @@ if (BUILD_ALL_TESTS)
       target_link_libraries(cukd_float${D}-fcp-${method} cudaKDTree)
       target_compile_definitions(cukd_float${D}-fcp-${method}
 	PUBLIC
+	-DCUKD_ENABLE_STATS=${CUKD_ENABLE_STATS_VALUE}
 	-DD_FROM_CMAKE=${D}
 	-DTRAVERSAL_METHOD=${method})
 
@@ -174,6 +182,7 @@ if (BUILD_ALL_TESTS)
       target_link_libraries(cukd_float${D}-fcp-${method}-xd cudaKDTree)
       target_compile_definitions(cukd_float${D}-fcp-${method}-xd
 	PUBLIC
+	-DCUKD_ENABLE_STATS=${CUKD_ENABLE_STATS_VALUE}
 	-DD_FROM_CMAKE=${D}
 	-DEXPLICIT_DIM=1
 	-DTRAVERSAL_METHOD=${method})
@@ -187,6 +196,7 @@ if (BUILD_ALL_TESTS)
       target_link_libraries(cukd_float${D}-knn-spatial-${method} cudaKDTree)
       target_compile_definitions(cukd_float${D}-knn-spatial-${method}
 	PUBLIC
+	-DCUKD_ENABLE_STATS=${CUKD_ENABLE_STATS_VALUE}
 	-DD_FROM_CMAKE=${D}
 	-DSPATIAL=1
 	-DUSE_KNN=1
@@ -197,6 +207,7 @@ if (BUILD_ALL_TESTS)
       target_link_libraries(cukd_float${D}-fcp-spatial-${method} cudaKDTree)
       target_compile_definitions(cukd_float${D}-fcp-spatial-${method}
 	PUBLIC
+	-DCUKD_ENABLE_STATS=${CUKD_ENABLE_STATS_VALUE}
 	-DSPATIAL=1
 	-DD_FROM_CMAKE=${D}
 	-DTRAVERSAL_METHOD=${method})
