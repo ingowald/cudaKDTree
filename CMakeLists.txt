@@ -119,6 +119,12 @@ set_property(TARGET cudaKDTree PROPERTY PUBLIC
 if (NOT CUKD_IS_SUBPROJECT)
   add_executable(cukd_sample sample.cu)
   target_link_libraries(cukd_sample cudaKDTree)
+
+  find_package(MPI)
+  if (MPI_FOUND) 
+    add_executable(cukd_mpiHugeQuery samples/mpiHugeQuery.cu)
+    target_link_libraries(cukd_mpiHugeQuery PUBLIC cudaKDTree MPI::MPI_CXX)
+  endif()
 endif()
 
 
