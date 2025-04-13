@@ -51,7 +51,7 @@ else()
   elseif (${CMAKE_VERSION} VERSION_LESS 3.24)
     set (CUKD_INIT_ARCHS "70;80")
   else()
-    set (CUKD_INIT_ARCHS "native")
+    set (CUKD_INIT_ARCHS "all-major")
   endif()
   set(CUKD_CUDA_ARCHITECTURES "${CUKD_INIT_ARCHS}"
     CACHE STRING "CUDA Arch(s) to build against")
