@@ -23,7 +23,11 @@ struct MPIComm {
 };
 
 template<typename T>
-std::vector<T> readFilePortion(std::string inFileName,int rank, int size)
+std::vector<T> readFilePortion(std::string inFileName,
+                               int rank, int size,
+                               size_t *pBegin = 0,
+                               size_t *pNumTotal = 0
+                               )
 {
   std::ifstream in(inFileName.c_str(),std::ios::binary);
   in.seekg(0,std::ios::end);
@@ -31,7 +35,9 @@ std::vector<T> readFilePortion(std::string inFileName,int rank, int size)
   in.seekg(0,std::ios::beg);
 
   size_t numData = numBytes / sizeof(T);
+  if (pNumTotal) *pNumTotal = numData;
   size_t begin = numData * (rank+0)/size;
+  if (pBegin) *pBegin = begin;
   size_t end   = numData * (rank+1)/size;
   in.seekg(begin*sizeof(T),std::ios::beg);
   
@@ -76,11 +82,13 @@ __global__ void extractFinalResult(float *d_finalResults,
   float result = cl.returnValue();
   if (!isinf(result))
     result = sqrtf(result);
+
   d_finalResults[tid] = result;
  }
   
 int main(int ac, char **av)
 {
+  MPI_Init(&ac,&av);
   float maxRadius = std::numeric_limits<float>::infinity();
   int   k = 0;
   int   gpuAffinityCount = 0;
@@ -98,7 +106,7 @@ int main(int ac, char **av)
     else if (arg == "-g")
       gpuAffinityCount = std::atoi(av[++i]);
     else if (arg == "-k")
-      maxRadius = std::atoi(av[++i]);
+      k = std::atoi(av[++i]);
     else
       usage("unknown cmdline arg '"+arg+"'");
   }
@@ -112,8 +120,10 @@ int main(int ac, char **av)
 
   MPIComm mpi(MPI_COMM_WORLD);
 
+  size_t begin = 0;
+  size_t numPointsTotal = 0;
   std::vector<float3> myPoints
-    = readFilePortion<float3>(inFileName,mpi.rank,mpi.size);
+    = readFilePortion<float3>(inFileName,mpi.rank,mpi.size,&begin,&numPointsTotal);
   std::cout << "#" << mpi.rank << "/" << mpi.size
             << ": got " << myPoints.size() << " points to work on"
             << std::endl;
@@ -123,6 +133,7 @@ int main(int ac, char **av)
     int deviceID = mpi.rank % gpuAffinityCount;
     std::cout << "#" << mpi.rank << "/" << mpi.size
               << "setting active GPU #" << deviceID << std::endl;
+    
     CUKD_CUDA_CALL(SetDevice(deviceID));
   }
 
@@ -184,4 +195,17 @@ int main(int ac, char **av)
   extractFinalResult<<<divRoundUp(numQueries,1024),1024>>>
     (d_finalResults,numQueries,k,d_cand);
   CUKD_CUDA_CALL(DeviceSynchronize());
+
+  MPI_Barrier(mpi.comm);
+
+  for (int i=0;i<mpi.size;i++) {
+    MPI_Barrier(mpi.comm);
+    if (i == mpi.rank) {
+      FILE *file = fopen(outFileName.c_str(),i==0?"wb":"ab");
+      fwrite(d_finalResults,sizeof(float),numQueries,file);
+      fclose(file);
+    }
+    MPI_Barrier(mpi.comm);
+  }
+  MPI_Finalize();
 }
