@@ -151,6 +151,7 @@ int main(int ac, char **av)
   int numQueries = myPoints.size();
   uint64_t *d_cand;
   CUKD_CUDA_CALL(Malloc((void **)&d_queries,N*sizeof(float3)));
+  CUKD_CUDA_CALL(Memcpy(d_queries,myPoints.data(),N*sizeof(float3),cudaMemcpyDefault));
   CUKD_CUDA_CALL(Malloc((void **)&d_cand,N*k*sizeof(uint64_t)));
 
   // -----------------------------------------------------------------------------
