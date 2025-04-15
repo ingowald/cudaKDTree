@@ -1,3 +1,19 @@
+// ======================================================================== //
+// Copyright 2025-2025 Ingo Wald                                            //
+//                                                                          //
+// Licensed under the Apache License, Version 2.0 (the "License");          //
+// you may not use this fle except in compliance with the License.         //
+// You may obtain a copy of the License at                                  //
+//                                                                          //
+//     http://www.apache.org/licenses/LICENSE-2.0                           //
+//                                                                          //
+// Unless required by applicable law or agreed to in writing, software      //
+// distributed under the License is distributed on an "AS IS" BASIS,        //
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. //
+// See the License for the specific language governing permissions and      //
+// limitations under the License.                                           //
+// ======================================================================== //
+
 #include "cukd/cukd-math.h"
 #include "cukd/traverse-stack-free.h"
 #include "cukd/knn.h"
@@ -119,6 +135,12 @@ int main(int ac, char **av)
     usage("no k specified, or invalid k value");
 
   MPIComm mpi(MPI_COMM_WORLD);
+  if (gpuAffinityCount) {
+    int deviceID = mpi.rank % gpuAffinityCount;
+    std::cout << "#" << mpi.rank << "/" << mpi.size
+              << "setting active GPU #" << deviceID << std::endl;
+    CUKD_CUDA_CALL(SetDevice(deviceID));
+  }
 
   size_t begin = 0;
   size_t numPointsTotal = 0;
@@ -127,15 +149,6 @@ int main(int ac, char **av)
   std::cout << "#" << mpi.rank << "/" << mpi.size
             << ": got " << myPoints.size() << " points to work on"
             << std::endl;
-
-
-  if (gpuAffinityCount) {
-    int deviceID = mpi.rank % gpuAffinityCount;
-    std::cout << "#" << mpi.rank << "/" << mpi.size
-              << "setting active GPU #" << deviceID << std::endl;
-    
-    CUKD_CUDA_CALL(SetDevice(deviceID));
-  }
 
   float3 *d_tree = 0;
   float3 *d_tree_recv = 0;
@@ -151,6 +164,7 @@ int main(int ac, char **av)
   int numQueries = myPoints.size();
   uint64_t *d_cand;
   CUKD_CUDA_CALL(Malloc((void **)&d_queries,N*sizeof(float3)));
+  CUKD_CUDA_CALL(Memcpy(d_queries,myPoints.data(),N*sizeof(float3),cudaMemcpyDefault));
   CUKD_CUDA_CALL(Malloc((void **)&d_cand,N*k*sizeof(uint64_t)));
 
   // -----------------------------------------------------------------------------
