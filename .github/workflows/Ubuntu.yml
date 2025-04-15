@@ -25,31 +25,31 @@ jobs:
           - os: ubuntu-22.04
             cuda: "12.0"
             gcc: 11
-          - os: ubuntu-22.04
-            cuda: "11.8"
-            gcc: 10
-          - os: ubuntu-22.04
-            cuda: "11.7"
-            gcc: 10
-          # 20.04 supports CUDA 11.0+
-          - os: ubuntu-20.04
-            cuda: "11.6"
-            gcc: 10
-          - os: ubuntu-20.04
-            cuda: "11.5"
-            gcc: 10
-          - os: ubuntu-20.04
-            cuda: "11.4"
-            gcc: 10
-          - os: ubuntu-20.04
-            cuda: "11.3"
-            gcc: 10
-          - os: ubuntu-20.04
-            cuda: "11.2"
-            gcc: 10
-          - os: ubuntu-20.04
-            cuda: "11.0"
-            gcc: 9
+          # - os: ubuntu-22.04
+          #   cuda: "11.8"
+          #   gcc: 10
+          # - os: ubuntu-22.04
+          #   cuda: "11.7"
+          #   gcc: 10
+          # # 20.04 supports CUDA 11.0+
+          # - os: ubuntu-20.04
+          #   cuda: "11.6"
+          #   gcc: 10
+          # - os: ubuntu-20.04
+          #   cuda: "11.5"
+          #   gcc: 10
+          # - os: ubuntu-20.04
+          #   cuda: "11.4"
+          #   gcc: 10
+          # - os: ubuntu-20.04
+          #   cuda: "11.3"
+          #   gcc: 10
+          # - os: ubuntu-20.04
+          #   cuda: "11.2"
+          #   gcc: 10
+          # - os: ubuntu-20.04
+          #   cuda: "11.0"
+          #   gcc: 9
           # 18.04 supports CUDA 10.1+ (gxx <= 8), but were deprecated on 2022-08-08 and unsupported from 2023-04-01
           # - os: ubuntu-18.04
           #   cuda: "10.2"

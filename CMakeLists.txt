@@ -51,7 +51,7 @@ else()
   elseif (${CMAKE_VERSION} VERSION_LESS 3.24)
     set (CUKD_INIT_ARCHS "70;80")
   else()
-    set (CUKD_INIT_ARCHS "native")
+    set (CUKD_INIT_ARCHS "all-major")
   endif()
   set(CUKD_CUDA_ARCHITECTURES "${CUKD_INIT_ARCHS}"
     CACHE STRING "CUDA Arch(s) to build against")
@@ -119,6 +119,12 @@ set_property(TARGET cudaKDTree PROPERTY PUBLIC
 if (NOT CUKD_IS_SUBPROJECT)
   add_executable(cukd_sample sample.cu)
   target_link_libraries(cukd_sample cudaKDTree)
+
+  find_package(MPI)
+  if (MPI_FOUND) 
+    add_executable(cukd_mpiHugeQuery samples/mpiHugeQuery.cu)
+    target_link_libraries(cukd_mpiHugeQuery PUBLIC cudaKDTree MPI::MPI_CXX)
+  endif()
 endif()
 
 
