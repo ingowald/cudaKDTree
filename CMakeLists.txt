@@ -28,6 +28,41 @@ endif()
 
 option(BUILD_ALL_TESTS "Build entire type/dimension/kernel test matrix?" OFF)
 
+# ------------------------------------------------------------------
+# OpenMP support
+# ------------------------------------------------------------------
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+  
+  # Fix for OpenMP library path issues
+  string(REPLACE ";" " " OpenMP_CXX_LIBRARIES_FIXED "${OpenMP_CXX_LIBRARIES}")
+  set(OpenMP_CXX_LIBRARIES "${OpenMP_CXX_LIBRARIES_FIXED}")
+
+  if(WIN32)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /openmp:llvm")
+  else()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+  endif()
+
+endif()
+
+# ------------------------------------------------------------------
+# CUDA and OpenMP integration
+# ------------------------------------------------------------------
+# Ensure CUDA compiler can use OpenMP
+if(OpenMP_CXX_FOUND)  
+  if(WIN32)
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=/openmp:llvm")
+  else()
+    # For NVCC compiler, need to pass OpenMP flags differently
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=${OpenMP_CXX_FLAGS}")
+
+    set(CMAKE_CUDA_HOST_LINK_LAUNCHER "${CMAKE_CXX_COMPILER}")
+    set(CMAKE_CUDA_STANDARD_LIBRARIES "${CMAKE_CUDA_STANDARD_LIBRARIES} ${OpenMP_CXX_LIBRARIES}")
+  endif()
+endif()
+
 #add_subdirectory(../bitonic ext_bitonic EXCLUDE_FROM_ALL)
 
 # ------------------------------------------------------------------
@@ -120,10 +155,27 @@ if (NOT CUKD_IS_SUBPROJECT)
   add_executable(cukd_sample sample.cu)
   target_link_libraries(cukd_sample cudaKDTree)
 
+  add_executable(cukd_sampleHost sampleHost.cu)
+  target_link_libraries(cukd_sampleHost PUBLIC cudaKDTree)
+
+  if(OpenMP_CXX_FOUND)
+    target_link_libraries(cukd_sampleHost PUBLIC OpenMP::OpenMP_CXX)
+    target_compile_definitions(cukd_sampleHost PUBLIC OPENMP_FOUND)
+  endif()
+
   find_package(MPI)
   if (MPI_FOUND) 
     add_executable(cukd_mpiHugeQuery samples/mpiHugeQuery.cu)
     target_link_libraries(cukd_mpiHugeQuery PUBLIC cudaKDTree MPI::MPI_CXX)
+
+    add_executable(cukd_mpiHugeQueryHost samples/mpiHugeQueryHost.cu)
+    target_link_libraries(cukd_mpiHugeQueryHost PUBLIC cudaKDTree MPI::MPI_CXX)
+
+    if(OpenMP_CXX_FOUND)
+      target_link_libraries(cukd_mpiHugeQueryHost PUBLIC OpenMP::OpenMP_CXX)
+      target_compile_definitions(cukd_mpiHugeQueryHost PUBLIC OPENMP_FOUND)
+    endif()
+
   endif()
 endif()
 

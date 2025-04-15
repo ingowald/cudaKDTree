@@ -24,7 +24,7 @@ namespace cukd {
   template<typename result_t,
            typename data_t,
            typename data_traits=default_data_traits<data_t>>
-  inline __device__
+  inline __host__ __device__
   void traverse_default(result_t &result,
                         typename data_traits::point_t queryPoint,
                         const data_t *d_nodes,

@@ -170,10 +170,10 @@ struct PointPlusPayload_traits
   : public cukd::default_data_traits<float3>
 {
   using point_t = float3;
-  static inline __device__ __host__
+  static inline __host__ __device__
   float3 &get_point(PointPlusPayload &data) { return data.position; }
    
-  static inline __device__ __host__
+  static inline __host__ __device__
   float  get_coord(const PointPlusPayload &data, int dim)
   { return cukd::get_coord(get_point(data),dim); }
 };
@@ -212,7 +212,7 @@ struct PackedPointPlusPayload_traits
   : public cukd::default_data_traits<float3>
 {
    using point_t = float3;
-   static inline __device__ __host__
+   static inline __host__ __device__
    float3 &get_point(float4 &packedPointAndPayload) 
    { return make_float3(packedPointAndPayload.x,....); }
 };
@@ -257,7 +257,7 @@ struct Photon_traits
 {
    enum { has_explicit_dim = true };
 
-   static inline __device__ __host__
+   static inline __host__ __device__
    float3 &get_point(Photon &photon) 
    { return photon.position; }
 
