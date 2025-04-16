@@ -327,7 +327,8 @@ namespace cukd {
         CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));
         auto dp = data_traits::get_point(tree.data[primID]);
           
-        const auto sqrDist = sqrDistance(data_traits::get_point(tree.data[primID]),queryPoint);
+        const auto sqrDist = sqrDistance(data_traits::get_point(tree.data[primID]),
+                                         queryPoint);
         cullDist = result.processCandidate(primID,sqrDist);
       }
       
@@ -375,6 +376,7 @@ namespace cukd {
     int nodeID = 0;
     node_t node;
     int numSteps = 0;
+
     while (true) {
       while (true) {
         CUKD_STATS(if (cukd::g_traversalStats) ::atomicAdd(cukd::g_traversalStats,1));

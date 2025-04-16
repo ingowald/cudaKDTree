@@ -48,7 +48,7 @@ namespace cukd {
     returned. I.e., in the FixedCandidateList the result candidates
     will be stored in ascending order (and in positions 0..j if j<k
     get found!); while the HeapCandidateList does not guarantee
-    tiehr of these condisions (for heap, if j<k items get found some
+    either of these condisions (for heap, if j<k items get found some
     of the k slots will return an ID of -1) */
   template<int k>
   struct CandidateList : public BaseCandidateList {
