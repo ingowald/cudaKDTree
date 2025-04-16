@@ -106,8 +106,8 @@ namespace cukd {
       get called for this type because we have set has_explicit_dim
       set to false. note traversal should ONLY ever call this
       function for data_t's that define has_explicit_dim to true */
-    static inline __device__ int  get_dim(const data_t &) { return -1; }
-    static inline __device__ void set_dim(data_t &, int) {}
+    static inline __host__ __device__ int  get_dim(const data_t &) { return -1; }
+    static inline __host__ __device__ void set_dim(data_t &, int) {}
     /*! @} */
   };
 

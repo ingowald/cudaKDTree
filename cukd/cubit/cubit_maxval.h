@@ -28,21 +28,21 @@ namespace cubit {
   inline int divRoundUp(int a, int b) { return (a+b-1)/b; }
 
   template<typename T>
-  inline __device__ T max_value();
+  inline __host__ __device__ T max_value();
 
   template<>
-  inline __device__ uint32_t max_value() { return UINT_MAX; };
+  inline __host__ __device__ uint32_t max_value() { return UINT_MAX; };
   template<>
-  inline __device__ int32_t max_value() { return INT_MAX; };
+  inline __host__ __device__ int32_t max_value() { return INT_MAX; };
   template<>
-  inline __device__ uint64_t max_value() { return ULONG_MAX; };
+  inline __host__ __device__ uint64_t max_value() { return ULONG_MAX; };
   template<>
-  inline __device__ float max_value() { return INFINITY; };
+  inline __host__ __device__ float max_value() { return INFINITY; };
   template<>
-  inline __device__ double max_value() { return INFINITY; };
+  inline __host__ __device__ double max_value() { return INFINITY; };
   
   template<typename key_t>
-  inline static __device__ void putInOrder(key_t *const __restrict__ keys,
+  inline static __host__ __device__ void putInOrder(key_t *const __restrict__ keys,
                                            uint32_t N,
                                            uint32_t a,
                                            uint32_t b)
@@ -57,7 +57,7 @@ namespace cubit {
   }
     
   template<typename key_t>
-  inline static __device__ void putInOrder(key_t *const __restrict__ keys,
+  inline static __host__ __device__ void putInOrder(key_t *const __restrict__ keys,
                                            uint64_t N,
                                            uint64_t a,
                                            uint64_t b)
@@ -72,7 +72,7 @@ namespace cubit {
   }
 
   template<typename key_t>
-  inline static __device__ void shm_sort(key_t *const __restrict__ keys,
+  inline static __host__ __device__ void shm_sort(key_t *const __restrict__ keys,
                                          uint32_t a,
                                          uint32_t b)
   {
@@ -83,7 +83,7 @@ namespace cubit {
   }
 
   template<typename key_t, typename val_t>
-  inline static __device__ void shm_sort(key_t *const __restrict__ keys,
+  inline static __host__ __device__ void shm_sort(key_t *const __restrict__ keys,
                                          val_t *const __restrict__ vals,
                                          uint32_t a,
                                          uint32_t b)
@@ -99,7 +99,7 @@ namespace cubit {
   }
 
   template<typename key_t>
-  inline static __device__ void gmem_sort(key_t *const keys,
+  inline static __host__ __device__ void gmem_sort(key_t *const keys,
                                           uint32_t a,
                                           uint32_t b)
   {
@@ -112,7 +112,7 @@ namespace cubit {
   }
   
   template<typename key_t, typename val_t>
-  inline static __device__ void gmem_sort(key_t *const keys,
+  inline static __host__ __device__ void gmem_sort(key_t *const keys,
                                           val_t *const vals,
                                           uint32_t a,
                                           uint32_t b)

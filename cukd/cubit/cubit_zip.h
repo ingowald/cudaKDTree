@@ -60,7 +60,7 @@ namespace cubit {
     // enum { block_size = 1024 };
 
     template<typename U, typename V, typename Less>
-    inline __device__
+    inline __host__ __device__
     void shm_sort(bool *const __restrict__ valid,
                   U    *const __restrict__ us,
                   V    *const __restrict__ vs,
@@ -81,7 +81,7 @@ namespace cubit {
     }
 
     template<typename U, typename V, typename Less>
-    inline __device__
+    inline __host__ __device__
     void gmem_sort(U *const us,
                    V *const vs,
                    uint32_t a,

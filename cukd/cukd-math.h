@@ -249,14 +249,14 @@ namespace cukd {
   }
 
   template <typename scalar_t>
-  inline __device__ __host__
+  inline __host__ __device__
   auto sqr(scalar_t f) { return f * f; }
 
   template <typename scalar_t>
-  inline __device__ __host__
+  inline __host__ __device__
   scalar_t sqrt(scalar_t f);
 
-  template<> inline __device__ __host__
+  template<> inline __host__ __device__
   float sqrt(float f) { return ::sqrtf(f); }
 
 
@@ -267,7 +267,7 @@ namespace cukd {
 
   
   template <typename point_traits_a, typename point_traits_b=point_traits_a>
-  inline __device__ __host__
+  inline __host__ __device__
   auto sqrDistance(const typename point_traits_a::point_t& a,
                    const typename point_traits_b::point_t& b)
   {
@@ -280,7 +280,7 @@ namespace cukd {
   }
 
   template <typename point_traits_a, typename point_traits_b=point_traits_a>
-  inline __device__ __host__
+  inline __host__ __device__
   auto distance(const typename point_traits_a::point_t& a,
                 const typename point_traits_b::point_t& b)
   {

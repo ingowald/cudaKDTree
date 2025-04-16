@@ -100,7 +100,7 @@ namespace cukd {
     
     template<typename data_t, typename data_traits>
     struct ZipLess {
-      inline __device__
+      inline __host__ __device__
       bool operator()(const cubit::tuple<uint32_t, data_t> &a,
                       const cubit::tuple<uint32_t, data_t> &b) const;
       int dim;
@@ -317,7 +317,7 @@ namespace cukd {
       order, and the second the minor one (for those of same major
       sort key) */
     template<typename data_t, typename data_traits>
-    inline __device__
+    inline __host__ __device__
     bool ZipLess<data_t,data_traits>::operator()
       (const cubit::tuple<uint32_t, data_t> &a,
        const cubit::tuple<uint32_t, data_t> &b) const

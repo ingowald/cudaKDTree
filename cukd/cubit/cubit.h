@@ -48,7 +48,7 @@ namespace cubit {
   enum { block_size = 1024 };
 
   template<typename key_t>
-  inline static __device__ void shm_sort(bool  *const __restrict__ valid,
+  inline static __host__ __device__ void shm_sort(bool  *const __restrict__ valid,
                                          key_t *const __restrict__ keys,
                                          uint32_t a,
                                          uint32_t b)
@@ -63,7 +63,7 @@ namespace cubit {
   }
 
   template<typename key_t, typename val_t>
-  inline static __device__ void shm_sort(bool  *const __restrict__ valid,
+  inline static __host__ __device__ void shm_sort(bool  *const __restrict__ valid,
                                          key_t *const __restrict__ keys,
                                          val_t *const __restrict__ vals,
                                          uint32_t a,
@@ -83,7 +83,7 @@ namespace cubit {
   }
 
   template<typename key_t>
-  inline static __device__ void gmem_sort(key_t *const keys,
+  inline static __host__ __device__ void gmem_sort(key_t *const keys,
                                           uint32_t a,
                                           uint32_t b)
   {
@@ -96,7 +96,7 @@ namespace cubit {
   }
   
   template<typename key_t, typename val_t>
-  inline static __device__ void gmem_sort(key_t *const keys,
+  inline static __host__ __device__ void gmem_sort(key_t *const keys,
                                           val_t *const vals,
                                           uint32_t a,
                                           uint32_t b)

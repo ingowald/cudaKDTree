@@ -345,7 +345,7 @@ namespace cukd {
 /* is supplied externally (from cmake) this adds a "int *stats"
    paramater to all query functions, and makes the traversal routines
    do atomic counting of traversal steps */
-#if CUKD_ENABLE_STATS
+#if defined(CUKD_ENABLE_STATS) && defined(__CUDA_ARCH__)
 # define CUKD_STATS(a) a
 # define CUKD_STATS_ARG(a,b) a,
 #else

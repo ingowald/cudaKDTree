@@ -72,42 +72,45 @@ void usage(const std::string &error)
 
 
 
-__global__ void runQuery(float3 *tree, int N,
-                         uint64_t *candidateLists, int k, float maxRadius,
-                         float3 *queries, int numQueries,
-                         int round)
+void runQuery_host(float3 *tree, size_t N,
+                    uint64_t *candidateLists, int k, float maxRadius,
+                    float3 *queries, size_t numQueries,
+                    int round)
 {
-  int tid = threadIdx.x+blockIdx.x*blockDim.x;
-  if (tid >= numQueries) return;
-
-  float3 qp = queries[tid];
-  cukd::FlexHeapCandidateList cl(candidateLists+k*tid,k,
-                                 round == 0 ? maxRadius : -1.f);
-  cukd::stackFree::knn(cl,qp,tree,N);
+#ifdef OPENMP_FOUND
+  #pragma omp parallel for
+#endif  
+  for (size_t tid = 0; tid < numQueries; tid++) {
+    float3 qp = queries[tid];
+    cukd::FlexHeapCandidateList cl(candidateLists+k*tid,k,
+                    round == 0 ? maxRadius : -1.f);
+    cukd::stackFree::knn(cl,qp,tree,N);
+  }
 }
 
-__global__ void extractFinalResult(float *d_finalResults,
-                                   int numPoints,
-                                   int k,
-                                   uint64_t *candidateLists)
+void extractFinalResult_host(float *finalResults,
+                              size_t numPoints,
+                              int k,
+                              uint64_t *candidateLists)
 {
-  int tid = threadIdx.x+blockIdx.x*blockDim.x;
-  if (tid >= numPoints) return;
+#ifdef OPENMP_FOUND
+  #pragma omp parallel for
+#endif  
+  for (size_t tid = 0; tid < numPoints; tid++) {
+    cukd::FlexHeapCandidateList cl(candidateLists+k*tid,k,-1.f);
+    float result = cl.returnValue();
+    if (!isinf(result))
+      result = sqrtf(result);
 
-  cukd::FlexHeapCandidateList cl(candidateLists+k*tid,k,-1.f);
-  float result = cl.returnValue();
-  if (!isinf(result))
-    result = sqrtf(result);
-
-  d_finalResults[tid] = result;
- }
+    finalResults[tid] = result;
+  }
+} 
   
 int main(int ac, char **av)
 {
   MPI_Init(&ac,&av);
   float maxRadius = std::numeric_limits<float>::infinity();
   int   k = 0;
-  int   gpuAffinityCount = 0;
   std::string inFileName;
   std::string outFileName;
 
@@ -119,8 +122,6 @@ int main(int ac, char **av)
       inFileName = arg;
     else if (arg == "-r")
       maxRadius = std::atof(av[++i]);
-    else if (arg == "-g")
-      gpuAffinityCount = std::atoi(av[++i]);
     else if (arg == "-k")
       k = std::atoi(av[++i]);
     else
@@ -135,12 +136,6 @@ int main(int ac, char **av)
     usage("no k specified, or invalid k value");
 
   MPIComm mpi(MPI_COMM_WORLD);
-  if (gpuAffinityCount) {
-    int deviceID = mpi.rank % gpuAffinityCount;
-    std::cout << "#" << mpi.rank << "/" << mpi.size
-              << "setting active GPU #" << deviceID << std::endl;
-    CUKD_CUDA_CALL(SetDevice(deviceID));
-  }
 
   size_t begin = 0;
   size_t numPointsTotal = 0;
@@ -149,27 +144,41 @@ int main(int ac, char **av)
   std::cout << "#" << mpi.rank << "/" << mpi.size
             << ": got " << myPoints.size() << " points to work on"
             << std::endl;
+  
+  size_t N = myPoints.size();
+  std::vector<float3> tree((N+1));
+  std::vector<float3> tree_recv((N+1));
+  memcpy(tree.data(),myPoints.data(),N*sizeof(float3));
 
-  float3 *d_tree = 0;
-  float3 *d_tree_recv = 0;
-  int N = myPoints.size();
-  // alloc N+1 so we can store one more if anytoher rank gets oen more point
-  CUKD_CUDA_CALL(Malloc((void **)&d_tree,(N+1)*sizeof(myPoints[0])));
-  CUKD_CUDA_CALL(Malloc((void **)&d_tree_recv,(N+1)*sizeof(myPoints[0])));
-  CUKD_CUDA_CALL(Memcpy(d_tree,myPoints.data(),N*sizeof(myPoints[0]),
-                        cudaMemcpyDefault));
-  cukd::buildTree(d_tree,N);
+  // Add timing to your mpiHugeQuery.cu
+  double start_time, end_time;
+  // Start timing before your main computation
+  MPI_Barrier(mpi.comm);
+  start_time = MPI_Wtime();
 
-  float3   *d_queries;
-  int numQueries = myPoints.size();
-  uint64_t *d_cand;
-  CUKD_CUDA_CALL(Malloc((void **)&d_queries,N*sizeof(float3)));
-  CUKD_CUDA_CALL(Memcpy(d_queries,myPoints.data(),N*sizeof(float3),cudaMemcpyDefault));
-  CUKD_CUDA_CALL(Malloc((void **)&d_cand,N*k*sizeof(uint64_t)));
+  cukd::buildTree_host(tree.data(),N);
+  
+  // End timing after computation
+  MPI_Barrier(mpi.comm);
+  end_time = MPI_Wtime();
+
+  // Print results on rank 0
+  if (mpi.rank == 0) {
+      printf("Total execution time (buildTree_host): %.6f seconds\n", end_time - start_time);
+  }  
+
+  size_t numQueries = myPoints.size();
+  std::vector<float3>  queries(N);
+  memcpy(queries.data(),myPoints.data(),N*sizeof(float3));
+  
+  std::vector<uint64_t>  cand(N*k);
 
   // -----------------------------------------------------------------------------
   // now, do the queries and cycling:
   // -----------------------------------------------------------------------------
+  MPI_Barrier(mpi.comm);
+  start_time = MPI_Wtime();
+
   for (int round=0;round<mpi.size;round++) {
     
     if (round == 0) {
@@ -186,29 +195,33 @@ int main(int ac, char **av)
                         mpi.comm,&requests[1]));
       CUKD_MPI_CALL(Waitall(2,requests,MPI_STATUSES_IGNORE));
       
-      CUKD_MPI_CALL(Irecv(d_tree_recv,recvCount*sizeof(*d_tree),MPI_BYTE,recvPeer,0,
+      CUKD_MPI_CALL(Irecv(tree_recv.data(),recvCount*sizeof(float3),MPI_BYTE,recvPeer,0,
                           mpi.comm,&requests[0]));
-      CUKD_MPI_CALL(Isend(d_tree,sendCount*sizeof(*d_tree),MPI_BYTE,sendPeer,0,
+      CUKD_MPI_CALL(Isend(tree.data(),sendCount*sizeof(float3),MPI_BYTE,sendPeer,0,
                           mpi.comm,&requests[1]));
       CUKD_MPI_CALL(Waitall(2,requests,MPI_STATUSES_IGNORE));
       
       N = recvCount;
-      std::swap(d_tree,d_tree_recv);
+      std::swap(tree,tree_recv);
     }
     // -----------------------------------------------------------------------------
-    runQuery<<<divRoundUp(numQueries,1024),1024>>>
-      (/* tree */d_tree,N,
-       /* query params */d_cand,k,maxRadius,
-       /* query points */d_queries,numQueries,
-       round);
-    CUKD_CUDA_CALL(DeviceSynchronize());
+    runQuery_host(tree.data(),N,
+                  cand.data(),k,maxRadius,
+                  queries.data(),numQueries,
+                  round);
   }
-  std::cout << "done all queries..." << std::endl;
-  float *d_finalResults = 0;
-  CUKD_CUDA_CALL(MallocManaged((void **)&d_finalResults,myPoints.size()*sizeof(float)));
-  extractFinalResult<<<divRoundUp(numQueries,1024),1024>>>
-    (d_finalResults,numQueries,k,d_cand);
-  CUKD_CUDA_CALL(DeviceSynchronize());
+
+  // End timing after computation
+  MPI_Barrier(mpi.comm);
+  end_time = MPI_Wtime();
+
+  // Print results on rank 0
+  if (mpi.rank == 0) {
+      printf("Total execution time (queries and cycling are done): %.6f seconds\n", end_time - start_time);
+  }  
+
+  std::vector<float> finalResults(myPoints.size());
+  extractFinalResult_host(finalResults.data(),numQueries,k,cand.data());
 
   MPI_Barrier(mpi.comm);
 
@@ -216,7 +229,7 @@ int main(int ac, char **av)
     MPI_Barrier(mpi.comm);
     if (i == mpi.rank) {
       FILE *file = fopen(outFileName.c_str(),i==0?"wb":"ab");
-      fwrite(d_finalResults,sizeof(float),numQueries,file);
+      fwrite(finalResults.data(),sizeof(float),numQueries,file);
       fclose(file);
     }
     MPI_Barrier(mpi.comm);

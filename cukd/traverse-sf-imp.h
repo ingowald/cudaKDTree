@@ -20,7 +20,7 @@ namespace cukd {
 
   template<typename data_t,
            typename data_traits=default_data_traits<data_t>>
-  inline __device__
+  inline __host__ __device__
   box_t<typename data_traits::point_t>
   recomputeBounds(int curr,
                   box_t<typename data_traits::point_t> bounds,
@@ -63,7 +63,7 @@ namespace cukd {
   template<typename result_t,
            typename data_t,
            typename data_traits=default_data_traits<data_t>>
-  inline __device__
+  inline __host__ __device__
   void traverse_sf_imp(result_t &result,
                        typename data_traits::point_t queryPoint,
                        const box_t<typename data_traits::point_t> worldBounds,
