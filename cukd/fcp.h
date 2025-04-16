@@ -63,7 +63,7 @@ namespace cukd {
       typename data_t,
       /*! traits that describe these points (float3 etc have working defaults */
       typename data_traits=default_data_traits<data_t>>
-    inline __device__
+    inline __host__ __device__
     int fcp(typename data_traits::point_t queryPoint,
             // /*! the world-space bounding box of all data points */
             // const box_t<typename data_traits::point_t> worldBounds,
@@ -76,7 +76,7 @@ namespace cukd {
             FcpSearchParams params = FcpSearchParams{});
     template<typename data_t,
              typename data_traits=default_data_traits<data_t>>
-    inline __device__
+    inline __host__ __device__
     int fcp(typename data_traits::point_t queryPoint,
             const box_t<typename data_traits::point_t> worldBounds,
             const data_t *dataPoints,
@@ -91,7 +91,7 @@ namespace cukd {
     // the same, for a _spatial_ k-d tree 
     template<typename data_t,
              typename data_traits=default_data_traits<data_t>>
-    inline __device__
+    inline __host__ __device__
     int fcp(const SpatialKDTree<data_t,data_traits> &tree,
             typename data_traits::point_t queryPoint,
             FcpSearchParams params = FcpSearchParams{});
@@ -106,7 +106,7 @@ namespace cukd {
       stack (nor incur the memory overhead for that) */
     template<typename data_t,
              typename data_traits=default_data_traits<data_t>>
-    inline __device__
+    inline __host__ __device__
     int fcp(typename data_traits::point_t queryPoint,
             // /*! the world-space bounding box of all data points */
             // const box_t<typename data_traits::point_t> worldBounds,
@@ -119,7 +119,7 @@ namespace cukd {
             FcpSearchParams params = FcpSearchParams{});
     template<typename data_t,
              typename data_traits=default_data_traits<data_t>>
-    inline __device__
+    inline __host__ __device__
     int fcp(typename data_traits::point_t queryPoint,
             const box_t<typename data_traits::point_t> worldBounds,
             const data_t *dataPoints,
@@ -141,7 +141,7 @@ namespace cukd {
       queries */
     template<typename data_t,
              typename data_traits=default_data_traits<data_t>>
-    inline __device__
+    inline __host__ __device__
     int fcp(typename data_traits::point_t queryPoint,
             /*! the world-space bounding box of all data points */
             const box_t<typename data_traits::point_t> worldBounds,
@@ -156,7 +156,7 @@ namespace cukd {
     // the same, for a _spatial_ k-d tree 
     template<typename data_t,
              typename data_traits=default_data_traits<data_t>>
-    inline __device__
+    inline __host__ __device__
     int fcp(const SpatialKDTree<data_t,data_traits> &tree,
             typename data_traits::point_t queryPoint,
             FcpSearchParams params = FcpSearchParams{});
@@ -177,10 +177,10 @@ namespace cukd {
 
   /*! helper struct to hold the current-best results of a fcp kernel during traversal */
   struct FCPResult {
-    inline __device__ float initialCullDist2() const
+    inline __host__ __device__ float initialCullDist2() const
     { return closestDist2; }
     
-    inline __device__ float clear(float initialDist2)
+    inline __host__ __device__ float clear(float initialDist2)
     {
       closestDist2 = initialDist2;
       closestPrimID = -1;
@@ -190,7 +190,7 @@ namespace cukd {
     /*! process a new candidate with given ID and (square) distance;
       and return square distance to be used for subsequent
       queries */
-    inline __device__ float processCandidate(int candPrimID, float candDist2)
+    inline __host__ __device__ float processCandidate(int candPrimID, float candDist2)
     {
       if (candDist2 < closestDist2) {
         closestDist2 = candDist2;
@@ -199,7 +199,7 @@ namespace cukd {
       return closestDist2;
     }
 
-    inline __device__ int returnValue() const
+    inline __host__ __device__ int returnValue() const
     { return closestPrimID; }
     
     int   closestPrimID;
@@ -209,7 +209,7 @@ namespace cukd {
 
   template<typename data_t,
            typename data_traits>
-  inline __device__
+  inline __host__ __device__
   int cct::fcp(typename data_traits::point_t queryPoint,
                const box_t<typename data_traits::point_t> worldBounds,
                const data_t *d_nodes,
@@ -225,7 +225,7 @@ namespace cukd {
 
   template<typename data_t,
            typename data_traits>
-  inline __device__
+  inline __host__ __device__
   int stackFree::fcp(typename data_traits::point_t queryPoint,
                      const data_t *d_nodes,
                      int N,
@@ -240,7 +240,7 @@ namespace cukd {
 
   template<typename data_t,
            typename data_traits>
-  inline __device__
+  inline __host__ __device__
   int stackBased::fcp(typename data_traits::point_t queryPoint,
                       const data_t *d_nodes,
                       int N,
@@ -255,7 +255,7 @@ namespace cukd {
 
   template<typename data_t,
            typename data_traits>
-  inline __device__
+  inline __host__ __device__
   int cct::fcp(const SpatialKDTree<data_t,data_traits> &tree,
                typename data_traits::point_t queryPoint,
                FcpSearchParams params)
@@ -348,7 +348,7 @@ namespace cukd {
 
   template<typename data_t,
            typename data_traits>
-  inline __device__
+  inline __host__ __device__
   int stackBased::fcp(const SpatialKDTree<data_t,data_traits> &tree,
                       typename data_traits::point_t queryPoint,
                       FcpSearchParams params)

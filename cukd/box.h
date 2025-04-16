@@ -94,7 +94,7 @@ namespace cukd {
     itself, otherwise it'll be a point on the outside surface of the
     box */
   template<typename point_t>
-  inline __device__
+  inline __host__ __device__
   point_t project(const cukd::box_t<point_t>  &box,
                   const point_t               &point)
   {
@@ -103,7 +103,7 @@ namespace cukd {
 
   // ------------------------------------------------------------------
   template<typename point_t>
-  inline __device__
+  inline __host__ __device__
   auto sqrDistance(const box_t<point_t> &box, const point_t &point)
   { return cukd::sqrDistance(project(box,point),point); }
 

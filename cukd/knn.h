@@ -24,6 +24,13 @@
 // INTERFACE SECTION
 // ==================================================================
 namespace cukd {
+  struct BaseCandidateList {
+  protected:
+    inline __host__ __device__ uint64_t encode(float f, int i);
+    inline __host__ __device__ float decode_dist2(uint64_t v) const;
+    inline __host__ __device__ int   decode_pointID(uint64_t v) const;
+  };
+  
   /*! ABSTRACT interface to a candidate list. a candidate list is a
     list of the at-the-time k-nearest elements encountered during
     traversal. A user initiates a query by creating a _actual_ (ie,
@@ -44,29 +51,29 @@ namespace cukd {
     either of these condisions (for heap, if j<k items get found some
     of the k slots will return an ID of -1) */
   template<int k>
-  struct CandidateList {
+  struct CandidateList : public BaseCandidateList {
     // ------------------------------------------------------------------
     // interface fcts with which _user_ can read results of query:
     // ------------------------------------------------------------------
-    inline __device__ CandidateList(float cutOffRadius) {}
+    inline __host__ __device__ CandidateList(float cutOffRadius) {}
     
     /*! returns _square_ of maximum radius of any found point, if k
       points were found. if less than k points were found, this
       returns the square of the max query radius/cut-off radius */
-    inline __device__ float maxRadius2() const /* abstract */;
+    inline __host__ __device__ float maxRadius2() const /* abstract */;
     
     /*! returns _square_ of distance to i'th found point. points will
       be sorted by distance in FixedCandidateList, but will _not_ be
       sorted in HeapCandidateList */
-    inline __device__ float get_dist2(int i) const;
+    inline __host__ __device__ float get_dist2(int i) const;
     
     /*! returns ID of i'th found k-nearest data point */
-    inline __device__ int   get_pointID(int i) const;
+    inline __host__ __device__ int   get_pointID(int i) const;
+
+    using BaseCandidateList::encode;
+    using BaseCandidateList::decode_dist2;
+    using BaseCandidateList::decode_pointID;
     
-  protected:
-    inline __device__ uint64_t encode(float f, int i);
-    inline __device__ float decode_dist2(uint64_t v) const;
-    inline __device__ int   decode_pointID(uint64_t v) const;
     /*! storage for k elements; we encode those float:int pairs as a
         single int64 to make reading/writing/swapping faster */
     uint64_t entry[k];
@@ -88,7 +95,7 @@ namespace cukd {
       typename data_t,
       /*! traits of data in the underlying tree */
       typename data_traits=default_data_traits<data_t>>
-    inline __device__
+    inline __host__ __device__
     float knn(CandidateList &result,
               typename data_traits::point_t queryPoint,
               // const box_t<typename data_traits::point_t> worldBounds,
@@ -101,7 +108,7 @@ namespace cukd {
       typename data_t,
       /*! traits of data in the underlying tree */
       typename data_traits=default_data_traits<data_t>>
-    inline __device__
+    inline __host__ __device__
     float knn(CandidateList &result,
               typename data_traits::point_t queryPoint,
               const box_t<typename data_traits::point_t> worldBounds,
@@ -118,7 +125,7 @@ namespace cukd {
     template<typename CandidateList,
              typename data_t,
              typename data_traits=default_data_traits<data_t>>
-    inline __device__
+    inline __host__ __device__
     float knn(CandidateList &result,
               const SpatialKDTree<data_t,data_traits> &tree,
               typename data_traits::point_t queryPoint);
@@ -138,7 +145,7 @@ namespace cukd {
       typename data_t,
       /*! traits of data in the underlying tree */
       typename data_traits=default_data_traits<data_t>>
-    inline __device__
+    inline __host__ __device__
     float knn(CandidateList &result,
               typename data_traits::point_t queryPoint,
               // const box_t<typename data_traits::point_t> worldBounds,
@@ -147,7 +154,7 @@ namespace cukd {
     template<typename CandidateList,
              typename data_t,
              typename data_traits=default_data_traits<data_t>>
-    inline __device__
+    inline __host__ __device__
     float knn(CandidateList &result,
               typename data_traits::point_t queryPoint,
               const box_t<typename data_traits::point_t> worldBounds,
@@ -174,7 +181,7 @@ namespace cukd {
       typename data_t,
       /*! traits of data in the underlying tree */
       typename data_traits=default_data_traits<data_t>>
-    inline __device__
+    inline __host__ __device__
     float knn(CandidateList &result,
               typename data_traits::point_t queryPoint,
               const box_t<typename data_traits::point_t> worldBounds,
@@ -185,7 +192,7 @@ namespace cukd {
     template<typename CandidateList,
              typename data_t,
              typename data_traits=default_data_traits<data_t>>
-    inline __device__
+    inline __host__ __device__
     float knn(CandidateList &result,
               const SpatialKDTree<data_t,data_traits> &tree,
               typename data_traits::point_t queryPoint);
@@ -213,15 +220,15 @@ namespace cukd {
     // ------------------------------------------------------------------
     // interface fcts with which _user_ can read results of query:
     // ------------------------------------------------------------------
-    inline __device__ FixedCandidateList(float cutOffRadius);
-    inline __device__ float maxRadius2() const;
+    inline __host__ __device__ FixedCandidateList(float cutOffRadius);
+    inline __host__ __device__ float maxRadius2() const;
     // ------------------------------------------------------------------
     // interface for traversal/query routines to interact with this
     // ------------------------------------------------------------------
-    inline __device__ float returnValue() const;
-    inline __device__ float processCandidate(int candPrimID, float candDist2);
-    inline __device__ float initialCullDist2() const;
-    inline __device__ void  push(float dist, int pointID);
+    inline __host__ __device__ float returnValue() const;
+    inline __host__ __device__ float processCandidate(int candPrimID, float candDist2);
+    inline __host__ __device__ float initialCullDist2() const;
+    inline __host__ __device__ void  push(float dist, int pointID);
   };
 
   /*! candidate list (see above) that uses a heap to organize the
@@ -239,18 +246,45 @@ namespace cukd {
     // ------------------------------------------------------------------
     // interface fcts with which _user_ can read results of query:
     // ------------------------------------------------------------------
-    inline __device__ HeapCandidateList(float cutOffRadius);
-    inline __device__ float maxRadius2() const;
+    inline __host__ __device__ HeapCandidateList(float cutOffRadius);
+    inline __host__ __device__ float maxRadius2() const;
     // ------------------------------------------------------------------
     // interface for traversal/query routines to interact with this
     // ------------------------------------------------------------------
-    inline __device__ float returnValue() const;
-    inline __device__ float processCandidate(int candPrimID, float candDist2);
-    inline __device__ float initialCullDist2() const;
-    inline __device__ void  push(float dist, int pointID);
+    inline __host__ __device__ float returnValue() const;
+    inline __host__ __device__ float processCandidate(int candPrimID, float candDist2);
+    inline __host__ __device__ float initialCullDist2() const;
+    inline __host__ __device__ void  push(float dist, int pointID);
   };
 
-  
+  /*! a _flexible_ heap candidate list is a list of candidates that
+      uses a heap structure to store these candidates, but unlike the
+      HeapCandidateList the number of elements is NOT a compile-tiem
+      paramter, but a runtime parameters. Hence, the memory for the
+      list is also not part of this class, but needs to be provided
+      externally through a pointer */
+  struct FlexHeapCandidateList : public BaseCandidateList
+  {
+    /*! initialize this struct from given cancidate list pointer and
+      'list length' k. If radius >= 0 use this to initialize the list;
+      if radius < 0.f do NOT initialize the list, and use as is,
+      assuming it is a valid heap list */
+    inline __host__ __device__ FlexHeapCandidateList(uint64_t *entryMem,
+                                            int k,
+                                            float cutOffRadius);
+    inline __host__ __device__ float maxRadius2() const;
+    // ------------------------------------------------------------------
+    // interface for traversal/query routines to interact with this
+    // ------------------------------------------------------------------
+    inline __host__ __device__ float returnValue() const;
+    inline __host__ __device__ float processCandidate(int candPrimID, float candDist2);
+    inline __host__ __device__ float initialCullDist2() const;
+    inline __host__ __device__ void  push(float dist, int pointID);
+    
+    using BaseCandidateList::encode;
+    uint64_t *const entry;
+    int const k;
+  };
 }
 
 // ==================================================================
@@ -259,44 +293,139 @@ namespace cukd {
 
 namespace cukd {
 
+  // Add this function at the beginning of your namespace or in a helper section
+  inline __host__ __device__ float uint_as_float(uint32_t u)
+  {
+  #ifdef __CUDA_ARCH__
+      // Use CUDA intrinsic in device code
+      return __uint_as_float(u);
+  #else
+      // Host version
+      union {
+          uint32_t u;
+          float f;
+      } converter;
+      converter.u = u;
+      return converter.f;
+  #endif
+  }
+
+  inline __host__ __device__ uint32_t float_as_uint(float f)
+  {
+  #ifdef __CUDA_ARCH__
+      // Use CUDA intrinsic in device code
+      return __float_as_uint(f);
+  #else
+      // Host version
+      union {
+          float f;
+          uint32_t u;
+      } converter;
+      converter.f = f;
+      return converter.u;
+  #endif
+  }
 
   // ------------------------------------------------------------------
   // parent CandidateList
   // ------------------------------------------------------------------
 
   template<int k>
-  inline __device__
+  inline __host__ __device__
   float CandidateList<k>::get_dist2(int i) const
   { return decode_dist2(entry[i]); }
   
   template<int k>
-  inline __device__
+  inline __host__ __device__
   int CandidateList<k>::get_pointID(int i) const
   { return decode_pointID(entry[i]); }
     
-  template<int k>
-  inline __device__
-  uint64_t CandidateList<k>::encode(float f, int i)
-  {
-    return (uint64_t(__float_as_uint(f)) << 32) | uint32_t(i);
-  }
+  inline __host__ __device__
+  uint64_t BaseCandidateList::encode(float f, int i)
+  { return (uint64_t(float_as_uint(f)) << 32) | uint32_t(i); }
 
-  template<int k>
-  inline __device__
-  float CandidateList<k>::decode_dist2(uint64_t v) const
-  { return __uint_as_float(v >> 32); }
+  inline __host__ __device__
+  float BaseCandidateList::decode_dist2(uint64_t v) const
+  { return uint_as_float(v >> 32); }
   
-  template<int k>
-  inline __device__
-  int CandidateList<k>::decode_pointID(uint64_t v) const
+  inline __host__ __device__
+  int BaseCandidateList::decode_pointID(uint64_t v) const
   { return int(uint32_t(v)); }
 
+
+  // ------------------------------------------------------------------
+  // FlexHeapCandidateList
+  // ------------------------------------------------------------------
+
+  inline __host__ __device__
+  FlexHeapCandidateList::FlexHeapCandidateList(uint64_t *entryMem,
+                                               int k,
+                                               float cutOffRadius)
+    : entry(entryMem),
+      k(k)
+  {
+    if (cutOffRadius >= 0.f) {
+      for (int i=0;i<k;i++)
+        entry[i] = encode(cutOffRadius*cutOffRadius,-1);
+    }
+  }
+  
+  inline __host__ __device__
+  float FlexHeapCandidateList::maxRadius2() const
+  { return decode_dist2(entry[0]); }
+  
+  inline __host__ __device__
+  float FlexHeapCandidateList::returnValue() const
+  { return maxRadius2(); }
+  
+  inline __host__ __device__
+  float FlexHeapCandidateList::processCandidate(int candPrimID, float candDist2)
+  {
+    push(candDist2,candPrimID);
+    return maxRadius2();
+  }
+  
+  inline __host__ __device__
+  float FlexHeapCandidateList::initialCullDist2() const
+  { return maxRadius2(); }
+  
+  inline __host__ __device__ void  FlexHeapCandidateList::push(float dist, int pointID)
+  {
+    uint64_t e = encode(dist,pointID);
+    if (e >= entry[0]) return;
+
+    int pos = 0;
+    while (true) {
+      uint64_t largestChildValue = uint64_t(-1);
+      int firstChild = 2*pos+1;
+      int largestChild = k;
+      if (firstChild < k) {
+        largestChild = firstChild;
+        largestChildValue = entry[firstChild];
+      }
+        
+      int secondChild = firstChild+1;
+      if (secondChild < k && entry[secondChild] > largestChildValue) {
+        largestChild = secondChild;
+        largestChildValue = entry[secondChild];
+      }
+
+      if (largestChild == k || largestChildValue < e) {
+        entry[pos] = e;
+        break;
+      } else {
+        entry[pos] = largestChildValue;
+        pos = largestChild;
+      }
+    }
+  }
+  
   // ------------------------------------------------------------------
   // HeapCandidateList
   // ------------------------------------------------------------------
 
   template<int k>
-  inline __device__
+  inline __host__ __device__
   HeapCandidateList<k>::HeapCandidateList(float cutOffRadius)
     : CandidateList<k>(cutOffRadius)
   {
@@ -306,12 +435,12 @@ namespace cukd {
   }
 
   template<int k>
-  inline __device__
+  inline __host__ __device__
   float HeapCandidateList<k>::returnValue() const
   { return maxRadius2(); }
   
   template<int k>
-  inline __device__
+  inline __host__ __device__
   float HeapCandidateList<k>::processCandidate(int candPrimID,
                                                float candDist2)
   {
@@ -320,12 +449,12 @@ namespace cukd {
   }
   
   template<int k>
-  inline __device__
+  inline __host__ __device__
   float HeapCandidateList<k>::initialCullDist2() const
   { return maxRadius2(); }
     
   template<int k>
-  inline __device__
+  inline __host__ __device__
   void HeapCandidateList<k>::push(float dist,
                                   int pointID)
   {
@@ -359,7 +488,7 @@ namespace cukd {
   }
     
   template<int k>
-  inline __device__
+  inline __host__ __device__
   float HeapCandidateList<k>::maxRadius2() const
   { return decode_dist2(entry[0]); }
     
@@ -372,7 +501,7 @@ namespace cukd {
   // ------------------------------------------------------------------
 
   template<int k>
-  inline __device__
+  inline __host__ __device__
   FixedCandidateList<k>::FixedCandidateList(float cutOffRadius)
     : CandidateList<k>(cutOffRadius)
   {
@@ -382,12 +511,12 @@ namespace cukd {
   }
 
   template<int k>
-  inline __device__
+  inline __host__ __device__
   float FixedCandidateList<k>::returnValue() const
   { return maxRadius2(); }
   
   template<int k>
-  inline __device__
+  inline __host__ __device__
   float FixedCandidateList<k>::processCandidate(int candPrimID,
                                                 float candDist2)
   {
@@ -396,12 +525,12 @@ namespace cukd {
   }
   
   template<int k>
-  inline __device__
+  inline __host__ __device__
   float FixedCandidateList<k>::initialCullDist2() const
   { return maxRadius2(); }
 
   template<int k>
-  inline __device__ void FixedCandidateList<k>::push(float dist, int pointID)
+  inline __host__ __device__ void FixedCandidateList<k>::push(float dist, int pointID)
   {
     uint64_t v = encode(dist,pointID);
 #pragma unroll
@@ -414,7 +543,7 @@ namespace cukd {
   }
 
   template<int k>
-  inline __device__
+  inline __host__ __device__
   float FixedCandidateList<k>::maxRadius2() const
   { return decode_dist2(entry[k-1]); }
     
@@ -422,7 +551,7 @@ namespace cukd {
     template<typename CandidateList,
              typename data_t,
              typename data_traits>
-    inline __device__
+    inline __host__ __device__
     float knn(CandidateList &result,
               typename data_traits::point_t queryPoint,
               const box_t<typename data_traits::point_t> worldBounds,
@@ -437,7 +566,7 @@ namespace cukd {
     template<typename CandidateList,
              typename data_t,
              typename data_traits>
-    inline __device__
+    inline __host__ __device__
     float knn(CandidateList &result,
               const SpatialKDTree<data_t,data_traits> &tree,
               typename data_traits::point_t queryPoint)
@@ -521,7 +650,7 @@ namespace cukd {
     template<typename CandidateList,
              typename data_t,
              typename data_traits>
-    inline __device__
+    inline __host__ __device__
     float knn(CandidateList &result,
               typename data_traits::point_t queryPoint,
               const data_t *d_nodes,
@@ -537,7 +666,7 @@ namespace cukd {
     template<typename CandidateList,
              typename data_t,
              typename data_traits>
-    inline __device__
+    inline __host__ __device__
     float knn(CandidateList &result,
               typename data_traits::point_t queryPoint,
               const data_t *d_nodes,
@@ -551,7 +680,7 @@ namespace cukd {
     template<typename CandidateList,
              typename data_t,
              typename data_traits>
-    inline __device__
+    inline __host__ __device__
     float knn(CandidateList &result,
               const SpatialKDTree<data_t,data_traits> &tree,
               typename data_traits::point_t queryPoint)

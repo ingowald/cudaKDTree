@@ -26,6 +26,39 @@
 
 namespace cukd {
 
+  // Add near the beginning of your namespace
+  inline __host__ __device__ int32_t float_as_int(float f)
+  {
+  #ifdef __CUDA_ARCH__
+      // Use CUDA intrinsic in device code
+      return __float_as_int(f);
+  #else
+      // Host version using type punning through union
+      union {
+          float f;
+          int32_t i;
+      } converter;
+      converter.f = f;
+      return converter.i;
+  #endif
+  }
+
+  inline __host__ __device__ float int_as_float(int32_t i)
+  {
+  #ifdef __CUDA_ARCH__
+      // Use CUDA intrinsic in device code
+      return __int_as_float(i);
+  #else
+      // Host version using type punning through union
+      union {
+          int32_t i;
+          float f;
+      } converter;
+      converter.i = i;
+      return converter.f;
+  #endif
+  }  
+
   /*! A _spatial_ kd-tree that stores actual (axis-aligned) split
     planes, and leaves of primitives. This needs somewhat more memory
     than the other k-d tree variants because it does need to store
@@ -105,28 +138,28 @@ namespace cukd {
       
       enum { num_dims = point_traits::num_dims };
       
-      inline __device__ void set_empty();
-      inline __device__ float get_center(int dim) const;
-      inline __device__ box_t<point_t> make_box() const;
+      inline __host__ __device__ void set_empty();
+      inline __host__ __device__ float get_center(int dim) const;
+      inline __host__ __device__ box_t<point_t> make_box() const;
 
-      inline __device__ float get_lower(int dim) const { return decode(lower[dim]); }
-      inline __device__ float get_upper(int dim) const { return decode(upper[dim]); }
+      inline __host__ __device__ float get_lower(int dim) const { return decode(lower[dim]); }
+      inline __host__ __device__ float get_upper(int dim) const { return decode(upper[dim]); }
 
       int32_t lower[num_dims];
       int32_t upper[num_dims];
 
-      inline static __device__ int32_t encode(float f);
-      inline static __device__ float   decode(int32_t bits);
+      inline static __host__ __device__ int32_t encode(float f);
+      inline static __host__ __device__ float   decode(int32_t bits);
     };
     
     template<typename point_t>
-    inline __device__ float AtomicBox<point_t>::get_center(int dim) const
+    inline __host__ __device__ float AtomicBox<point_t>::get_center(int dim) const
     {
       return 0.5f*(decode(lower[dim])+decode(upper[dim]));
     }
 
     template<typename point_t>
-    inline __device__ box_t<point_t> AtomicBox<point_t>::make_box() const
+    inline __host__ __device__ box_t<point_t> AtomicBox<point_t>::make_box() const
     {
       box_t<point_t> box;
 #pragma unroll
@@ -138,24 +171,24 @@ namespace cukd {
     }
     
     template<typename point_t>
-    inline __device__ int32_t AtomicBox<point_t>::encode(float f)
+    inline __host__ __device__ int32_t AtomicBox<point_t>::encode(float f)
     {
       const int32_t sign = 0x80000000;
-      int32_t bits = __float_as_int(f);
+      int32_t bits = float_as_int(f);
       if (bits & sign) bits ^= 0x7fffffff;
       return bits;
     }
       
     template<typename point_t>
-    inline __device__ float AtomicBox<point_t>::decode(int32_t bits)
+    inline __host__ __device__ float AtomicBox<point_t>::decode(int32_t bits)
     {
       const int32_t sign = 0x80000000;
       if (bits & sign) bits ^= 0x7fffffff;
-      return __int_as_float(bits);
+      return int_as_float(bits);
     }
     
     template<typename point_t>
-    inline __device__ void AtomicBox<point_t>::set_empty()
+    inline __host__ __device__ void AtomicBox<point_t>::set_empty()
     {
 #pragma unroll
       for (int d=0;d<num_dims;d++) {
@@ -164,7 +197,7 @@ namespace cukd {
       }
     }
     template<typename point_t>
-    inline __device__ void atomic_grow(AtomicBox<point_t> &abox, const box_t<point_t> &other)
+    inline __host__ __device__ void atomic_grow(AtomicBox<point_t> &abox, const box_t<point_t> &other)
     {
 #pragma unroll
       for (int d=0;d<abox.num_dims;d++) {
@@ -175,7 +208,7 @@ namespace cukd {
       }
     }
 
-    template<typename point_t> inline __device__
+    template<typename point_t> inline __host__ __device__
     void atomic_grow(AtomicBox<point_t> &abox, const point_t &other)
     {
 #pragma unroll
