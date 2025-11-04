@@ -1,5 +1,22 @@
 # cudaKDTree - A Library for Building and Querying Left-Balanced (point-)k-d Trees in CUDA
 
+Quick note: This repository contains a set of CUDA based routines for
+efficiently building and performing queries in k-d trees. If k-d trees
+are what you're looking for then there's a good chance that this is
+what you've been looking for - after all a lot of people seem to be
+using it, and seem to be quite happy with it. 
+
+However - if your ultimate goal is to simply perform device (i.e.,
+GPU) based queries for tasks such as find-closest-point, kNN, etc,
+then "might I suggest" to please also have a look at my "cuBQL"
+repository (now hosted on https://github.com/NVIDIA/cuBQL). Unlike
+this repo cuBQL is based on BVHes, and though I don't want to get into
+the weeks of which of those is better on which metric my personal
+conviction is that cuBQL is most likely the more easy and more
+flexible route to whatever you want to do.
+
+# What is this Repo/Codebase?
+
 This repository contains a set of CUDA based routines for efficiently
 building and performing queries in k-d trees. It supports building
 over many different (customizable) input data types, and allows for
@@ -14,25 +31,28 @@ use trade-offs:
   builder_thrust:
   - temporary memory overhead for N points: N ints + order 2N points 
     (ie, total mem order 3x that of input data!)
-  - perf 100K float3s (4090) :   ~4ms
-  - perf   1M float3s (4090) :  ~20ms
-  - perf  10M float3s (4090) : ~200ms
+  - perf 100K float3s (NVIDIA RTX 4090) :   ~4ms
+  - perf   1M float3s (NVIDIA RTX 4090) :  ~20ms
+  - perf  10M float3s (NVIDIA RTX 4090) : ~200ms
   
   builder_bitonic:
   - temporary memory overhead for N points: N ints 
     (ie, ca 30% mem overhead for float3)
-  - perf 100K float3s (4090) :  ~10ms
-  - perf   1M float3s (4090) :  ~27ms
-  - perf  10M float3s (4090) : ~390ms
+  - perf 100K float3s (NVIDIA RTX 4090) :  ~10ms
+  - perf   1M float3s (NVIDIA RTX 4090) :  ~27ms
+  - perf  10M float3s (NVIDIA RTX 4090) : ~390ms
 
   builder_inplace:
   - temporary memory overhead for N points: nada, nil, zilch.
-  - perf 100K float3s (4090) :  ~10ms
-  - perf   1M float3s (4090) : ~220ms
-  - perf  10M float3s (4090) : ~4.3s
+  - perf 100K float3s (NVIDIA RTX 4090) :  ~10ms
+  - perf   1M float3s (NVIDIA RTX 4090) : ~220ms
+  - perf  10M float3s (NVIDIA RTX 4090) : ~4.3s
 
 ```
 
+Note (iw, Nov 2025): Note these numbers were run on a NVIDIA
+RTX 4090. Still a pretty decent GPU, but not latest and greatest any
+more.
 
 # Introduction
 

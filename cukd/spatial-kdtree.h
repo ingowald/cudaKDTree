@@ -261,7 +261,7 @@ namespace cukd {
         struct {
           uint32_t offset;
           int      dim;
-          uint32_t tieBreaker;
+          volatile uint32_t tieBreaker;
           float    pos;
         } openNode;
         struct {
@@ -370,13 +370,20 @@ namespace cukd {
         auto &open = nodes[nodeID].openNode;
         if (widestDim >= 0) {
           open.pos = in.centBounds.get_center(widestDim);
-          if (open.pos == in.centBounds.get_lower(widestDim) ||
-              open.pos == in.centBounds.get_upper(widestDim))
-            widestDim = -1;
+          if (open.pos == in.centBounds.get_lower(widestDim)) {
+            // this is the (rare!) case where lower and upper are not
+            // "empty" (in the sense that lower.coord==upper.coord),
+            // but lower and upper coord differ in only one mantissa
+            // bit, so the 'center' rounds to lower. The only way to
+            // properly handle that is to define that everything ">="
+            // (not ">"!!!) is on the right side during traversal, and
+            // set plane pos to right side during build
+            open.pos = in.centBounds.get_upper(widestDim);
+          }
         }
         open.dim = widestDim;
         if (open.dim < 0) {
-          open.pos = in.centBounds.get_lower(0);
+          open.pos = in.centBounds.get_upper(0);
         }
         // if (open.dim == -1)
         //   printf("WARNING - ZERO-SPLITS NOT SUPPORTED FOR KD-TREE BUILDER\n");
@@ -423,7 +430,7 @@ namespace cukd {
       int side = 0;
       if (split.dim == -1) {
         // could block-reduce this, but will likely not happen often, anyway
-        side = (atomicAdd(&split.tieBreaker,1) & 1);
+        side = (atomicAdd((int*)&split.tieBreaker,1) & 1);
       } else {
         const float center = get_coord(point,split.dim);
         side = (center >= split.pos);
@@ -431,7 +438,7 @@ namespace cukd {
       int newNodeID = split.offset+side;
       auto &myBranch = nodes[newNodeID].openBranch;
       atomicAdd(&myBranch.count,1);
-      atomic_grow(myBranch.centBounds,point);//primBox.center());
+      atomic_grow(myBranch.centBounds,point);
       me.nodeID = newNodeID;
     }
     /* given a sorted list of {nodeID,primID} pairs, this kernel does
