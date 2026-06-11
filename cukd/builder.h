@@ -18,7 +18,7 @@
 
 #include "cukd/helpers.h"
 #include "cukd/box.h"
-#include <cuda.h>
+#include "cukd/cuda_to_hip.h"
 
 /* This is a single include file from which
 

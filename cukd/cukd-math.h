@@ -22,7 +22,7 @@
 
 namespace cukd {
 
-#ifdef __CUDA_ARCH__
+#ifdef CUKD_DEVICE_CODE
   using ::min;
   using ::max;
   using std::abs;
@@ -190,8 +190,11 @@ namespace cukd {
 
   template<typename T> inline __both__ float as_float_rz(T t);
   template<> inline __both__ float as_float_rz(float f) { return f; }
-#ifdef __CUDA_ARCH__
-  template<> inline __device__ float as_float_rz(int i) { return __int2float_rz(i); }
+#ifdef CUKD_DEVICE_CODE
+  // Specialization must match the primary template's __host__ __device__
+  // signature (HIP/clang is strict here); the body is device-only and is only
+  // referenced from device code.
+  template<> inline __both__ float as_float_rz(int i) { return __int2float_rz(i); }
 #endif
 
   /*! @] */

@@ -20,7 +20,7 @@
 #include "cukd/box.h"
 #include "cukd/data.h"
 
-#include <cuda.h>
+#include "cukd/cuda_to_hip.h"
 
 namespace cukd {
 
@@ -85,15 +85,15 @@ namespace cukd {
     d_bounds->lower = d_bounds->upper = point;
   }
 
-#ifdef __CUDA_ARCH__
+#ifdef CUKD_DEVICE_CODE
   inline __device__
   int atomicMin(int *addr, int value)
   { return ::atomicMin(addr,value); }
-  
+
   inline __device__
   int atomicMax(int *addr, int value)
   { return ::atomicMax(addr,value); }
-  
+
   inline __device__
   float atomicMin(float *addr, float value)
   {

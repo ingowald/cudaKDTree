@@ -22,9 +22,10 @@
 #  define _USE_MATH_DEFINES
 #endif
 #include <math.h> // using cmath causes issues under Windows
-#include <cuda_runtime.h>
+#include "cukd/cuda_to_hip.h"
+#if !(defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__))
 #include <math_constants.h>
-#include <cuda.h>
+#endif
 #include <stdio.h>
 #include <iostream>
 #include <stdexcept>
@@ -85,7 +86,13 @@
 #endif
 #endif
 
-#if defined(__CUDA_ARCH__)
+#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)
+// HIP: __both__ must carry both attributes in every pass; the host/device
+// split via __CUDA_ARCH__ is CUDA-only (there it works because the host pass
+// leaves the function host-callable by default).
+# define __owl_device   __device__
+# define __owl_host     __host__
+#elif defined(__CUDA_ARCH__)
 # define __owl_device   __device__
 # define __owl_host     __host__
 #else
@@ -345,7 +352,7 @@ namespace cukd {
 /* is supplied externally (from cmake) this adds a "int *stats"
    paramater to all query functions, and makes the traversal routines
    do atomic counting of traversal steps */
-#if defined(CUKD_ENABLE_STATS) && defined(__CUDA_ARCH__)
+#if defined(CUKD_ENABLE_STATS) && defined(CUKD_DEVICE_CODE)
 # define CUKD_STATS(a) a
 # define CUKD_STATS_ARG(a,b) a,
 #else

@@ -28,6 +28,30 @@ endif()
 
 option(BUILD_ALL_TESTS "Build entire type/dimension/kernel test matrix?" OFF)
 
+# When USE_HIP is ON the .cu translation units are compiled with the HIP
+# toolchain for AMD GPUs (via cukd/cuda_to_hip.h); the CUDA build is the
+# default and is left unchanged. cukd_gpu_sources() marks a target's .cu
+# sources LANGUAGE HIP and applies the arch + USE_HIP define.
+option(USE_HIP "Build the .cu sources with HIP for AMD GPUs" OFF)
+if (USE_HIP)
+  if (NOT CMAKE_HIP_ARCHITECTURES)
+    set(CMAKE_HIP_ARCHITECTURES "gfx90a" CACHE STRING "HIP arch(s) to build for")
+  endif()
+  function(cukd_gpu_sources tgt)
+    get_target_property(_srcs ${tgt} SOURCES)
+    foreach(_s ${_srcs})
+      if (_s MATCHES "\\.cu$")
+        set_source_files_properties(${_s} PROPERTIES LANGUAGE HIP)
+      endif()
+    endforeach()
+    set_target_properties(${tgt} PROPERTIES HIP_ARCHITECTURES "${CMAKE_HIP_ARCHITECTURES}")
+    target_compile_definitions(${tgt} PRIVATE USE_HIP)
+  endfunction()
+else()
+  function(cukd_gpu_sources tgt)
+  endfunction()
+endif()
+
 # ------------------------------------------------------------------
 # OpenMP support
 # ------------------------------------------------------------------
@@ -50,8 +74,9 @@ endif()
 # ------------------------------------------------------------------
 # CUDA and OpenMP integration
 # ------------------------------------------------------------------
-# Ensure CUDA compiler can use OpenMP
-if(OpenMP_CXX_FOUND)  
+# Ensure CUDA compiler can use OpenMP (nvcc-specific flag passing; the HIP
+# toolchain is plain clang++ and takes the OpenMP flags directly, so skip this).
+if(OpenMP_CXX_FOUND AND NOT USE_HIP)
   if(WIN32)
     set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=/openmp:llvm")
   else()
@@ -68,6 +93,17 @@ endif()
 # ------------------------------------------------------------------
 # general cmake project configs
 # ------------------------------------------------------------------
+if (USE_HIP)
+  # AMD/ROCm: the .cu translation units are compiled as HIP (see
+  # cukd_gpu_sources); host C++ is untouched. CMAKE_HIP_ARCHITECTURES is set
+  # above (defaulting to gfx90a).
+  enable_language(HIP)
+  if (NOT CUKD_IS_SUBPROJECT)
+    SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+    SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+    SET(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+  endif()
+else()
 if (CUKD_IS_SUBPROJECT)
   # we're used as a subproject (as we should be!) - parent HAS to have
   # set CMAKE_CUDA_ARCHITECTURES for our code to compile
@@ -104,6 +140,7 @@ else()
   SET(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 endif()
 enable_language(CUDA)
+endif()
 
 # ==================================================================
 # this builds four variants of this library, that differ in how the
@@ -159,9 +196,11 @@ set_property(TARGET cudaKDTree PROPERTY PUBLIC
 if (NOT CUKD_IS_SUBPROJECT)
   add_executable(cukd_sample sample.cu)
   target_link_libraries(cukd_sample cudaKDTree)
+  cukd_gpu_sources(cukd_sample)
 
   add_executable(cukd_sampleHost sampleHost.cu)
   target_link_libraries(cukd_sampleHost PUBLIC cudaKDTree)
+  cukd_gpu_sources(cukd_sampleHost)
 
   if(OpenMP_CXX_FOUND)
     target_link_libraries(cukd_sampleHost PUBLIC OpenMP::OpenMP_CXX)
@@ -169,12 +208,14 @@ if (NOT CUKD_IS_SUBPROJECT)
   endif()
 
   find_package(MPI)
-  if (MPI_FOUND) 
+  if (MPI_FOUND)
     add_executable(cukd_mpiHugeQuery samples/mpiHugeQuery.cu)
     target_link_libraries(cukd_mpiHugeQuery PUBLIC cudaKDTree MPI::MPI_CXX)
+    cukd_gpu_sources(cukd_mpiHugeQuery)
 
     add_executable(cukd_mpiHugeQueryHost samples/mpiHugeQueryHost.cu)
     target_link_libraries(cukd_mpiHugeQueryHost PUBLIC cudaKDTree MPI::MPI_CXX)
+    cukd_gpu_sources(cukd_mpiHugeQueryHost)
 
     if(OpenMP_CXX_FOUND)
       target_link_libraries(cukd_mpiHugeQueryHost PUBLIC OpenMP::OpenMP_CXX)
@@ -214,7 +255,8 @@ if (BUILD_ALL_TESTS)
 	-DD_FROM_CMAKE=${D}
 	-DUSE_KNN=1
 	-DTRAVERSAL_METHOD=${method})
-	
+      cukd_gpu_sources(cukd_float${D}-knn-${method})
+
       # test knn queries, with 'explicit-dim' trees
       add_executable(cukd_float${D}-knn-${method}-xd testing/floatN-knn-and-fcp.cu)
       target_link_libraries(cukd_float${D}-knn-${method}-xd cudaKDTree)
@@ -225,6 +267,7 @@ if (BUILD_ALL_TESTS)
 	-DEXPLICIT_DIM=1
 	-DUSE_KNN=1
 	-DTRAVERSAL_METHOD=${method})
+      cukd_gpu_sources(cukd_float${D}-knn-${method}-xd)
 
       # test fcp queries, on regular trees
       add_executable(cukd_float${D}-fcp-${method} testing/floatN-knn-and-fcp.cu)
@@ -234,6 +277,7 @@ if (BUILD_ALL_TESTS)
 	-DCUKD_ENABLE_STATS=${CUKD_ENABLE_STATS_VALUE}
 	-DD_FROM_CMAKE=${D}
 	-DTRAVERSAL_METHOD=${method})
+      cukd_gpu_sources(cukd_float${D}-fcp-${method})
 
       # test fcp queries, with 'explicit-dim' trees
       add_executable(cukd_float${D}-fcp-${method}-xd testing/floatN-knn-and-fcp.cu)
@@ -244,6 +288,7 @@ if (BUILD_ALL_TESTS)
 	-DD_FROM_CMAKE=${D}
 	-DEXPLICIT_DIM=1
 	-DTRAVERSAL_METHOD=${method})
+      cukd_gpu_sources(cukd_float${D}-fcp-${method}-xd)
 
     endforeach()
 
@@ -259,6 +304,7 @@ if (BUILD_ALL_TESTS)
 	-DSPATIAL=1
 	-DUSE_KNN=1
 	-DTRAVERSAL_METHOD=${method})
+      cukd_gpu_sources(cukd_float${D}-knn-spatial-${method})
 
       # test fcp queries, on regular trees
       add_executable(cukd_float${D}-fcp-spatial-${method} testing/floatN-knn-and-fcp.cu)
@@ -269,6 +315,7 @@ if (BUILD_ALL_TESTS)
 	-DSPATIAL=1
 	-DD_FROM_CMAKE=${D}
 	-DTRAVERSAL_METHOD=${method})
+      cukd_gpu_sources(cukd_float${D}-fcp-spatial-${method})
 
     endforeach()
   endforeach()

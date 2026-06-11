@@ -5,4 +5,5 @@
 # points in each run.
 add_executable(knn-float3-spatialkdtree knn-float3-spatialkdtree.cu)
 target_link_libraries(knn-float3-spatialkdtree PRIVATE cudaKDTree)
+cukd_gpu_sources(knn-float3-spatialkdtree)
 
