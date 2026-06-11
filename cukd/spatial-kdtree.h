@@ -1,5 +1,6 @@
 // ======================================================================== //
 // Copyright 2018-2024 Ingo Wald                                            //
+// Copyright (c) 2026 Advanced Micro Devices, Inc.                          //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -17,9 +18,8 @@
 #pragma once
 
 #include "builder.h"
-#include <cub/cub.cuh>
-#include <cuda.h>
-#include <cuda_runtime_api.h>
+#include "cukd/cuda_to_hip.h"
+#include CUKD_CUB_INCLUDE
 #include <cmath>
 #include <limits.h>
 #include <float.h>
@@ -29,7 +29,7 @@ namespace cukd {
   // Add near the beginning of your namespace
   inline __host__ __device__ int32_t float_as_int(float f)
   {
-  #ifdef __CUDA_ARCH__
+  #ifdef CUKD_DEVICE_CODE
       // Use CUDA intrinsic in device code
       return __float_as_int(f);
   #else
@@ -45,7 +45,7 @@ namespace cukd {
 
   inline __host__ __device__ float int_as_float(int32_t i)
   {
-  #ifdef __CUDA_ARCH__
+  #ifdef CUKD_DEVICE_CODE
       // Use CUDA intrinsic in device code
       return __int_as_float(i);
   #else
@@ -196,6 +196,53 @@ namespace cukd {
         upper[d] = encode(-FLT_MAX);
       }
     }
+    // Integer atomic min/max on the encoded box bounds. On gfx90a/CDNA2 the
+    // hardware global_atomic_smin/smax are dropped on coarse-grained memory
+    // (e.g. the default hipMallocManaged points buffer), which would leave the
+    // tree bounds empty; atomicCAS is honored there, so emulate min/max with a
+    // CAS loop on HIP. CUDA keeps the native intrinsics.
+    inline __host__ __device__ int32_t atomicMinI32(int32_t *addr, int32_t val)
+    {
+#if defined(CUKD_DEVICE_CODE) && (defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__))
+      int old = *addr, assumed;
+      do { assumed = old; if (assumed <= val) break;
+           old = atomicCAS((int*)addr, assumed, val); } while (assumed != old);
+      return old;
+#elif defined(CUKD_DEVICE_CODE)
+      return ::atomicMin(addr, val);
+#else
+      int old = *addr; if (val < old) *addr = val; return old;
+#endif
+    }
+    inline __host__ __device__ int32_t atomicMaxI32(int32_t *addr, int32_t val)
+    {
+#if defined(CUKD_DEVICE_CODE) && (defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__))
+      int old = *addr, assumed;
+      do { assumed = old; if (assumed >= val) break;
+           old = atomicCAS((int*)addr, assumed, val); } while (assumed != old);
+      return old;
+#elif defined(CUKD_DEVICE_CODE)
+      return ::atomicMax(addr, val);
+#else
+      int old = *addr; if (val > old) *addr = val; return old;
+#endif
+    }
+    // Unsigned variant: the leaf-offset sentinel is (uint32_t)-1 (= UINT_MAX),
+    // so the comparison must be unsigned (a signed min would keep the sentinel).
+    inline __host__ __device__ uint32_t atomicMinU32(uint32_t *addr, uint32_t val)
+    {
+#if defined(CUKD_DEVICE_CODE) && (defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__))
+      uint32_t old = *addr, assumed;
+      do { assumed = old; if (assumed <= val) break;
+           old = atomicCAS((unsigned*)addr, assumed, val); } while (assumed != old);
+      return old;
+#elif defined(CUKD_DEVICE_CODE)
+      return ::atomicMin(addr, val);
+#else
+      uint32_t old = *addr; if (val < old) *addr = val; return old;
+#endif
+    }
+
     template<typename point_t>
     inline __host__ __device__ void atomic_grow(AtomicBox<point_t> &abox, const box_t<point_t> &other)
     {
@@ -203,8 +250,8 @@ namespace cukd {
       for (int d=0;d<abox.num_dims;d++) {
         const int32_t enc_lower = AtomicBox<point_t>::encode(other.get_lower(d));
         const int32_t enc_upper = AtomicBox<point_t>::encode(other.get_upper(d));
-        if (enc_lower < abox.lower[d]) atomicMin(&abox.lower[d],enc_lower);
-        if (enc_upper > abox.upper[d]) atomicMax(&abox.upper[d],enc_upper);
+        if (enc_lower < abox.lower[d]) atomicMinI32(&abox.lower[d],enc_lower);
+        if (enc_upper > abox.upper[d]) atomicMaxI32(&abox.upper[d],enc_upper);
       }
     }
 
@@ -214,8 +261,8 @@ namespace cukd {
 #pragma unroll
       for (int d=0;d<abox.num_dims;d++) {
         const int32_t enc = AtomicBox<point_t>::encode(get_coord(other,d));
-        if (enc < abox.lower[d]) ::atomicMin(&abox.lower[d],enc);
-        if (enc > abox.upper[d]) ::atomicMax(&abox.upper[d],enc);
+        if (enc < abox.lower[d]) atomicMinI32(&abox.lower[d],enc);
+        if (enc > abox.upper[d]) atomicMaxI32(&abox.upper[d],enc);
       }
     }
     
@@ -464,7 +511,9 @@ namespace cukd {
         /* invalid prim, just skip here */
         return;
       auto &node = nodes[ps.nodeID];
-      ::atomicMin(&node.doneNode.offset,offset);
+      // unsigned atomicMin (CAS-emulated on HIP; see atomicMinU32). The leaf
+      // offset starts at (uint32_t)-1, so the min must be unsigned.
+      atomicMinU32(&node.doneNode.offset,(uint32_t)offset);
     }
 
 
@@ -581,15 +630,25 @@ namespace cukd {
       size_t temp_storage_bytes = 0;
       PrimState *sortedPrimStates;
       _ALLOC(memResource,sortedPrimStates,numPrims,s);
+      // The PrimState key has nodeID in the high 32 bits, so sorting bits
+      // [32,64) groups prims by leaf. hipCUB's DeviceRadixSort with a nonzero
+      // begin_bit does not sort correctly on ROCm (observed gfx90a), so sort
+      // the full 64-bit key there: nodeID still dominates, and the low bits
+      // (primID) merely make the per-leaf order deterministic.
+#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)
+      const int sortBeginBit = 0;
+#else
+      const int sortBeginBit = 32;
+#endif
       cub::DeviceRadixSort::SortKeys((void*&)d_temp_storage, temp_storage_bytes,
                                      (uint64_t*)primStates,
                                      (uint64_t*)sortedPrimStates,
-                                     numPrims,32,64,s);
+                                     numPrims,sortBeginBit,64,s);
       _ALLOC(memResource,d_temp_storage,temp_storage_bytes,s);
       cub::DeviceRadixSort::SortKeys((void*&)d_temp_storage, temp_storage_bytes,
                                      (uint64_t*)primStates,
                                      (uint64_t*)sortedPrimStates,
-                                     numPrims,32,64,s);
+                                     numPrims,sortBeginBit,64,s);
       CUKD_CUDA_CALL(StreamSynchronize(s));
       _FREE(memResource,d_temp_storage,s);
       // ==================================================================

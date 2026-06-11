@@ -81,7 +81,11 @@
 #endif
 #endif
 
-#if defined(__CUDA_ARCH__)
+#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)
+// HIP: __both__ carries both attributes in every pass (see cukd/common.h).
+# define __owl_device   __device__
+# define __owl_host     __host__
+#elif defined(__CUDA_ARCH__)
 # define __owl_device   __device__
 # define __owl_host     __host__
 #else
@@ -143,7 +147,7 @@
 namespace cubit {
   namespace common {
 
-#ifdef __CUDA_ARCH__
+#ifdef CUKD_DEVICE_CODE
     using ::min;
     using ::max;
     using std::abs;

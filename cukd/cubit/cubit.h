@@ -39,8 +39,8 @@
 
 #pragma once
 
+#include "../cuda_to_hip.h"
 #include "../cubit/common.h"
-#include <cuda_runtime.h>
 
 namespace cubit {
   using namespace cubit::common;

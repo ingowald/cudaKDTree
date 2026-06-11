@@ -49,7 +49,7 @@ namespace cukd {
   /* by default let's use cuda malloc async, which is much better and
      faster than regular malloc; but that's available on cuda 11, so
      let's add a fall back for older cuda's, too */
-#if CUDART_VERSION >= 11020
+#if CUDART_VERSION >= 11020 || defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)
   struct AsyncGpuMemoryResource final : GpuMemoryResource {
     cudaError_t malloc(void** ptr, size_t size, cudaStream_t s) override {
       return cudaMallocAsync(ptr, size, s);
@@ -83,7 +83,7 @@ namespace cukd {
   
     inline static __host__ __device__ int levelOf(int nodeID)
     {
-#ifdef __CUDA_ARCH__
+#ifdef CUKD_DEVICE_CODE
       int k = 63 - __clzll(nodeID+1);
 #elif defined(_MSC_VER)
       unsigned long bs;

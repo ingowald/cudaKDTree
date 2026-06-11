@@ -54,6 +54,15 @@ Note (iw, Nov 2025): Note these numbers were run on a NVIDIA
 RTX 4090. Still a pretty decent GPU, but not latest and greatest any
 more.
 
+This library also runs on AMD GPUs through ROCm/HIP. The headers are
+unchanged for CUDA users; AMD support is opt-in. Configure the samples
+and tests with `-DUSE_HIP=ON` and pass your target architecture(s) in
+`CMAKE_HIP_ARCHITECTURES` (for example `gfx90a`, `gfx1100`, or
+`gfx1201`); the .cu sources are then compiled with HIP, with Thrust
+provided by rocThrust and CUB by hipCUB. A small `cukd/cuda_to_hip.h`
+header maps the CUDA runtime calls the library uses to their HIP
+equivalents, so no other code has to change.
+
 # Introduction
 
 K-d trees are versatile data structures for organizing (and then

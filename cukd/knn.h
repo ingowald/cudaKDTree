@@ -296,7 +296,7 @@ namespace cukd {
   // Add this function at the beginning of your namespace or in a helper section
   inline __host__ __device__ float uint_as_float(uint32_t u)
   {
-  #ifdef __CUDA_ARCH__
+  #ifdef CUKD_DEVICE_CODE
       // Use CUDA intrinsic in device code
       return __uint_as_float(u);
   #else
@@ -312,7 +312,7 @@ namespace cukd {
 
   inline __host__ __device__ uint32_t float_as_uint(float f)
   {
-  #ifdef __CUDA_ARCH__
+  #ifdef CUKD_DEVICE_CODE
       // Use CUDA intrinsic in device code
       return __float_as_uint(f);
   #else
@@ -490,7 +490,7 @@ namespace cukd {
   template<int k>
   inline __host__ __device__
   float HeapCandidateList<k>::maxRadius2() const
-  { return decode_dist2(entry[0]); }
+  { return this->decode_dist2(entry[0]); }
     
 
 
@@ -545,7 +545,7 @@ namespace cukd {
   template<int k>
   inline __host__ __device__
   float FixedCandidateList<k>::maxRadius2() const
-  { return decode_dist2(entry[k-1]); }
+  { return this->decode_dist2(entry[k-1]); }
     
   namespace cct {
     template<typename CandidateList,

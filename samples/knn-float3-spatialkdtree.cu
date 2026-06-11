@@ -4,7 +4,7 @@
  points in each run.
 */
 
-#include <cuda_runtime.h>
+#include <cukd/cuda_to_hip.h>
 #include <cukd/builder.h>
 #include <cukd/knn.h>
 #include <random>
