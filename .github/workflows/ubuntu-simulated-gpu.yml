@@ -1,0 +1,57 @@
+name: Ubuntu (simulated GPU)
+
+# Ubuntu.yml builds the CUDA targets but never builds or runs the tests, since
+# GitHub's runners have no GPU. PantheonSim simulates an NVIDIA T4 on the
+# runner's CPU, so the tests (the builders, the k-nearest-neighbour queries and
+# the sample from the README) run here. It checks results, not speed; a real
+# GPU is still the final word.
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+# The job reads the repository and nothing else. The simulator's action uses
+# no token or secrets, and installs packages only from Ubuntu and NVIDIA.
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Simulated GPU (NVIDIA T4) and CUDA 12.6
+      uses: pantheongpu/setup-pantheonsim@06648b8c0cb091584196678593215db2e16bd7eb # v0.1.2
+      with:
+        gpu: nvidia/t4
+        cuda-toolkit: '12.6'
+
+    - name: Install gcc 13
+      run: |
+        sudo apt-get install -y gcc-13 g++-13
+        echo "CC=/usr/bin/gcc-13" >> $GITHUB_ENV
+        echo "CXX=/usr/bin/g++-13" >> $GITHUB_ENV
+        echo "CUDAHOSTCXX=/usr/bin/g++-13" >> $GITHUB_ENV
+
+    # 75 carries PTX for the simulated T4; the simulator stands in for the
+    # CUDA runtime at run time, so the shared one is linked.
+    - name: Configure cmake
+      run: >
+        cmake . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=75
+        -DCMAKE_CUDA_RUNTIME_LIBRARY=Shared -DBUILD_ALL_TESTS=ON
+
+    # Only the registered tests: with BUILD_ALL_TESTS=ON the type/dimension
+    # matrix is built as well, and its stack-based traversal does not compile
+    # without CUKD_ENABLE_STATS (cukd::g_traversalStats is not declared).
+    - name: Build the tests
+      working-directory: build
+      run: |
+        names="$(ctest -N | sed -n 's/^ *Test *#[0-9]*: //p' | tr '\n' ' ')"
+        echo "$names"
+        cmake --build . --target $names -j "$(nproc)"
+
+    - name: Run the tests on the simulated GPU
+      working-directory: build
+      run: vgpu run ctest --output-on-failure --timeout 1800
